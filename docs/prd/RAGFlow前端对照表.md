@@ -1,8 +1,8 @@
 # RAGFlow 前端 vs RAG 3.0 PRD 逐项对照表
 
-> **版本**：v1.5 · 2026-06-06  
+> **版本**：v1.6 · 2026-06-06  
 > **用途**：指导 RAG 3.0 前端开发时复用 RAGFlow 源码（`ragflow_rag30/web`），识别缺口与映射关系。  
-> **关联**：`前端界面实现方案.md`（v1.5）§1.3 / §10–§16、`5-企业级RAG知识库3.0实现方案.md`
+> **关联**：`前端界面实现方案.md`（v1.6）§1.3 / §10–§19、`5-企业级RAG知识库3.0实现方案.md`
 
 **图例**：✅ 已设计 · 🟡 部分设计 · ❌ 未设计 · 🔵 RAG 3.0 新增
 
@@ -10,7 +10,7 @@
 
 ## 1. 顶层导航与应用
 
-| # | RAGFlow 页面 | RAGFlow 路由 | PRD v1.5 | 兼容策略 | 优先级 |
+| # | RAGFlow 页面 | RAGFlow 路由 | PRD v1.6 | 兼容策略 | 优先级 |
 |---|-------------|-------------|----------|---------|--------|
 | 1 | 首页工作台 | `/` | ✅ §10.2（含排行榜 US-1.9） | 复用 `pages/home` | P0 |
 | 2 | 知识库列表 | `/datasets` | ✅ §3.1 | 路由 `/kb` | P0 |
@@ -27,13 +27,13 @@
 
 ## 2. 知识库（Dataset）子页面
 
-| # | RAGFlow 页面 | RAGFlow 路由 | PRD v1.5 | 关键设计 | 优先级 |
+| # | RAGFlow 页面 | RAGFlow 路由 | PRD v1.6 | 关键设计 | 优先级 |
 |---|-------------|-------------|----------|---------|--------|
 | 11 | 文件管理 | `/dataset/files/:id` | ✅ §3.3 + §3.3.3 | KBDetailLayout + 搜索性能 + 上传暂停 | P0 |
 | 12 | 检索测试 | `/dataset/retrieval/:id` | ✅ §10.5 | 阈值/Rerank/KG/元数据 | **P0** |
 | 13 | 日志概览 | `/dataset/logs/:id` | ✅ §10.10.2 | 处理日志 | P1 |
 | 14 | 知识库配置 | `/dataset/configuration/:id` | ✅ §10.4 | 15种分块/GraphRAG/RAPTOR | **P0** |
-| 15 | 知识图谱 | `/dataset/knowledge-graph/:id` | ✅ §10.10.3 | Force-directed | P1 |
+| 15 | 知识图谱 | `/dataset/knowledge-graph/:id` | ✅ §11.9 Hub | GraphRAG/LazyGraphRAG 6 Tab + G6 | P1 |
 | 16 | 详情概览 | — | ✅ §3.2 | 左侧子导航 + Wiki/PageIndex 卡片 | P0 |
 | 17 | 解析预览 | `/chunk/*` | ✅ §3.4 | 三栏+Dataflow | P0 |
 | 18 | 分块预览 | — | ✅ §3.5 | 合并/拆分/排除 | P0 |
@@ -50,7 +50,7 @@
 
 ## 3. RAG 3.0 架构独有能力
 
-| # | 能力 | PRD v1.5 章节 | 前端路由 | 优先级 |
+| # | 能力 | PRD v1.6 章节 | 前端路由 | 优先级 |
 |---|------|--------------|---------|--------|
 | 27 | Wiki 浏览器/编译/统计 | §11.1 | `/kb/:id/wiki/*` | P1 |
 | 28 | PageIndex 库级管理 | §11.2 | `/kb/:id/pageindex/*` | P1 |
@@ -61,12 +61,16 @@
 | 33 | ACL 模拟器 | §11.4.4 | `/system/security/acl-simulator` | P2 |
 | 34 | 成本/回放/Trace | §11.5 | `/evaluation/cost` 等 | P2 |
 | 35 | 全局 RAG3 运营 | §14 | 首页 Widget + §6.4.2 | P2 |
+| 36 | 融合与精排配置 | §11.8.1 | `/system/fusion` | P0 |
+| 37 | 检索/生成策略路由 | §11.8.2–11.8.3 | `/system/retrieval-strategy` 等 | P0 |
+| 38 | 多通道检索测试台 | §10.5 | `/kb/:id/retrieval-test` | P0 |
+| 39 | LazyGraphRAG 模式 | §11.9.6 | Hub 设置 Tab | P1 |
 
 ---
 
 ## 4. PRD 用户故事覆盖度（v1.5）
 
-| User Story | PRD v1.5 | 状态 |
+| User Story | PRD v1.6 | 状态 |
 |-----------|----------|------|
 | US-1.2 上传暂停/恢复 | §3.3 上传队列 + API | ✅ |
 | US-1.5 索引暂停/恢复 | §3.6 | ✅ |
@@ -92,8 +96,9 @@
 | 项 | 权威章节 | 说明 |
 |----|---------|------|
 | 完整路由表 | **§1.3** | 含 KBDetailLayout、Wiki/PageIndex Hub、Share |
-| 顶层侧边栏 navConfig | **§2.2** | v1.5 与 §1.3 同步（含系统 6 子项 + security 4 子项） |
-| KB 详情子导航 | **§10.3 / §11.6** | 11 项侧栏；导出/回收站为非侧栏入口 |
+| 顶层侧边栏 navConfig | **§2.2** | v1.6 含 fusion/retrieval-strategy/generation-strategy |
+| KB 详情子导航 | **§10.3 / §11.6** | 11 项侧栏 + 三 Hub（Wiki/PageIndex/GraphRAG） |
+| 融合与策略 | **§11.8** | `/system/fusion` 等三页 |
 | 路由快速索引 | §12.3 | 指向 §1.3 |
 | 组件目录 | §1.2 + §7.9–§7.24 | 含 KBSubNav、Hub 壳层 |
 | 废弃路由 | `pageindex-tree` | 301 → `/pageindex` |
@@ -116,6 +121,8 @@
 
 **v1.5-gamma 已补全**：US-1.4/1.6/1.11 · §7.10/7.14/7.15/7.25 Props · 附录 C parser_config · MCP 沙箱 · 分享 iframe/widget
 
+**v1.6 已补全**：§11.8 融合/策略三页 · §11.9 GraphRAG/LazyGraphRAG Hub · §10.5 多通道测试 · fusionService/graphRAGService
+
 ---
 
 ## 7. 实施建议摘要
@@ -128,4 +135,4 @@
 
 ---
 
-> 维护说明：RAGFlow 基线 `ragflow_rag30/web`，PRD 前端方案 **v1.5**。Hub spec：`docs/superpowers/specs/2026-06-06-pageindex-wiki-hub-design.md`。
+> 维护说明：RAGFlow 基线 `ragflow_rag30/web`，PRD 前端方案 **v1.6**。Hub spec：`docs/superpowers/specs/2026-06-06-pageindex-wiki-hub-design.md`。
