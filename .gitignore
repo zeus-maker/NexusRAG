@@ -1,0 +1,131 @@
+# --- OS ---
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# --- Editor / IDE ---
+.idea/
+*.iml
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json.example
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.swp
+*~
+
+# --- Environment & secrets ---
+.env
+.env.*
+!.env.example
+!.env.*.example
+.dev.vars
+
+# --- Logs ---
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# --- Node.js ---
+node_modules/
+dist/
+dist-ssr/
+build/
+.output/
+.vinxi/
+.nitro/
+.tanstack/
+.wrangler/
+.next/
+.nuxt/
+.parcel-cache/
+.vite/
+*.tsbuildinfo
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+.eggs/
+*.egg
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+*.cover
+.hypothesis/
+dmypy.json
+
+# --- Package managers ---
+.pnpm-store/
+.pnpm-debug.log*
+.yarn/cache/
+.yarn/unplugged/
+.yarn/build-state.yml
+.yarn/install-state.gz
+
+# --- ML / model caches ---
+.cache/
+**/.cache/huggingface/
+*.pt
+*.pth
+*.onnx
+*.bin
+!**/tokenizer.model
+
+# --- Docker / runtime data ---
+docker-data/
+volumes/
+*.pid
+*.seed
+*.pid.lock
+
+# --- Test & coverage ---
+coverage/
+.nyc_output/
+test-results/
+playwright-report/
+blob-report/
+
+# --- Misc build / temp ---
+tmp/
+temp/
+*.tmp
+*.bak
+.swc/
+storybook-static/
+*storybook.log
+
+# --- Project-specific ---
+.workbuddy/
+__v0_runtime_loader.js
+__v0_devtools.tsx
+__v0_jsx-dev-runtime.ts
+.snowflake/
+.v0-trash/
+.vercel/

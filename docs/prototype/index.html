@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RAG 3.0 前端原型导航</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: #f5f5f5;
+      font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: #172033;
+    }
+    .card {
+      width: min(520px, 92vw);
+      background: #fff;
+      border-radius: 8px;
+      border: 1px solid #dce3ee;
+      padding: 32px;
+      box-shadow: 0 16px 40px rgba(20, 35, 70, 0.08);
+    }
+    h1 { margin: 0 0 8px; font-size: 22px; }
+    p { margin: 0 0 24px; color: #61708a; line-height: 1.6; }
+    a {
+      display: block;
+      padding: 14px 16px;
+      margin-bottom: 10px;
+      border-radius: 6px;
+      border: 1px solid #dce3ee;
+      text-decoration: none;
+      color: #172033;
+      transition: border-color .15s, background .15s;
+    }
+    a:hover { border-color: #1677ff; background: #edf4ff; }
+    a strong { color: #1677ff; }
+    a span { display: block; margin-top: 4px; font-size: 13px; color: #61708a; }
+    .badge {
+      display: inline-block;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: #eaf8f0;
+      color: #18a058;
+      margin-left: 8px;
+      vertical-align: middle;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>企业级 RAG 3.0 知识库系统</h1>
+    <p>基于《前端界面实现方案》生成的 PC 端 HTML 原型，可直接在浏览器中打开预览。</p>
+    <a href="pc-prototype.html">
+      <strong>PC 完整原型 v2</strong><span class="badge">推荐</span>
+      <span>融合 RAGFlow 兼容层 + RAG 3.0 增强层：首页、Wiki、PageIndex、检索测试、Agent、分类器路由、安全合规等 30+ 页面</span>
+    </a>
+    <a href="rag3-prototype.html">
+      <strong>早期交互原型</strong>
+      <span>单页多视图，侧重对话与引用溯源交互演示</span>
+    </a>
+    <a href="../prd/RAGFlow前端对照表.md">
+      <strong>RAGFlow 前端对照表</strong>
+      <span>逐项对比 RAGFlow 源码与 PRD v1.1 前端方案，含优先级与缺口标注</span>
+    </a>
+    <a href="../prd/前端界面实现方案.md">
+      <strong>前端界面实现方案 v1.1</strong>
+      <span>含 §10 RAGFlow 兼容层、§11 RAG 3.0 增强层、§12 实施优先级</span>
+    </a>
+  </div>
+</body>
+</html>
