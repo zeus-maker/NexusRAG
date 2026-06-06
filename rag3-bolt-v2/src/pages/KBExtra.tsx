@@ -1,0 +1,1404 @@
+import { useState } from 'react';
+import {
+  Save, Play, RefreshCw, ChevronRight, ChevronDown,
+  GitBranch, Search, BookOpen, TreePine, Settings,
+  Plus, Trash2, RotateCcw, FileText, Network, Clock,
+  CheckCircle, AlertTriangle, BarChart2, Database, Layers,
+  Eye, Edit2, XCircle, Zap
+} from 'lucide-react';
+import { mockKBs } from '../mockData';
+
+/* ──────────────────────────────────────────────
+   KB SETTINGS PAGE
+────────────────────────────────────────────── */
+
+const CHUNK_METHODS = [
+  'General（通用）', 'QA（问答对）', 'Paper（学术论文）', 'Laws（法律条文）',
+  'Book（书籍）', 'Presentation（演示文稿）', 'Manual（手册）', 'Table（表格）',
+  'Email（邮件）', 'One（整篇）', 'Tag（标签）', 'Knowledge Graph',
+  'Mix（混合）', 'Audio（音频）', 'Medical（医疗）',
+];
+
+interface KBSettingsPageProps {
+  kbId: string;
+  onNavigate: (page: string, extra?: any) => void;
+}
+
+export function KBSettingsPage({ kbId, onNavigate }: KBSettingsPageProps) {
+  const kb = mockKBs.find(k => k.kb_id === kbId) || mockKBs[0];
+  const [tab, setTab] = useState<'basic' | 'parsing' | 'index' | 'datasource' | 'tags'>('parsing');
+  const [chunkMethod, setChunkMethod] = useState('General（通用）');
+  const [graphragEnabled, setGraphragEnabled] = useState(false);
+  const [raptorEnabled, setRaptorEnabled] = useState(false);
+  const [parseType, setParseType] = useState<'builtin' | 'pipeline'>('builtin');
+  const [chunkSize, setChunkSize] = useState(512);
+  const [overlap, setOverlap] = useState(128);
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = () => {
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  return (
+    <div className="p-6 flex flex-col gap-4 h-full overflow-y-auto">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <button onClick={() => onNavigate('kb-detail', { selectedKBId: kbId })} className="text-gray-500 hover:text-gray-700 text-sm">← 返回</button>
+          <span className="text-gray-300">/</span>
+          <span className="text-sm font-bold text-gray-900">{kb.name} · 配置</span>
+        </div>
+        <button
+          onClick={handleSave}
+          className={`flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg font-medium transition-all ${saved ? 'bg-green-600 text-white' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+        >
+          {saved ? <><RefreshCw size={14} className="animate-spin" /> 已保存</> : <><Save size={14} /> 保存配置</>}
+        </button>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex border-b border-gray-200 gap-1">
+        {[
+          { k: 'basic', l: '基础信息' },
+          { k: 'parsing', l: '解析分块' },
+          { k: 'index', l: '全局索引' },
+          { k: 'datasource', l: '数据源' },
+          { k: 'tags', l: '标签元数据' },
+        ].map(t => (
+          <button
+            key={t.k}
+            onClick={() => setTab(t.k as any)}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === t.k ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-800'}`}
+          >
+            {t.l}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'basic' && (
+        <div className="space-y-4 max-w-lg">
+          <div><label className="block text-xs font-semibold text-gray-700 mb-1.5">知识库名称</label>
+            <input defaultValue={kb.name} className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" /></div>
+          <div><label className="block text-xs font-semibold text-gray-700 mb-1.5">描述</label>
+            <textarea defaultValue={kb.description} rows={3} className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" /></div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="block text-xs text-gray-600 mb-1">默认语言</label>
+              <select className="w-full px-2.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none">
+                <option>中文</option><option>English</option>
+              </select></div>
+            <div><label className="block text-xs text-gray-600 mb-1">可见性权限</label>
+              <div className="flex gap-2">
+                {[{ v: 'me', l: '仅我' }, { v: 'team', l: '团队' }].map(o => (
+                  <label key={o.v} className="flex items-center gap-1.5 cursor-pointer">
+                    <input type="radio" name="visibility" defaultChecked={o.v === 'team'} className="text-blue-600" />
+                    <span className="text-sm text-gray-700">{o.l}</span>
+                  </label>
+                ))}
+              </div></div>
+          </div>
+        </div>
+      )}
+
+      {tab === 'parsing' && (
+        <div className="space-y-5 max-w-xl">
+          {/* Parse type */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-2">解析类型</label>
+            <div className="flex gap-3">
+              {[{ v: 'builtin', l: 'Built-in（内置引擎）', d: 'DeepDoc / MinerU 本地解析' }, { v: 'pipeline', l: 'Data Pipeline（外部管道）', d: '自定义数据管道处理' }].map(o => (
+                <label key={o.v} className={`flex-1 p-3 border-2 rounded-xl cursor-pointer transition-all ${parseType === o.v ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'}`}>
+                  <input type="radio" name="parseType" value={o.v} checked={parseType === o.v} onChange={e => setParseType(e.target.value as any)} className="sr-only" />
+                  <div className="text-xs font-semibold text-gray-800 mb-0.5">{o.l}</div>
+                  <div className="text-[10px] text-gray-500">{o.d}</div>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Chunk method */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-2">分块方法 <span className="text-gray-400 font-normal">（15种）</span></label>
+            <select
+              value={chunkMethod}
+              onChange={e => setChunkMethod(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {CHUNK_METHODS.map(m => <option key={m}>{m}</option>)}
+            </select>
+            <p className="text-[10px] text-gray-500 mt-1">当前选择：{chunkMethod} — 适合通用场景文本分割，按语义边界拆分</p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-2">布局识别引擎</label>
+              <select className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none">
+                <option>DeepDOC（推荐）</option><option>MinerU</option><option>PyMuPDF</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-2">嵌入模型</label>
+              <select className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none">
+                <option>BAAI/bge-m3</option><option>BCE-Embedding</option><option>text-embedding-3-small</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-2">Chunk Token 上限</label>
+              <div className="flex items-center gap-2">
+                <input type="range" min={128} max={2048} step={128} value={chunkSize} onChange={e => setChunkSize(Number(e.target.value))} className="flex-1" />
+                <span className="text-sm font-bold text-gray-800 w-12 text-right">{chunkSize}</span>
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-2">重叠 Token</label>
+              <div className="flex items-center gap-2">
+                <input type="range" min={0} max={512} step={32} value={overlap} onChange={e => setOverlap(Number(e.target.value))} className="flex-1" />
+                <span className="text-sm font-bold text-gray-800 w-12 text-right">{overlap}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* GraphRAG */}
+          <div className={`border-2 rounded-xl p-4 transition-colors ${graphragEnabled ? 'border-green-300 bg-green-50/40' : 'border-gray-200'}`}>
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h4 className="text-sm font-semibold text-gray-800">GraphRAG</h4>
+                <p className="text-[10px] text-gray-500">知识图谱增强检索，提取实体关系</p>
+              </div>
+              <button
+                onClick={() => setGraphragEnabled(p => !p)}
+                className={`w-11 h-6 rounded-full transition-colors relative ${graphragEnabled ? 'bg-green-500' : 'bg-gray-300'}`}
+              >
+                <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${graphragEnabled ? 'left-6' : 'left-1'}`}></span>
+              </button>
+            </div>
+            {graphragEnabled && (
+              <div className="space-y-2.5">
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className="block text-[10px] text-gray-600 mb-1">实体类型</label>
+                    <input defaultValue="ORG, PERSON, LOC, CONTRACT" className="w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none" /></div>
+                  <div><label className="block text-[10px] text-gray-600 mb-1">提取方法</label>
+                    <select className="w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none"><option>general</option><option>fast</option></select></div>
+                </div>
+                <div><label className="block text-[10px] text-gray-600 mb-1">LLM 模型</label>
+                  <select className="w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none"><option>DeepSeek-v4</option><option>gpt-4o-mini</option></select></div>
+                <div className="flex gap-2">
+                  <button className="px-3 py-1.5 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-1.5">
+                    <Play size={11} /> 生成图谱
+                  </button>
+                  <button className="px-3 py-1.5 text-xs border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">查看日志</button>
+                  <button onClick={() => onNavigate('kb-pageindex-tree', { selectedKBId: kbId })} className="px-3 py-1.5 text-xs border border-blue-200 text-blue-700 rounded-lg hover:bg-blue-50">查看知识图谱</button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* RAPTOR */}
+          <div className={`border-2 rounded-xl p-4 transition-colors ${raptorEnabled ? 'border-orange-300 bg-orange-50/40' : 'border-gray-200'}`}>
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h4 className="text-sm font-semibold text-gray-800">RAPTOR</h4>
+                <p className="text-[10px] text-gray-500">递归摘要树索引，提升长文档检索</p>
+              </div>
+              <button
+                onClick={() => setRaptorEnabled(p => !p)}
+                className={`w-11 h-6 rounded-full transition-colors relative ${raptorEnabled ? 'bg-orange-500' : 'bg-gray-300'}`}
+              >
+                <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${raptorEnabled ? 'left-6' : 'left-1'}`}></span>
+              </button>
+            </div>
+            {raptorEnabled && (
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { l: 'max_token', v: '256' },
+                  { l: 'threshold', v: '0.1' },
+                  { l: 'max_cluster', v: '64' },
+                ].map(f => (
+                  <div key={f.l}>
+                    <label className="block text-[10px] text-gray-600 mb-1">{f.l}</label>
+                    <input defaultValue={f.v} className="w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none" />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {tab === 'index' && (
+        <div className="space-y-3 max-w-xl">
+          <p className="text-xs text-gray-500">配置全局索引选项，影响所有文档的检索行为。</p>
+          {[
+            { label: '向量索引（必选）', desc: '使用嵌入模型构建语义向量索引', enabled: true, locked: true },
+            { label: '全文索引', desc: '基于 BM25 的关键词精确匹配', enabled: true, locked: false },
+            { label: 'PageIndex 树索引', desc: '层次化文档结构树索引，适合长文档', enabled: true, locked: false },
+            { label: '知识图谱索引', desc: '实体关系图谱，支持多跳推理', enabled: false, locked: false },
+            { label: 'Wiki 汇总索引', desc: 'LLM 生成实体 Wiki 页面，快速问答', enabled: false, locked: false },
+          ].map((idx, i) => (
+            <div key={i} className={`flex items-center justify-between p-3.5 border rounded-xl ${idx.enabled ? 'border-blue-100 bg-blue-50/30' : 'border-gray-200'}`}>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-gray-800">{idx.label}</span>
+                  {idx.locked && <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">必选</span>}
+                </div>
+                <span className="text-[10px] text-gray-500">{idx.desc}</span>
+              </div>
+              <button
+                disabled={idx.locked}
+                className={`w-11 h-6 rounded-full transition-colors relative disabled:opacity-50 ${idx.enabled ? 'bg-blue-500' : 'bg-gray-300'}`}
+              >
+                <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${idx.enabled ? 'left-6' : 'left-1'}`}></span>
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {tab === 'datasource' && (
+        <div className="space-y-3 max-w-xl">
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-gray-500">配置自动同步的外部数据源。</p>
+            <button className="flex items-center gap-1 text-xs text-blue-600 hover:underline"><Plus size={12} /> 添加数据源</button>
+          </div>
+          {[
+            { type: 'S3', name: 's3://corp-docs/legal/', status: 'active', last_sync: '2小时前', icon: '☁️' },
+            { type: 'SharePoint', name: 'Legal Team Drive', status: 'active', last_sync: '1天前', icon: '📁' },
+            { type: 'Web Crawl', name: 'https://laws.example.com', status: 'paused', last_sync: '3天前', icon: '🌐' },
+          ].map((ds, i) => (
+            <div key={i} className="flex items-center gap-3 p-3.5 border border-gray-200 rounded-xl hover:border-gray-300">
+              <span className="text-xl">{ds.icon}</span>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium text-gray-800">{ds.name}</div>
+                <div className="text-[10px] text-gray-500">{ds.type} · 上次同步 {ds.last_sync}</div>
+              </div>
+              <span className={`text-[10px] px-2 py-0.5 rounded-full ${ds.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                {ds.status === 'active' ? '同步中' : '已暂停'}
+              </span>
+              <button className="p-1 rounded hover:bg-gray-100 text-gray-400"><Settings size={13} /></button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {tab === 'tags' && (
+        <div className="space-y-3 max-w-xl">
+          <p className="text-xs text-gray-500">配置文档级元数据标签，用于精细化过滤与 ACL 控制。</p>
+          <div className="flex flex-wrap gap-2">
+            {['合同', '供应商', '法律', '财务', '合规', '保密', '知识产权'].map(tag => (
+              <span key={tag} className="inline-flex items-center gap-1 px-3 py-1.5 bg-blue-50 border border-blue-200 text-blue-700 text-xs rounded-full">
+                {tag} <button className="hover:text-red-500 ml-0.5">✕</button>
+              </span>
+            ))}
+            <button className="inline-flex items-center gap-1 px-3 py-1.5 border-2 border-dashed border-gray-300 text-gray-500 text-xs rounded-full hover:border-blue-400 hover:text-blue-600">
+              <Plus size={11} /> 添加标签
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────
+   RETRIEVAL TEST PAGE
+────────────────────────────────────────────── */
+
+interface RetrievalTestPageProps {
+  kbId: string;
+  onNavigate: (page: string, extra?: any) => void;
+}
+
+const MOCK_RETRIEVAL_RESULTS = [
+  { rank: 1, doc: '供应商合同模板V5.pdf', page: 3, section: '第五条 违约责任 §5.1', score: 0.956, snippet: '供应商迟延交货的，每迟延一日应按迟延交付货物价值的千分之五向采购方支付违约金...', type: 'vector' },
+  { rank: 2, doc: '采购协议条款.docx', page: 8, section: '第三章 违约处理', score: 0.867, snippet: '如因供应商原因导致交货延迟，每逾期一日按合同金额千分之三收取违约金...', type: 'pageindex' },
+  { rank: 3, doc: '合规审查报告2024.pdf', page: 15, section: '违约风险评估', score: 0.812, snippet: '通过对过去三年供应商违约案例分析，建议将违约金比例调整为行业标准...', type: 'vector' },
+  { rank: 4, doc: '物流服务合同V2.pdf', page: 5, section: '第四条 延迟交付', score: 0.798, snippet: '延迟交付货物的，甲方有权按日计收违约金，计算基数为延迟交付货物的合同价值...', type: 'graph' },
+  { rank: 5, doc: '知识产权协议范本.pdf', page: 2, section: '附件A：通用条款', score: 0.743, snippet: '本协议适用的违约金标准参照公司标准采购合同执行...', type: 'vector' },
+];
+
+export function RetrievalTestPage({ kbId, onNavigate }: RetrievalTestPageProps) {
+  const kb = mockKBs.find(k => k.kb_id === kbId) || mockKBs[0];
+  const [query, setQuery] = useState('');
+  const [threshold, setThreshold] = useState(0.2);
+  const [vectorWeight, setVectorWeight] = useState(0.7);
+  const [useRerank, setUseRerank] = useState(true);
+  const [useGraph, setUseGraph] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [results, setResults] = useState<typeof MOCK_RETRIEVAL_RESULTS | null>(null);
+
+  const handleTest = () => {
+    if (!query.trim()) return;
+    setLoading(true);
+    setResults(null);
+    setTimeout(() => {
+      setLoading(false);
+      setResults(MOCK_RETRIEVAL_RESULTS);
+    }, 1200);
+  };
+
+  const typeConfig: Record<string, string> = {
+    vector: 'bg-blue-100 text-blue-700',
+    pageindex: 'bg-purple-100 text-purple-700',
+    graph: 'bg-green-100 text-green-700',
+  };
+  const typeLabels: Record<string, string> = { vector: '向量', pageindex: 'PageIndex', graph: '图谱' };
+
+  return (
+    <div className="h-full overflow-hidden flex flex-col">
+      {/* Header */}
+      <div className="px-6 py-3 bg-white border-b border-gray-200 flex items-center gap-2 flex-shrink-0">
+        <button onClick={() => onNavigate('kb-detail', { selectedKBId: kbId })} className="text-gray-500 hover:text-gray-700 text-sm">← 返回</button>
+        <span className="text-gray-300">/</span>
+        <span className="text-sm font-bold text-gray-900">{kb.name} · 检索测试</span>
+      </div>
+
+      <div className="flex flex-1 min-h-0">
+        {/* Left config panel */}
+        <div className="w-64 bg-white border-r border-gray-200 flex flex-col flex-shrink-0">
+          <div className="p-4 flex-1 overflow-y-auto space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1.5">测试问题</label>
+              <textarea
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                placeholder="输入测试查询..."
+                rows={4}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-2">相似度阈值: <span className="text-blue-600">{threshold}</span></label>
+              <input type="range" min={0} max={1} step={0.05} value={threshold} onChange={e => setThreshold(Number(e.target.value))} className="w-full" />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-2">向量权重: <span className="text-blue-600">{vectorWeight}</span></label>
+              <input type="range" min={0} max={1} step={0.1} value={vectorWeight} onChange={e => setVectorWeight(Number(e.target.value))} className="w-full" />
+              <div className="flex justify-between text-[10px] text-gray-400 mt-0.5">
+                <span>全文匹配</span><span>纯向量</span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              {[
+                { label: 'Rerank 精排', state: useRerank, set: setUseRerank },
+                { label: '知识图谱增强', state: useGraph, set: setUseGraph },
+              ].map((opt, i) => (
+                <label key={i} className="flex items-center justify-between cursor-pointer">
+                  <span className="text-xs text-gray-700">{opt.label}</span>
+                  <button
+                    onClick={() => opt.set(p => !p)}
+                    className={`w-9 h-5 rounded-full relative transition-colors ${opt.state ? 'bg-blue-500' : 'bg-gray-300'}`}
+                  >
+                    <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${opt.state ? 'left-4.5' : 'left-0.5'}`} style={{ left: opt.state ? '18px' : '2px' }}></span>
+                  </button>
+                </label>
+              ))}
+            </div>
+
+            {useRerank && (
+              <div>
+                <label className="block text-[10px] text-gray-600 mb-1">Rerank 模型</label>
+                <select className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none">
+                  <option>bge-reranker-v2-m3</option><option>cross-encoder/ms-marco</option>
+                </select>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-[10px] text-gray-600 mb-1">跨语言</label>
+              <div className="flex gap-2">
+                {['zh', 'en'].map(l => (
+                  <label key={l} className="flex items-center gap-1.5 cursor-pointer">
+                    <input type="checkbox" defaultChecked className="rounded text-blue-600" />
+                    <span className="text-xs text-gray-700">{l}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-[10px] text-gray-600">元数据过滤</label>
+                <button className="text-[10px] text-blue-600 hover:underline flex items-center gap-0.5"><Plus size={10} /> 添加</button>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-2 text-[10px] text-gray-500 italic">暂无过滤条件</div>
+            </div>
+
+            <button
+              onClick={handleTest}
+              disabled={!query.trim() || loading}
+              className="w-full py-2.5 bg-blue-600 text-white text-sm rounded-lg font-medium hover:bg-blue-700 disabled:opacity-40 flex items-center justify-center gap-2"
+            >
+              {loading ? <><RefreshCw size={14} className="animate-spin" /> 检索中...</> : <><Search size={14} /> 执行检索</>}
+            </button>
+          </div>
+        </div>
+
+        {/* Right results panel */}
+        <div className="flex-1 overflow-y-auto p-4 bg-gray-50">
+          {!results && !loading && (
+            <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-3">
+              <Search size={40} className="opacity-30" />
+              <p className="text-sm">输入查询并点击「执行检索」查看结果</p>
+            </div>
+          )}
+          {loading && (
+            <div className="flex flex-col items-center justify-center h-full gap-3 text-blue-600">
+              <RefreshCw size={32} className="animate-spin opacity-60" />
+              <p className="text-sm">正在检索...</p>
+            </div>
+          )}
+          {results && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold text-gray-800">检索结果 <span className="text-gray-500 font-normal">({results.length} 条)</span></p>
+                <div className="flex gap-2">
+                  {['向量', 'PageIndex', '图谱'].map(t => (
+                    <span key={t} className="text-[10px] text-gray-500 bg-white border border-gray-200 px-2 py-0.5 rounded-full">{t}: {results.filter(r => typeLabels[r.type] === t).length}</span>
+                  ))}
+                </div>
+              </div>
+              {results.map(r => (
+                <div key={r.rank} className="bg-white rounded-xl border border-gray-200 p-4 hover:border-blue-200 transition-colors">
+                  <div className="flex items-start justify-between gap-3 mb-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-bold text-gray-400">#{r.rank}</span>
+                      <span className="text-xs font-semibold text-gray-800">{r.doc}</span>
+                      <span className="text-[10px] text-gray-500">第 {r.page} 页</span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${typeConfig[r.type]}`}>{typeLabels[r.type]}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <div className="w-16 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div className="h-full bg-blue-500 rounded-full" style={{ width: `${r.score * 100}%` }}></div>
+                      </div>
+                      <span className={`text-xs font-bold ${r.score >= 0.9 ? 'text-green-600' : r.score >= 0.7 ? 'text-blue-600' : 'text-gray-600'}`}>{r.score.toFixed(3)}</span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-600 mb-1.5 italic">{r.section}</p>
+                  <p className="text-xs text-gray-700 leading-relaxed line-clamp-2">{r.snippet}</p>
+                  <div className="flex gap-2 mt-2">
+                    <button className="text-[10px] px-2 py-0.5 text-blue-600 hover:underline">查看原文</button>
+                    <button className="text-[10px] px-2 py-0.5 text-gray-500 hover:underline">复制片段</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────
+   WIKI BROWSER PAGE
+────────────────────────────────────────────── */
+
+const WIKI_PAGES = [
+  {
+    slug: 'supplier-penalty',
+    title: '供应商违约金',
+    category: '概念',
+    layer: 2,
+    content: `## 概述\n供应商违约金是在供应商未能履行合同义务时，向采购方支付的赔偿金额。根据公司标准采购合同模板（V5），违约金按日计算。\n\n## 关键规则\n- **计算标准**：每迟延一日按迟延交付货物价值的 **千分之五（0.5%）** 计算\n- **累计上限**：不超过合同总金额的 **20%**\n- **解除权**：迟延超过 **30 日** 时采购方可解除合同\n\n## 不可抗力条款\n因不可抗力导致的延迟须在 48 小时内书面通知采购方，不适用违约金条款。`,
+    sources: ['供应商合同模板V5.pdf P3', '采购协议条款 P8'],
+    related: ['合同解除权', '保密义务', '不可抗力'],
+    status: 'published' as const,
+    updated: '2026-06-05',
+  },
+  {
+    slug: 'contract-termination',
+    title: '合同解除权',
+    category: '概念',
+    layer: 2,
+    content: `## 概述\n合同解除权是指合同一方在特定条件成立时，终止合同效力的法定或约定权利。\n\n## 行使条件\n- 供应商逾期交货超过 30 日\n- 货物质量不符合约定标准且无法修复\n- 供应商无故终止服务\n\n## 赔偿要求\n解除合同时，违约方须赔偿守约方全部实际损失。`,
+    sources: ['供应商合同模板V5.pdf P4'],
+    related: ['供应商违约金', '货物验收标准'],
+    status: 'published' as const,
+    updated: '2026-06-04',
+  },
+  {
+    slug: 'confidentiality',
+    title: '保密义务',
+    category: '概念',
+    layer: 2,
+    content: `## 概述\n保密义务要求合同双方对因合同履行知悉的商业秘密予以保护。\n\n## 保密期限\n合同履行期间 + 终止后 5 年\n\n## 例外情形\n- 信息已成公众知识\n- 法律强制要求披露`,
+    sources: ['供应商合同模板V5.pdf P8'],
+    related: ['供应商违约金', '合同解除权'],
+    status: 'reviewing' as const,
+    updated: '2026-06-03',
+  },
+];
+
+interface WikiPageProps {
+  kbId: string;
+  onNavigate: (page: string, extra?: any) => void;
+}
+
+export function WikiPage({ kbId, onNavigate }: WikiPageProps) {
+  const kb = mockKBs.find(k => k.kb_id === kbId) || mockKBs[0];
+  const [selectedSlug, setSelectedSlug] = useState(WIKI_PAGES[0].slug);
+  const [layer, setLayer] = useState<1 | 2 | 3>(2);
+  const [compiling, setCompiling] = useState(false);
+  const [showQueue, setShowQueue] = useState(false);
+
+  const page = WIKI_PAGES.find(p => p.slug === selectedSlug) || WIKI_PAGES[0];
+
+  const handleCompile = () => {
+    setCompiling(true);
+    setTimeout(() => setCompiling(false), 2000);
+  };
+
+  const statusConfig = {
+    published: { label: '已发布', color: 'bg-green-100 text-green-700' },
+    reviewing: { label: '待审核', color: 'bg-yellow-100 text-yellow-700' },
+    draft: { label: '草稿', color: 'bg-gray-100 text-gray-600' },
+  };
+
+  const renderMarkdown = (text: string) => {
+    return text.split('\n').map((line, i) => {
+      if (line.startsWith('## ')) return <h2 key={i} className="text-base font-bold text-gray-900 mt-4 mb-2">{line.slice(3)}</h2>;
+      if (line.startsWith('- **')) {
+        const parts = line.slice(2).split('**');
+        return <li key={i} className="ml-4 list-disc text-sm text-gray-700 mb-1">{parts.map((p, j) => j % 2 === 1 ? <strong key={j}>{p}</strong> : <span key={j}>{p}</span>)}</li>;
+      }
+      if (line.startsWith('- ')) return <li key={i} className="ml-4 list-disc text-sm text-gray-700 mb-1">{line.slice(2)}</li>;
+      if (line === '') return <br key={i} />;
+      return <p key={i} className="text-sm text-gray-700 mb-1 leading-relaxed">{line}</p>;
+    });
+  };
+
+  return (
+    <div className="h-full flex flex-col overflow-hidden">
+      <div className="px-6 py-3 bg-white border-b border-gray-200 flex items-center justify-between flex-wrap gap-2 flex-shrink-0">
+        <div className="flex items-center gap-2">
+          <button onClick={() => onNavigate('kb-detail', { selectedKBId: kbId })} className="text-gray-500 hover:text-gray-700 text-sm">← 返回</button>
+          <span className="text-gray-300">/</span>
+          <span className="text-sm font-bold text-gray-900">{kb.name} · Wiki</span>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => setShowQueue(p => !p)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700">
+            <Clock size={12} /> 编译队列
+          </button>
+          <button onClick={handleCompile} disabled={compiling} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60">
+            {compiling ? <RefreshCw size={12} className="animate-spin" /> : <Play size={12} />}
+            {compiling ? '编译中...' : '触发编译'}
+          </button>
+        </div>
+      </div>
+
+      <div className="flex flex-1 min-h-0">
+        {/* Left tree */}
+        <div className="w-52 bg-white border-r border-gray-200 flex flex-col flex-shrink-0">
+          {/* Layer tabs */}
+          <div className="flex border-b border-gray-100">
+            {([1, 2, 3] as const).map(l => (
+              <button
+                key={l}
+                onClick={() => setLayer(l)}
+                className={`flex-1 py-2 text-[10px] font-medium transition-colors ${layer === l ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-600' : 'text-gray-500 hover:bg-gray-50'}`}
+              >
+                {l === 1 ? 'Layer1 原始' : l === 2 ? 'Layer2 实体' : 'Layer3 综合'}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-2">
+            {[
+              { group: '实体', pages: WIKI_PAGES.filter(p => p.category === '概念') },
+              { group: '综合', pages: [] },
+              { group: '原始资料', pages: [] },
+            ].map(g => (
+              <div key={g.group}>
+                <div className="text-[10px] text-gray-400 font-semibold px-2 py-1.5 uppercase tracking-wider">{g.group}</div>
+                {g.pages.map(p => (
+                  <button
+                    key={p.slug}
+                    onClick={() => setSelectedSlug(p.slug)}
+                    className={`w-full text-left px-2.5 py-2 rounded-lg text-xs mb-0.5 transition-colors ${selectedSlug === p.slug ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700 hover:bg-gray-100'}`}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <BookOpen size={11} className="flex-shrink-0" />
+                      <span className="truncate">{p.title}</span>
+                    </div>
+                    <span className={`text-[9px] ml-4 ${statusConfig[p.status].color.replace('bg-', 'text-')}`}>{statusConfig[p.status].label}</span>
+                  </button>
+                ))}
+                {g.pages.length === 0 && <div className="text-[10px] text-gray-400 px-2 pb-2 italic">暂无页面</div>}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Main content */}
+        <div className="flex-1 overflow-y-auto p-6">
+          <div className="max-w-2xl">
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <h1 className="text-xl font-bold text-gray-900">[[{page.title}]]</h1>
+                  <span className={`px-2 py-0.5 text-[10px] rounded-full font-medium ${statusConfig[page.status].color}`}>{statusConfig[page.status].label}</span>
+                </div>
+                <p className="text-xs text-gray-500">更新于 {page.updated}</p>
+              </div>
+              <div className="flex gap-2">
+                <button className="text-xs px-3 py-1.5 border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700">编辑</button>
+                <button className="text-xs px-3 py-1.5 border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700">版本历史</button>
+                {page.status === 'reviewing' && (
+                  <button className="text-xs px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700">审核通过</button>
+                )}
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl border border-gray-200 p-5 mb-4">
+              {renderMarkdown(page.content)}
+            </div>
+
+            {/* Sources */}
+            <div className="bg-gray-50 rounded-xl border border-gray-200 p-4 mb-3">
+              <h3 className="text-xs font-semibold text-gray-700 mb-2">📎 引用来源</h3>
+              <div className="flex flex-wrap gap-2">
+                {page.sources.map((s, i) => (
+                  <span key={i} className="flex items-center gap-1.5 px-2.5 py-1 bg-white border border-gray-200 rounded-lg text-xs text-blue-700 hover:bg-blue-50 cursor-pointer transition-colors">
+                    <FileText size={11} /> {s}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* Related */}
+            <div className="bg-gray-50 rounded-xl border border-gray-200 p-4">
+              <h3 className="text-xs font-semibold text-gray-700 mb-2">🔗 相关页面</h3>
+              <div className="flex flex-wrap gap-2">
+                {page.related.map((r, i) => (
+                  <button key={i} className="px-2.5 py-1 bg-white border border-blue-200 text-blue-700 rounded-lg text-xs hover:bg-blue-50 transition-colors">
+                    [[{r}]]
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Compile queue sidebar */}
+      {showQueue && (
+        <div className="absolute right-0 top-0 bottom-0 w-72 bg-white border-l border-gray-200 shadow-xl z-20 flex flex-col" style={{ position: 'fixed', right: 0, top: '48px', bottom: '24px' }}>
+          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-gray-800">编译队列</h3>
+            <button onClick={() => setShowQueue(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-3 space-y-2">
+            {[
+              { page: '供应商违约金', status: 'published', cites: 143 },
+              { page: '保密义务', status: 'reviewing', cites: 87 },
+              { page: '合同解除权', status: 'published', cites: 62 },
+              { page: '知识产权归属', status: 'draft', cites: 44 },
+              { page: '不可抗力', status: 'draft', cites: 31 },
+            ].map((item, i) => (
+              <div key={i} className="flex items-center gap-2.5 p-2.5 bg-gray-50 rounded-lg border border-gray-200">
+                <BookOpen size={13} className="text-gray-400 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-medium text-gray-800 truncate">{item.page}</div>
+                  <div className="text-[10px] text-gray-400">{item.cites} 次引用</div>
+                </div>
+                <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${statusConfig[item.status as keyof typeof statusConfig]?.color || 'bg-gray-100 text-gray-500'}`}>
+                  {statusConfig[item.status as keyof typeof statusConfig]?.label || item.status}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────
+   PAGEINDEX TREE PAGE
+────────────────────────────────────────────── */
+
+interface PageIndexTreePageProps {
+  kbId: string;
+  onNavigate: (page: string, extra?: any) => void;
+}
+
+const TREE_DATA = {
+  label: '文档根',
+  children: [
+    { label: '第一条 定义', children: [{ label: '1.1 供应商定义', children: [] }, { label: '1.2 采购方定义', children: [] }] },
+    { label: '第二条 权利义务', children: [{ label: '2.1 采购方权利', children: [] }, { label: '2.2 供应商义务', children: [] }] },
+    { label: '第三条 价格与付款', children: [{ label: '3.1 价格条款', children: [] }, { label: '3.2 付款周期', children: [] }] },
+    {
+      label: '第五条 违约责任',
+      children: [
+        { label: '5.1 延迟交货', children: [] },
+        { label: '5.2 质量违约', children: [] },
+        { label: '5.3 提前解约', children: [] },
+      ],
+    },
+    { label: '第七条 不可抗力', children: [{ label: '7.1 免责事项', children: [] }] },
+    { label: '第八条 保密义务', children: [{ label: '8.1 保密范围', children: [] }, { label: '8.2 保密期限', children: [] }, { label: '8.3 例外情形', children: [] }] },
+  ],
+};
+
+function TreeNode({ node, depth = 0, selected, onSelect }: { node: any; depth?: number; selected: string | null; onSelect: (l: string) => void }) {
+  const [open, setOpen] = useState(depth < 1);
+  const hasChildren = node.children && node.children.length > 0;
+
+  return (
+    <div>
+      <button
+        onClick={() => { if (hasChildren) setOpen(p => !p); onSelect(node.label); }}
+        className={`flex items-center gap-1.5 w-full text-left py-1.5 px-2 rounded-lg text-xs transition-colors hover:bg-gray-100 ${selected === node.label ? 'bg-blue-50 text-blue-700' : 'text-gray-700'}`}
+        style={{ paddingLeft: `${8 + depth * 16}px` }}
+      >
+        {hasChildren ? (
+          open ? <ChevronDown size={11} className="text-gray-400 flex-shrink-0" /> : <ChevronRight size={11} className="text-gray-400 flex-shrink-0" />
+        ) : <span className="w-3" />}
+        <TreePine size={11} className="flex-shrink-0 text-green-500" />
+        {node.label}
+      </button>
+      {open && hasChildren && node.children.map((child: any, i: number) => (
+        <TreeNode key={i} node={child} depth={depth + 1} selected={selected} onSelect={onSelect} />
+      ))}
+    </div>
+  );
+}
+
+export function PageIndexTreePage({ kbId, onNavigate }: PageIndexTreePageProps) {
+  const kb = mockKBs.find(k => k.kb_id === kbId) || mockKBs[0];
+  const [selectedNode, setSelectedNode] = useState<string | null>('第五条 违约责任');
+  const [testQuery, setTestQuery] = useState('违约金如何计算');
+  const [testResult, setTestResult] = useState<string | null>(null);
+  const [testing, setTesting] = useState(false);
+
+  const handleTest = () => {
+    setTesting(true);
+    setTestResult(null);
+    setTimeout(() => {
+      setTesting(false);
+      setTestResult('5.1 延迟交货');
+    }, 1000);
+  };
+
+  return (
+    <div className="h-full flex flex-col overflow-hidden">
+      <div className="px-6 py-3 bg-white border-b border-gray-200 flex items-center gap-2 flex-shrink-0">
+        <button onClick={() => onNavigate('kb-detail', { selectedKBId: kbId })} className="text-gray-500 hover:text-gray-700 text-sm">← 返回</button>
+        <span className="text-gray-300">/</span>
+        <span className="text-sm font-bold text-gray-900">{kb.name} · PageIndex 树</span>
+      </div>
+
+      <div className="flex flex-1 min-h-0">
+        {/* Tree panel */}
+        <div className="w-64 bg-white border-r border-gray-200 overflow-y-auto flex-shrink-0">
+          <div className="px-3 py-2.5 border-b border-gray-100">
+            <p className="text-xs font-semibold text-gray-700">供应商合同模板V5.pdf</p>
+            <p className="text-[10px] text-gray-400">12 页 · 85 节点</p>
+          </div>
+          <div className="p-2">
+            <TreeNode node={TREE_DATA} selected={selectedNode} onSelect={setSelectedNode} />
+          </div>
+        </div>
+
+        {/* Right panel */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          {/* Node detail */}
+          {selectedNode && (
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <TreePine size={16} className="text-green-500" />
+                <h3 className="text-sm font-bold text-gray-900">{selectedNode}</h3>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                {[
+                  { l: '节点类型', v: '章节' },
+                  { l: '页码范围', v: 'P3-4' },
+                  { l: 'Token 数', v: '512' },
+                  { l: '子节点', v: '3' },
+                ].map(s => (
+                  <div key={s.l} className="bg-gray-50 rounded-lg p-2 text-center">
+                    <div className="text-sm font-bold text-gray-900">{s.v}</div>
+                    <div className="text-[10px] text-gray-500">{s.l}</div>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-gray-600 leading-relaxed bg-gray-50 rounded-lg p-3">
+                本节规定了供应商违约的各种情形及对应的违约金计算标准，包括：(1) 迟延交货违约金；(2) 质量不合格违约金；(3) 提前解约违约金。
+              </p>
+            </div>
+          )}
+
+          {/* Tree search debug */}
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <h3 className="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
+              <Search size={14} className="text-blue-500" /> 树搜索调试
+            </h3>
+            <div className="flex gap-2 mb-3">
+              <input
+                value={testQuery}
+                onChange={e => setTestQuery(e.target.value)}
+                placeholder="输入测试查询..."
+                className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <button onClick={handleTest} disabled={testing} className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-60">
+                {testing ? <RefreshCw size={14} className="animate-spin" /> : '测试'}
+              </button>
+            </div>
+
+            {testResult && (
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                <p className="text-xs font-semibold text-blue-800 mb-2">推理路径</p>
+                <div className="space-y-1.5">
+                  {[
+                    { step: 1, desc: '扫描目录层级', result: '命中「第五条 违约责任」', ms: 12 },
+                    { step: 2, desc: '定位页面节点', result: 'P3 bbox 高亮', ms: 8 },
+                    { step: 3, desc: '返回最优子节点', result: `${testResult}，Token: 512`, ms: 15 },
+                  ].map(s => (
+                    <div key={s.step} className="flex items-start gap-2 text-xs">
+                      <span className="w-5 h-5 bg-blue-600 text-white rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0">{s.step}</span>
+                      <div className="flex-1">
+                        <span className="text-blue-700 font-medium">{s.desc}</span>
+                        <span className="text-gray-600 mx-1">→</span>
+                        <span className="text-gray-800">{s.result}</span>
+                      </div>
+                      <span className="text-[10px] text-gray-400">{s.ms}ms</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3 pt-2 border-t border-blue-200 flex items-center justify-between">
+                  <span className="text-xs text-blue-700 font-medium">定位节点: <strong>{testResult}</strong></span>
+                  <button className="text-xs text-blue-600 hover:underline">在树中高亮</button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────
+   LLM WIKI MANAGEMENT PAGE
+────────────────────────────────────────────── */
+
+const ALL_WIKI_ENTRIES = [
+  { slug: 'supplier-penalty', title: '供应商违约金', kb: '合同知识库', layer: 2, status: 'published', cites: 143, updated: '2026-06-05', sources: 2 },
+  { slug: 'contract-termination', title: '合同解除权', kb: '合同知识库', layer: 2, status: 'published', cites: 62, updated: '2026-06-04', sources: 1 },
+  { slug: 'confidentiality', title: '保密义务', kb: '合同知识库', layer: 2, status: 'reviewing', cites: 87, updated: '2026-06-03', sources: 1 },
+  { slug: 'ip-ownership', title: '知识产权归属', kb: '合同知识库', layer: 2, status: 'draft', cites: 44, updated: '2026-06-02', sources: 3 },
+  { slug: 'force-majeure', title: '不可抗力', kb: '合同知识库', layer: 3, status: 'draft', cites: 31, updated: '2026-06-01', sources: 2 },
+  { slug: 'supplier-qualification', title: '供应商资质认证', kb: '供应商管理KB', layer: 2, status: 'published', cites: 95, updated: '2026-06-05', sources: 4 },
+  { slug: 'q2-highlights', title: 'Q2财务亮点摘要', kb: '财务报告KB', layer: 3, status: 'published', cites: 210, updated: '2026-06-05', sources: 6 },
+  { slug: 'gdpr-compliance', title: 'GDPR合规要求', kb: '法规政策KB', layer: 2, status: 'reviewing', cites: 156, updated: '2026-06-04', sources: 5 },
+];
+
+const COMPILE_JOBS = [
+  { id: 'job-001', kb: '合同知识库', trigger: '文档更新', pages: 5, status: 'running', progress: 67, started: '14:32', model: 'gpt-4o-mini' },
+  { id: 'job-002', kb: '财务报告KB', trigger: '定时任务', pages: 12, status: 'queued', progress: 0, started: '待执行', model: 'gpt-4o-mini' },
+  { id: 'job-003', kb: '法规政策KB', trigger: '手动触发', pages: 8, status: 'completed', progress: 100, started: '12:15', model: 'gpt-4o-mini' },
+  { id: 'job-004', kb: '供应商管理KB', trigger: '文档上传', pages: 3, status: 'failed', progress: 40, started: '10:08', model: 'gpt-4o' },
+];
+
+interface WikiManagePageProps {
+  onNavigate: (page: string, extra?: any) => void;
+}
+
+export function WikiManagePage({ onNavigate }: WikiManagePageProps) {
+  const [tab, setTab] = useState<'pages' | 'jobs' | 'stats'>('pages');
+  const [filterKB, setFilterKB] = useState('全部');
+  const [filterStatus, setFilterStatus] = useState('全部');
+  const [search, setSearch] = useState('');
+
+  const statusCfg = {
+    published: { label: '已发布', color: 'bg-green-100 text-green-700' },
+    reviewing: { label: '待审核', color: 'bg-yellow-100 text-yellow-700' },
+    draft: { label: '草稿', color: 'bg-gray-100 text-gray-600' },
+  } as const;
+
+  const jobStatusCfg = {
+    running: { label: '运行中', color: 'bg-blue-100 text-blue-700' },
+    queued: { label: '排队中', color: 'bg-yellow-100 text-yellow-700' },
+    completed: { label: '已完成', color: 'bg-green-100 text-green-700' },
+    failed: { label: '失败', color: 'bg-red-100 text-red-700' },
+  } as const;
+
+  const filteredEntries = ALL_WIKI_ENTRIES.filter(e => {
+    if (filterKB !== '全部' && e.kb !== filterKB) return false;
+    if (filterStatus !== '全部' && e.status !== filterStatus) return false;
+    if (search && !e.title.includes(search) && !e.kb.includes(search)) return false;
+    return true;
+  });
+
+  const kbs = ['全部', ...Array.from(new Set(ALL_WIKI_ENTRIES.map(e => e.kb)))];
+  const statuses = ['全部', 'published', 'reviewing', 'draft'];
+
+  const published = ALL_WIKI_ENTRIES.filter(e => e.status === 'published').length;
+  const reviewing = ALL_WIKI_ENTRIES.filter(e => e.status === 'reviewing').length;
+  const totalCites = ALL_WIKI_ENTRIES.reduce((s, e) => s + e.cites, 0);
+
+  return (
+    <div className="p-6 h-full overflow-y-auto flex flex-col gap-5">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h2 className="text-lg font-bold text-gray-900">LLM Wiki 管理</h2>
+          <p className="text-sm text-gray-500 mt-0.5">跨知识库管理所有Wiki页面与编译任务</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button className="flex items-center gap-2 px-4 py-2 border border-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50">
+            <RefreshCw size={14} /> 全量重编译
+          </button>
+          <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
+            <Plus size={14} /> 新建 Wiki 页
+          </button>
+        </div>
+      </div>
+
+      {/* Summary */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label: 'Wiki 页面总数', value: ALL_WIKI_ENTRIES.length, icon: <BookOpen size={15} className="text-blue-500" />, bg: 'bg-blue-50' },
+          { label: '已发布', value: published, icon: <CheckCircle size={15} className="text-green-500" />, bg: 'bg-green-50' },
+          { label: '待审核', value: reviewing, icon: <AlertTriangle size={15} className="text-yellow-500" />, bg: 'bg-yellow-50' },
+          { label: '总引用次数', value: totalCites.toLocaleString(), icon: <BarChart2 size={15} className="text-purple-500" />, bg: 'bg-purple-50' },
+        ].map((s, i) => (
+          <div key={i} className="bg-white rounded-xl border border-gray-200 p-4">
+            <div className={`${s.bg} w-8 h-8 rounded-lg flex items-center justify-center mb-2`}>{s.icon}</div>
+            <div className="text-xl font-bold text-gray-900">{s.value}</div>
+            <div className="text-xs text-gray-500 mt-0.5">{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 border-b border-gray-200">
+        {[
+          { id: 'pages', label: 'Wiki 页面' },
+          { id: 'jobs', label: '编译任务' },
+          { id: 'stats', label: '统计分析' },
+        ].map(t => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id as any)}
+            className={`px-4 py-2.5 text-xs font-medium border-b-2 transition-colors ${tab === t.id ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Pages tab */}
+      {tab === 'pages' && (
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative flex-1 min-w-48">
+              <Search size={13} className="absolute left-2.5 top-2.5 text-gray-400" />
+              <input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="搜索页面标题..."
+                className="w-full pl-7 pr-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:border-blue-400"
+              />
+            </div>
+            <select value={filterKB} onChange={e => setFilterKB(e.target.value)}
+              className="text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none">
+              {kbs.map(k => <option key={k}>{k}</option>)}
+            </select>
+            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+              className="text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none">
+              {statuses.map(s => <option key={s}>{s === '全部' ? '全部状态' : statusCfg[s as keyof typeof statusCfg]?.label || s}</option>)}
+            </select>
+          </div>
+
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50">
+                  {['页面标题', '所属KB', 'Layer', '状态', '引用次数', '来源文档', '更新时间', '操作'].map(h => (
+                    <th key={h} className="text-left py-2.5 px-4 text-gray-500 font-medium">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {filteredEntries.map((e, i) => (
+                  <tr key={i} className="hover:bg-gray-50 transition-colors">
+                    <td className="py-3 px-4 font-medium text-gray-800">[[{e.title}]]</td>
+                    <td className="py-3 px-4 text-gray-500">{e.kb}</td>
+                    <td className="py-3 px-4">
+                      <span className={`px-2 py-0.5 rounded text-[11px] font-medium ${e.layer === 3 ? 'bg-purple-50 text-purple-700' : 'bg-blue-50 text-blue-700'}`}>
+                        Layer{e.layer}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${statusCfg[e.status as keyof typeof statusCfg].color}`}>
+                        {statusCfg[e.status as keyof typeof statusCfg].label}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 font-semibold text-gray-800">{e.cites}</td>
+                    <td className="py-3 px-4 text-gray-500">{e.sources} 篇</td>
+                    <td className="py-3 px-4 text-gray-400">{e.updated}</td>
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-2">
+                        <button className="text-blue-600 hover:underline flex items-center gap-1"><Eye size={11} /> 查看</button>
+                        <button className="text-gray-500 hover:underline flex items-center gap-1"><Edit2 size={11} /> 编辑</button>
+                        {e.status === 'reviewing' && (
+                          <button className="text-green-600 hover:underline flex items-center gap-1"><CheckCircle size={11} /> 通过</button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Jobs tab */}
+      {tab === 'jobs' && (
+        <div className="flex flex-col gap-3">
+          {COMPILE_JOBS.map(job => (
+            <div key={job.id} className="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-4">
+              <div className={`flex-shrink-0 px-2.5 py-1 rounded-full text-[11px] font-semibold ${jobStatusCfg[job.status as keyof typeof jobStatusCfg].color}`}>
+                {jobStatusCfg[job.status as keyof typeof jobStatusCfg].label}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-sm font-semibold text-gray-800">{job.kb}</span>
+                  <span className="text-[11px] text-gray-500 px-1.5 py-0.5 bg-gray-100 rounded">{job.trigger}</span>
+                  <span className="text-[11px] text-gray-500">{job.pages} 页</span>
+                  <span className="text-[11px] text-gray-400">模型: {job.model}</span>
+                </div>
+                {job.status === 'running' && (
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-blue-500 rounded-full transition-all" style={{ width: `${job.progress}%` }} />
+                    </div>
+                    <span className="text-[11px] text-blue-600 font-medium">{job.progress}%</span>
+                  </div>
+                )}
+                {job.status === 'completed' && (
+                  <div className="h-1.5 bg-green-200 rounded-full overflow-hidden">
+                    <div className="h-full bg-green-500 rounded-full w-full" />
+                  </div>
+                )}
+              </div>
+              <div className="text-[11px] text-gray-400 flex-shrink-0">{job.started}</div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {job.status === 'failed' && (
+                  <button className="text-xs px-2.5 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 flex items-center gap-1">
+                    <RotateCcw size={11} /> 重试
+                  </button>
+                )}
+                {job.status === 'running' && (
+                  <button className="text-xs px-2.5 py-1 bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100">
+                    取消
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Stats tab */}
+      {tab === 'stats' && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <h3 className="text-sm font-semibold text-gray-800 mb-3">按知识库分布</h3>
+            <div className="space-y-3">
+              {kbs.filter(k => k !== '全部').map(kb => {
+                const count = ALL_WIKI_ENTRIES.filter(e => e.kb === kb).length;
+                return (
+                  <div key={kb} className="flex items-center gap-3">
+                    <div className="text-xs text-gray-600 w-32 flex-shrink-0">{kb}</div>
+                    <div className="flex-1 h-5 bg-gray-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-blue-500 rounded-full" style={{ width: `${(count / ALL_WIKI_ENTRIES.length) * 100}%` }} />
+                    </div>
+                    <div className="text-xs font-semibold text-gray-800 w-8 text-right">{count}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <h3 className="text-sm font-semibold text-gray-800 mb-3">引用次数排行 Top 5</h3>
+            <div className="space-y-2">
+              {ALL_WIKI_ENTRIES.sort((a, b) => b.cites - a.cites).slice(0, 5).map((e, i) => (
+                <div key={e.slug} className="flex items-center gap-3">
+                  <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold flex-shrink-0 ${i === 0 ? 'bg-yellow-400 text-white' : i === 1 ? 'bg-gray-300 text-white' : 'bg-orange-300 text-white'}`}>{i + 1}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-medium text-gray-800 truncate">[[{e.title}]]</div>
+                    <div className="text-[10px] text-gray-400">{e.kb}</div>
+                  </div>
+                  <span className="text-sm font-bold text-gray-800">{e.cites}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────
+   PAGEINDEX MANAGEMENT PAGE
+────────────────────────────────────────────── */
+
+const PAGEINDEX_TASKS = [
+  { id: 'pi-001', kb: '合同知识库', doc: '供应商合同模板V5.pdf', nodes: 85, status: 'completed', progress: 100, time: '4分钟', updated: '2026-06-05 14:20' },
+  { id: 'pi-002', kb: '合同知识库', doc: '采购协议条款.docx', nodes: 42, status: 'completed', progress: 100, time: '2分钟', updated: '2026-06-05 13:10' },
+  { id: 'pi-003', kb: '财务报告KB', doc: 'Q2财务报告_正式版.pdf', nodes: 0, status: 'running', progress: 54, time: '进行中', updated: '2026-06-06 14:30' },
+  { id: 'pi-004', kb: '供应商管理KB', doc: '供应商评估手册2025.pdf', nodes: 0, status: 'queued', progress: 0, time: '待执行', updated: '—' },
+  { id: 'pi-005', kb: '法规政策KB', doc: 'GB 2024年度汇编.pdf', nodes: 0, status: 'failed', progress: 33, time: '失败', updated: '2026-06-04 09:15' },
+];
+
+const PAGEINDEX_STATS = [
+  { kb: '合同知识库', docs: 12, indexed: 12, nodes: 1240, coverage: 100 },
+  { kb: '供应商管理KB', docs: 8, indexed: 7, nodes: 890, coverage: 87.5 },
+  { kb: '财务报告KB', docs: 15, indexed: 14, nodes: 1560, coverage: 93.3 },
+  { kb: '法规政策KB', docs: 20, indexed: 18, nodes: 2100, coverage: 90 },
+  { kb: '产品手册KB', docs: 25, indexed: 25, nodes: 3200, coverage: 100 },
+];
+
+interface PageIndexManagePageProps {
+  onNavigate: (page: string, extra?: any) => void;
+}
+
+export function PageIndexManagePage({ onNavigate }: PageIndexManagePageProps) {
+  const [tab, setTab] = useState<'tasks' | 'coverage' | 'config'>('tasks');
+  const [selectedKB, setSelectedKB] = useState('全部');
+
+  const taskStatusCfg = {
+    completed: { label: '已完成', color: 'bg-green-100 text-green-700', icon: <CheckCircle size={13} className="text-green-500" /> },
+    running: { label: '运行中', color: 'bg-blue-100 text-blue-700', icon: <RefreshCw size={13} className="text-blue-500 animate-spin" /> },
+    queued: { label: '排队中', color: 'bg-yellow-100 text-yellow-700', icon: <Clock size={13} className="text-yellow-500" /> },
+    failed: { label: '失败', color: 'bg-red-100 text-red-700', icon: <XCircle size={13} className="text-red-500" /> },
+  } as const;
+
+  const totalNodes = PAGEINDEX_STATS.reduce((s, k) => s + k.nodes, 0);
+  const totalDocs = PAGEINDEX_STATS.reduce((s, k) => s + k.docs, 0);
+  const avgCoverage = PAGEINDEX_STATS.reduce((s, k) => s + k.coverage, 0) / PAGEINDEX_STATS.length;
+
+  return (
+    <div className="p-6 h-full overflow-y-auto flex flex-col gap-5">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h2 className="text-lg font-bold text-gray-900">PageIndex 管理</h2>
+          <p className="text-sm text-gray-500 mt-0.5">跨知识库管理PageIndex构建任务与覆盖率</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => onNavigate('kb-pageindex-tree', { selectedKBId: 'kb-001' })}
+            className="flex items-center gap-2 px-4 py-2 border border-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50"
+          >
+            <TreePine size={14} /> 查看树结构
+          </button>
+          <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
+            <Zap size={14} /> 全量重建
+          </button>
+        </div>
+      </div>
+
+      {/* Summary */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label: '索引节点总数', value: totalNodes.toLocaleString(), icon: <TreePine size={15} className="text-green-500" />, bg: 'bg-green-50' },
+          { label: '已索引文档', value: `${PAGEINDEX_STATS.reduce((s, k) => s + k.indexed, 0)}/${totalDocs}`, icon: <FileText size={15} className="text-blue-500" />, bg: 'bg-blue-50' },
+          { label: '平均覆盖率', value: `${avgCoverage.toFixed(1)}%`, icon: <BarChart2 size={15} className="text-purple-500" />, bg: 'bg-purple-50' },
+          { label: '运行中任务', value: PAGEINDEX_TASKS.filter(t => t.status === 'running').length, icon: <RefreshCw size={15} className="text-orange-500" />, bg: 'bg-orange-50' },
+        ].map((s, i) => (
+          <div key={i} className="bg-white rounded-xl border border-gray-200 p-4">
+            <div className={`${s.bg} w-8 h-8 rounded-lg flex items-center justify-center mb-2`}>{s.icon}</div>
+            <div className="text-xl font-bold text-gray-900">{s.value}</div>
+            <div className="text-xs text-gray-500 mt-0.5">{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 border-b border-gray-200">
+        {[
+          { id: 'tasks', label: '构建任务' },
+          { id: 'coverage', label: 'KB 覆盖率' },
+          { id: 'config', label: '全局配置' },
+        ].map(t => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id as any)}
+            className={`px-4 py-2.5 text-xs font-medium border-b-2 transition-colors ${tab === t.id ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Tasks */}
+      {tab === 'tasks' && (
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <select value={selectedKB} onChange={e => setSelectedKB(e.target.value)}
+              className="text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none">
+              {['全部', ...PAGEINDEX_STATS.map(k => k.kb)].map(k => <option key={k}>{k}</option>)}
+            </select>
+          </div>
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50">
+                  {['文档', '知识库', '节点数', '状态', '耗时', '更新时间', '操作'].map(h => (
+                    <th key={h} className="text-left py-2.5 px-4 text-gray-500 font-medium">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {PAGEINDEX_TASKS
+                  .filter(t => selectedKB === '全部' || t.kb === selectedKB)
+                  .map((task, i) => (
+                    <tr key={i} className="hover:bg-gray-50 transition-colors">
+                      <td className="py-3 px-4 font-medium text-gray-800 max-w-xs">
+                        <div className="flex items-center gap-1.5">
+                          {taskStatusCfg[task.status as keyof typeof taskStatusCfg].icon}
+                          <span className="truncate">{task.doc}</span>
+                        </div>
+                        {task.status === 'running' && (
+                          <div className="mt-1.5 flex items-center gap-2">
+                            <div className="flex-1 h-1 bg-gray-100 rounded-full overflow-hidden">
+                              <div className="h-full bg-blue-500 rounded-full" style={{ width: `${task.progress}%` }} />
+                            </div>
+                            <span className="text-[10px] text-blue-600">{task.progress}%</span>
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-gray-500">{task.kb}</td>
+                      <td className="py-3 px-4 font-semibold text-gray-800">{task.nodes > 0 ? task.nodes : '—'}</td>
+                      <td className="py-3 px-4">
+                        <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${taskStatusCfg[task.status as keyof typeof taskStatusCfg].color}`}>
+                          {taskStatusCfg[task.status as keyof typeof taskStatusCfg].label}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-gray-500">{task.time}</td>
+                      <td className="py-3 px-4 text-gray-400">{task.updated}</td>
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2">
+                          {task.status === 'completed' && (
+                            <button
+                              onClick={() => onNavigate('kb-pageindex-tree', { selectedKBId: 'kb-001' })}
+                              className="text-blue-600 hover:underline flex items-center gap-1"
+                            >
+                              <Eye size={11} /> 查看树
+                            </button>
+                          )}
+                          {task.status === 'failed' && (
+                            <button className="text-orange-600 hover:underline flex items-center gap-1">
+                              <RotateCcw size={11} /> 重试
+                            </button>
+                          )}
+                          {task.status === 'completed' && (
+                            <button className="text-gray-500 hover:underline flex items-center gap-1">
+                              <RefreshCw size={11} /> 重建
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Coverage */}
+      {tab === 'coverage' && (
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <h3 className="text-sm font-semibold text-gray-800 mb-4">各知识库 PageIndex 覆盖率</h3>
+          <div className="space-y-4">
+            {PAGEINDEX_STATS.map((kb, i) => (
+              <div key={i}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-gray-800">{kb.kb}</span>
+                    <span className="text-[11px] text-gray-500">{kb.indexed}/{kb.docs} 文档已索引</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-bold text-gray-800">{kb.nodes.toLocaleString()} 节点</span>
+                    <span className={`text-xs font-bold ${kb.coverage === 100 ? 'text-green-600' : kb.coverage >= 90 ? 'text-blue-600' : 'text-yellow-600'}`}>
+                      {kb.coverage.toFixed(1)}%
+                    </span>
+                  </div>
+                </div>
+                <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${kb.coverage === 100 ? 'bg-green-500' : kb.coverage >= 90 ? 'bg-blue-500' : 'bg-yellow-500'}`}
+                    style={{ width: `${kb.coverage}%` }}
+                  />
+                </div>
+                {kb.coverage < 100 && (
+                  <div className="flex items-center justify-between mt-1">
+                    <span className="text-[10px] text-gray-400">{kb.docs - kb.indexed} 篇文档未索引</span>
+                    <button className="text-[10px] text-blue-600 hover:underline">补充索引</button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Config */}
+      {tab === 'config' && (
+        <div className="max-w-xl flex flex-col gap-4">
+          <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+            <h3 className="text-sm font-semibold text-gray-800">全局 PageIndex 配置</h3>
+            {[
+              { label: '最大节点深度', value: '5', desc: '树的最大层级深度' },
+              { label: '节点 Token 上限', value: '512', desc: '每节点最大 token 数' },
+              { label: '摘要模型', value: 'gpt-4o-mini', type: 'select', options: ['gpt-4o-mini', 'gpt-4o', 'claude-3-haiku'] },
+              { label: '并发构建数', value: '3', desc: '同时运行的构建任务数' },
+            ].map((f, i) => (
+              <div key={i}>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">{f.label}</label>
+                {f.type === 'select' ? (
+                  <select defaultValue={f.value} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400">
+                    {f.options!.map(o => <option key={o}>{o}</option>)}
+                  </select>
+                ) : (
+                  <input defaultValue={f.value} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400" />
+                )}
+                {f.desc && <p className="text-[10px] text-gray-400 mt-0.5">{f.desc}</p>}
+              </div>
+            ))}
+            <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
+              <Save size={14} /> 保存配置
+            </button>
+          </div>
+
+          <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
+            <h3 className="text-sm font-semibold text-gray-800">自动触发规则</h3>
+            {[
+              { label: '文档上传后自动构建', enabled: true },
+              { label: '文档更新后重建', enabled: true },
+              { label: '定时全量重建（每周日凌晨2点）', enabled: false },
+              { label: '构建失败自动重试（最多3次）', enabled: true },
+            ].map((r, i) => (
+              <div key={i} className="flex items-center justify-between">
+                <span className="text-xs text-gray-700">{r.label}</span>
+                <div className={`w-9 h-5 rounded-full relative transition-colors cursor-pointer ${r.enabled ? 'bg-blue-500' : 'bg-gray-300'}`}>
+                  <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${r.enabled ? 'left-[18px]' : 'left-0.5'}`} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
