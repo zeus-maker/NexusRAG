@@ -166,3 +166,36 @@
 - `rag3-bolt-v1.5/src/pages/KBRecycleBin.tsx` — 回收站完整页
 - `rag3-bolt-v1.5/src/pages/KnowledgeBase.tsx` — 列表接入创建/删除联动
 - `rag3-bolt-v1.5/src/App.tsx` — 回收站 import 路径调整
+
+---
+
+## 6. 智能对话功能增强（§4.1–§4.4）
+
+### 背景与目标
+
+原 Chat 页具备基础流式与引用展示，但缺 PRD 要求的对话设置侧栏、Query Trace、历史管理（搜索/置顶/删除）、答案对比与纠错反馈；选择历史对话不加载消息。目标补齐 ChatGPT 风格三栏体验与 RAG 3.0 可观测性。
+
+**用户可见变化**：左侧历史可搜索、置顶、删除并加载多轮 mock 对话；顶栏可切换知识库、答案对比、⚙ 设置；设置面板含基础/检索/高级三块；助手消息可展开 Query Trace、详细引用卡片；支持停止生成、重新生成、复制、差评纠错弹窗；空态显示开场白与带标签的推荐问题。
+
+### 改动摘要
+
+- 新增 `ChatSettingsPanel`：`ChatSettings` 类型覆盖 kbIds、prompt 模板、阈值、通道开关、LLM 参数、显示选项。
+- 新增 `data/chatMock.ts`：`CONV_MESSAGES` 多轮历史、`QUERY_TRACE_STEPS`、`PROMPT_TEMPLATES`。
+- 重写 `Chat.tsx`：对话分组（置顶/今天/昨天/更早）；`loadConversation` 同步设置与消息；流式可 `stopStream`；`showCompare` 双策略并排；`QueryTraceTimeline` 可折叠；反馈纠错 Modal。
+- 设置与查询增强面板互斥；`dark:` 适配；附件按钮占位。
+
+### 验证与风险
+
+- 验证：`npm run build` 通过；路径：侧栏「智能对话」→ 点击「合同违约条款查询」应见 4 条历史消息；⚙ 调整阈值保存 Toast；发送问题见 Trace 展开；答案对比开关显示 A/B 列；停止按钮中断流式。
+- 风险：`onNavigate('chat', { selectedConvId })` 与 store 未持久化 messages，刷新丢失；`findLastIndex` 依赖现代运行时；答案对比 B 列为静态 mock 文案。
+
+### 反思与沉淀
+
+- 设置面板与查询增强分轨符合 PRD（§4.4 vs 查询增强），避免单面板过载；后续可将 `ChatSettings` 提升到 store 并按 `conv_id` 持久化。
+- 历史对话消息放 `chatMock.ts` 便于接 API 时替换为 `loadHistory(convId)`。
+
+### 涉及文件
+
+- `rag3-bolt-v1.5/src/pages/Chat.tsx` — 对话主界面
+- `rag3-bolt-v1.5/src/components/ChatSettingsPanel.tsx` — 对话设置侧栏
+- `rag3-bolt-v1.5/src/data/chatMock.ts` — 对话 mock 与 Trace 数据
