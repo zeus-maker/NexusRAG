@@ -165,7 +165,9 @@ cd ragflow-0.25.6/docker && docker compose -f docker-compose-base.yml down
 | `ModuleNotFoundError` | 确认已 `scripts/install.sh`，且 `source backend/ragflow_rag30/.venv/bin/activate` |
 | 登录 401 | 先执行 `--init-superuser`，或检查 MySQL 是否 healthy |
 | 文档一直「解析中」 | 是否已启动 `task_executor.py` |
-| HF 模型下载慢 | `export HF_ENDPOINT=https://hf-mirror.com` 后重启 |
+| **PDF 解析失败**（`LocalEntryNotFoundError` / `text_concat_xgb`） | 运行 `./backend/ragflow_rag30/scripts/download-deepdoc-models.sh`，确认存在 `rag/res/deepdoc/updown_concat_xgb.model` 后重启 task_executor，再对失败文档点「重新解析」 |
+| 解析失败 `No default embedding model` | 前端知识库配置 →「模型与 KEY」配置 API KEY 并设置默认嵌入模型 |
+| HF 模型下载慢 | `export HF_ENDPOINT=https://hf-mirror.com` 或 `HF_MIRROR=https://hf-mirror.com` 后执行 `download-deepdoc-models.sh` |
 | macOS task_executor 崩溃 | `brew install jemalloc` |
 
 ---

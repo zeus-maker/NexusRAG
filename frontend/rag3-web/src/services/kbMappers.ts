@@ -42,6 +42,7 @@ export interface RagflowDocument {
   update_date?: string;
   created_by?: string;
   nickname?: string;
+  progress_msg?: string;
 }
 
 const CHUNK_METHOD_LABELS: Record<string, string> = {
@@ -132,6 +133,7 @@ export function mapDocumentToUI(doc: RagflowDocument, kbId: string): Document {
     tags: [],
     uploaded_by: doc.nickname || doc.created_by || '—',
     uploaded_at: tsToIso(doc.create_time, doc.create_date),
+    progress_msg: doc.progress_msg?.trim() || undefined,
   };
 }
 

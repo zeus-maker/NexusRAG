@@ -37,6 +37,8 @@ export interface Document {
   tags: string[];
   uploaded_by: string;
   uploaded_at: string;
+  /** RAGFlow 解析进度/失败原因 */
+  progress_msg?: string;
 }
 
 export interface Chunk {

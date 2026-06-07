@@ -1183,12 +1183,19 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
                     <span className="px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">{doc.file_type}</span>
                   </td>
                   <td className="px-4 py-3 text-xs text-gray-500 hidden md:table-cell">{formatBytes(doc.file_size)}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 max-w-[200px]">
                     {useRealApi ? (
-                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${parseUi.color}`}>
-                        {doc.parse_status === 'parsing' && <Loader size={10} className="animate-spin" />}
-                        {parseUi.label}
-                      </span>
+                      <div className="space-y-1">
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${parseUi.color}`}>
+                          {doc.parse_status === 'parsing' && <Loader size={10} className="animate-spin" />}
+                          {parseUi.label}
+                        </span>
+                        {doc.parse_status === 'failed' && doc.progress_msg && (
+                          <p className="text-[10px] text-red-600 line-clamp-2" title={doc.progress_msg}>
+                            {doc.progress_msg.split('\n').filter(Boolean).pop()?.slice(0, 160)}
+                          </p>
+                        )}
+                      </div>
                     ) : (
                       <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${stage.color}`}>
                         {gov?.is_stale && <AlertIcon size={10} />}{stage.label}

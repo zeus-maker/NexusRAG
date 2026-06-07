@@ -34,6 +34,11 @@ else
   echo "跳过 download_deps（未找到脚本）"
 fi
 
+# text_concat_xgb 须落在 rag/res/deepdoc（PDF DeepDOC 解析用；download_deps 路径不同）
+if [[ -x "$SCRIPT_DIR/download-deepdoc-models.sh" ]]; then
+  HF_MIRROR="${HF_MIRROR:-https://hf-mirror.com}" "$SCRIPT_DIR/download-deepdoc-models.sh"
+fi
+
 echo ""
 echo "安装完成。"
 echo "  虚拟环境: $RAG30_ROOT/.venv"

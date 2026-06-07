@@ -14,6 +14,12 @@ fi
 
 export PYTHONPATH="$RAG30_ROOT"
 export HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"
+export HF_MIRROR="${HF_MIRROR:-https://hf-mirror.com}"
+
+if [[ ! -f "$RAG30_ROOT/rag/res/deepdoc/updown_concat_xgb.model" ]]; then
+  echo "警告: 缺少 rag/res/deepdoc/updown_concat_xgb.model，PDF 解析将失败。"
+  echo "请运行: $RAG30_ROOT/scripts/download-deepdoc-models.sh"
+fi
 
 cd "$RAG30_ROOT"
 # shellcheck source=/dev/null
