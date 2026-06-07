@@ -10,7 +10,7 @@ import type { Chunk } from '../../types';
 import type { GovernedDocument } from '../../data/kbGovernanceMock';
 import { PIPELINE_STAGE_LABELS, CERT_LABELS } from '../../data/kbGovernanceMock';
 import { useRealApi } from '../../services/http';
-import { useChunks } from '../../hooks/useKbData';
+import { useChunks, setKbChunkAvailability } from '../../hooks/useKbData';
 import { kbApi } from '../../services/kbApi';
 
 interface Props {
@@ -21,10 +21,11 @@ interface Props {
 }
 
 function ApiParsePreview({ doc, kbId, onNavigate }: Props) {
-  const { data: chunkResult, loading } = useChunks(kbId, doc.doc_id, { page: 1, page_size: 200 });
+  const { data: chunkResult, loading, refresh: refreshChunks } = useChunks(kbId, doc.doc_id, { page: 1, page_size: 200 });
   const [selectedChunkId, setSelectedChunkId] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
+  const [togglingAvail, setTogglingAvail] = useState(false);
 
   const selectedChunk: Chunk | undefined = chunkResult.items.find(c => c.chunk_id === selectedChunkId)
     ?? chunkResult.items[0];
@@ -108,10 +109,36 @@ function ApiParsePreview({ doc, kbId, onNavigate }: Props) {
         <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
           {selectedChunk && (
             <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-              <div className="flex items-center gap-2 mb-2 flex-wrap">
-                <Target size={14} className="text-cyan-600" />
-                <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">Chunk #{selectedChunk.chunk_index}</h3>
-                <span className="text-[10px] text-gray-500">P{selectedChunk.page_number} · ~{selectedChunk.token_count} 字</span>
+              <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Target size={14} className="text-cyan-600" />
+                  <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">Chunk #{selectedChunk.chunk_index}</h3>
+                  <span className="text-[10px] text-gray-500">P{selectedChunk.page_number} · ~{selectedChunk.token_count} 字</span>
+                  {selectedChunk.available === false && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-700">已排除检索</span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  disabled={togglingAvail}
+                  onClick={async () => {
+                    const excluded = selectedChunk.available === false;
+                    setTogglingAvail(true);
+                    try {
+                      await setKbChunkAvailability(kbId, doc.doc_id, [selectedChunk.chunk_id], excluded);
+                      refreshChunks();
+                    } finally {
+                      setTogglingAvail(false);
+                    }
+                  }}
+                  className={`text-[10px] px-2 py-1 border rounded disabled:opacity-50 ${
+                    selectedChunk.available === false
+                      ? 'border-green-200 text-green-700 hover:bg-green-50'
+                      : 'border-red-100 text-red-600 hover:bg-red-50'
+                  }`}
+                >
+                  {selectedChunk.available === false ? '恢复检索' : '排除检索'}
+                </button>
               </div>
               <pre className="text-xs text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap font-sans max-h-48 overflow-y-auto">
                 {selectedChunk.content_preview}

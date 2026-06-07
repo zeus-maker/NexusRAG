@@ -232,3 +232,50 @@ export async function searchKb(
   if (!useRealApi) throw new Error('mock 模式下请使用检索 mock');
   return kbApi.searchDataset(kbId, { question, ...options });
 }
+
+const MIN_CHUNK_PART = 8;
+
+export async function splitKbChunk(
+  kbId: string,
+  docId: string,
+  chunkId: string,
+  splitAt: number,
+) {
+  if (!useRealApi) throw new Error('mock 模式下不支持拆分');
+  const chunk = await kbApi.getChunk(kbId, docId, chunkId);
+  const content = chunk.content_preview;
+  if (splitAt <= 0 || splitAt >= content.length) throw new Error('拆分位置无效');
+  const part1 = content.slice(0, splitAt).trim();
+  const part2 = content.slice(splitAt).trim();
+  if (part1.length < MIN_CHUNK_PART || part2.length < MIN_CHUNK_PART) {
+    throw new Error(`拆分后每段至少 ${MIN_CHUNK_PART} 个字符`);
+  }
+  await kbApi.updateChunk(kbId, docId, chunkId, { content: part1 });
+  await kbApi.createChunk(kbId, docId, { content: part2 });
+}
+
+export async function mergeKbChunks(
+  kbId: string,
+  docId: string,
+  firstId: string,
+  secondId: string,
+) {
+  if (!useRealApi) throw new Error('mock 模式下不支持合并');
+  const [a, b] = await Promise.all([
+    kbApi.getChunk(kbId, docId, firstId),
+    kbApi.getChunk(kbId, docId, secondId),
+  ]);
+  const merged = `${a.content_preview.trim()}\n${b.content_preview.trim()}`;
+  await kbApi.updateChunk(kbId, docId, firstId, { content: merged });
+  await kbApi.deleteChunks(kbId, docId, [secondId]);
+}
+
+export async function setKbChunkAvailability(
+  kbId: string,
+  docId: string,
+  chunkIds: string[],
+  available: boolean,
+) {
+  if (!useRealApi) throw new Error('mock 模式下不支持切换可用性');
+  await kbApi.switchChunkAvailability(kbId, docId, chunkIds, available);
+}

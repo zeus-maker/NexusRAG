@@ -982,3 +982,33 @@ P0 最后一项：检索测试页需从单通道混合结果升级为 PRD §10.5
 - `frontend/rag3-web/src/components/kb/DocumentActionMenu.tsx`、`DocumentParsePreviewPanel.tsx`
 - `frontend/rag3-web/src/pages/KnowledgeBase.tsx`
 - `frontend/rag3-web/src/components/KBDetailLayout.tsx`
+
+---
+
+## 33. 分块拆分 / 合并 / 排除检索对接 RAGFlow API
+
+### 背景与目标
+
+分块预览页在 API 模式下仅有展示能力，拆分/合并/排除仍为 mock 按钮。RAGFlow 提供 `PATCH/POST/DELETE /datasets/:id/documents/:doc_id/chunks` 与批量 `available` 切换；需在 rag3-web 实现与上游一致的分块编辑闭环。
+
+### 改动摘要
+
+- **`kbApi`**：`getChunk`、`createChunk`、`updateChunk`、`deleteChunks`、`switchChunkAvailability`。
+- **`splitKbChunk`**：GET 全文 → PATCH 原块为前半段 → POST 后半段为新块（重算 embedding）。
+- **`mergeKbChunks`**：GET 相邻两块 → PATCH 合并内容 → DELETE 下一块。
+- **`setKbChunkAvailability`**：`PATCH chunks` 批量设 `available`（0=排除检索，1=恢复）。
+- **`ChunkSplitDialog`**：滑块选拆分点、双栏预览、最少 8 字/段校验。
+- **`ChunkPreviewPage`**：API 模式启用拆分/合并↓/排除检索；`Chunk.available` 映射 `available_int`；解析预览面板同步排除切换。
+
+### 验证与风险
+
+- `npm run build` 通过。
+- 路径：分块页 → 选块「拆分」确认 → 列表块数 +1；「合并↓」与下一块合并；「排除检索」后标签变红且可恢复。
+- 合并仅限当前页相邻块；拆分/合并会触发后端重嵌向量，大文档可能略慢。
+
+### 涉及文件
+
+- `frontend/rag3-web/src/services/kbApi.ts`、`kbMappers.ts`、`types/index.ts`
+- `frontend/rag3-web/src/hooks/useKbData.ts`
+- `frontend/rag3-web/src/components/kb/ChunkSplitDialog.tsx`、`DocumentParsePreviewPanel.tsx`
+- `frontend/rag3-web/src/pages/KnowledgeBase.tsx`

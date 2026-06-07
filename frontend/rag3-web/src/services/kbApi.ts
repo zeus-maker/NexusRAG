@@ -7,6 +7,7 @@ import {
   mapSearchHitToFusion,
   mapIngestionLogToUI,
   mapSettingsToUpdatePayload,
+  normalizeChunkDetail,
   documentPreviewPath,
   documentDownloadPath,
   sortKeyToOrderby,
@@ -291,6 +292,58 @@ export const kbApi = {
     });
     if (!res.ok) throw new Error(`预览失败 (${res.status})`);
     return res.blob();
+  },
+
+  async getChunk(datasetId: string, documentId: string, chunkId: string): Promise<Chunk> {
+    const { data } = await apiRequest<Record<string, unknown>>(
+      `/datasets/${datasetId}/documents/${documentId}/chunks/${chunkId}`,
+    );
+    return mapChunkToUI(normalizeChunkDetail(data), 0);
+  },
+
+  async createChunk(
+    datasetId: string,
+    documentId: string,
+    body: { content: string; important_keywords?: string[] },
+  ): Promise<Chunk> {
+    const { data } = await apiRequest<{ chunk: RagflowChunk }>(
+      `/datasets/${datasetId}/documents/${documentId}/chunks`,
+      { method: 'POST', body: JSON.stringify(body) },
+    );
+    const raw = data?.chunk;
+    if (!raw?.id) throw new Error('创建分块失败');
+    return mapChunkToUI(raw, 0);
+  },
+
+  async updateChunk(
+    datasetId: string,
+    documentId: string,
+    chunkId: string,
+    body: { content?: string; available?: boolean; important_keywords?: string[] },
+  ): Promise<void> {
+    await apiRequest(
+      `/datasets/${datasetId}/documents/${documentId}/chunks/${chunkId}`,
+      { method: 'PATCH', body: JSON.stringify(body) },
+    );
+  },
+
+  async deleteChunks(datasetId: string, documentId: string, chunkIds: string[]): Promise<void> {
+    await apiRequest(`/datasets/${datasetId}/documents/${documentId}/chunks`, {
+      method: 'DELETE',
+      body: JSON.stringify({ chunk_ids: chunkIds }),
+    });
+  },
+
+  async switchChunkAvailability(
+    datasetId: string,
+    documentId: string,
+    chunkIds: string[],
+    available: boolean,
+  ): Promise<void> {
+    await apiRequest(`/datasets/${datasetId}/documents/${documentId}/chunks`, {
+      method: 'PATCH',
+      body: JSON.stringify({ chunk_ids: chunkIds, available }),
+    });
   },
 
   async listSorted(

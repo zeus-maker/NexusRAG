@@ -235,6 +235,26 @@ export function mapChunkToUI(chunk: RagflowChunk, index: number, pageOffset = 0)
     page_number: page,
     section_title: sectionTitle,
     acl_level: chunk.available === false ? 'restricted' : 'internal',
+    available: chunk.available !== false,
+  };
+}
+
+/** GET /chunks/:id 原始字段归一化 */
+export function normalizeChunkDetail(raw: Record<string, unknown>): RagflowChunk {
+  const availableInt = raw.available_int ?? raw.available;
+  return {
+    id: String(raw.id ?? raw.chunk_id ?? ''),
+    content: String(raw.content ?? raw.content_with_weight ?? ''),
+    document_id: raw.document_id as string | undefined,
+    docnm_kwd: raw.docnm_kwd as string | undefined,
+    important_keywords: (raw.important_keywords ?? raw.important_kwd) as string[] | undefined,
+    available:
+      availableInt === undefined
+        ? true
+        : typeof availableInt === 'boolean'
+          ? availableInt
+          : Number(availableInt) !== 0,
+    positions: raw.positions as number[][] | undefined,
   };
 }
 

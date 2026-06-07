@@ -49,6 +49,8 @@ export interface Chunk {
   page_number: number;
   section_title: string;
   acl_level: string;
+  /** RAGFlow available_int：false 时不参与检索 */
+  available?: boolean;
 }
 
 export interface ChatMessage {

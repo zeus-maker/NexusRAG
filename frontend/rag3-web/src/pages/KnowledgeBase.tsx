@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { DocumentParsePreviewPanel } from '../components/kb/DocumentParsePreviewPanel';
 import { DocumentActionMenu, parseStatusFilterLabel } from '../components/kb/DocumentActionMenu';
+import { ChunkSplitDialog } from '../components/kb/ChunkSplitDialog';
 import type { ParseStatus } from '../types';
 import { getPageIndexDocIdForKbDoc } from '../data/pageIndexMock';
 import { mockKBs, mockDocuments, mockChunks, mockIndexStatuses } from '../mockData';
@@ -27,7 +28,11 @@ import {
   deleteKbDocuments,
   parseKbDocuments,
   stopKbDocuments,
+  splitKbChunk,
+  mergeKbChunks,
+  setKbChunkAvailability,
 } from '../hooks/useKbData';
+import type { Chunk } from '../types';
 import { useRealApi } from '../services/http';
 import { PARSE_STATUS_UI } from '../services/kbMappers';
 import { kbApi } from '../services/kbApi';
@@ -1330,7 +1335,71 @@ export function ChunkPreviewPage({ kbId, docId, onNavigate }: ChunkPreviewPagePr
   const [toast, setToast] = useState<string | null>(null);
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [splitTarget, setSplitTarget] = useState<Chunk | null>(null);
+  const [chunkActionId, setChunkActionId] = useState<string | null>(null);
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
+
+  const handleSplitChunk = async (chunk: Chunk, splitAt: number) => {
+    setChunkActionId(chunk.chunk_id);
+    try {
+      await splitKbChunk(kbId, effectiveDocId, chunk.chunk_id, splitAt);
+      showToast(`Chunk #${chunk.chunk_index} 已拆分为两块`);
+      setSplitTarget(null);
+      refreshChunks();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : '拆分失败');
+      throw e;
+    } finally {
+      setChunkActionId(null);
+    }
+  };
+
+  const handleMergeWithNext = async (chunk: Chunk, index: number) => {
+    const next = chunks[index + 1];
+    if (!next) {
+      showToast('没有下一块可合并（仅限当前页）');
+      return;
+    }
+    if (!useRealApi) {
+      showToast(`Chunk #${chunk.chunk_index} 已与下一块合并（原型）`);
+      return;
+    }
+    if (!confirm(`将 Chunk #${chunk.chunk_index} 与 #${next.chunk_index} 合并？`)) return;
+    setChunkActionId(chunk.chunk_id);
+    try {
+      await mergeKbChunks(kbId, effectiveDocId, chunk.chunk_id, next.chunk_id);
+      showToast('已合并分块');
+      refreshChunks();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : '合并失败');
+    } finally {
+      setChunkActionId(null);
+    }
+  };
+
+  const handleToggleExclude = async (chunk: Chunk) => {
+    const isExcluded = useRealApi ? chunk.available === false : excluded.has(chunk.chunk_id);
+    if (!useRealApi) {
+      if (isExcluded) {
+        setExcluded(prev => { const n = new Set(prev); n.delete(chunk.chunk_id); return n; });
+        showToast(`Chunk #${chunk.chunk_index} 已恢复检索`);
+      } else {
+        setExcluded(prev => new Set(prev).add(chunk.chunk_id));
+        showToast(`Chunk #${chunk.chunk_index} 已排除检索`);
+      }
+      return;
+    }
+    setChunkActionId(chunk.chunk_id);
+    try {
+      await setKbChunkAvailability(kbId, effectiveDocId, [chunk.chunk_id], isExcluded);
+      showToast(isExcluded ? '已恢复参与检索' : '已排除，不参与检索');
+      refreshChunks();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : '操作失败');
+    } finally {
+      setChunkActionId(null);
+    }
+  };
   const qualityMap = useRealApi ? {} : Object.fromEntries(getAllChunkQuality().map(q => [q.chunk_id, q]));
   const totalPages = Math.max(1, Math.ceil(chunkResult.total / CHUNK_PAGE_SIZE));
 
@@ -1462,10 +1531,13 @@ export function ChunkPreviewPage({ kbId, docId, onNavigate }: ChunkPreviewPagePr
 
       {/* Chunks list */}
       <div className="space-y-3">
-        {chunks.map(chunk => {
+        {chunks.map((chunk, index) => {
           const tc = contentTypeConfig[chunk.content_type];
           const q = qualityMap[chunk.chunk_id];
-          const isExcluded = excluded.has(chunk.chunk_id) || q?.excluded_from_retrieval;
+          const isExcluded = useRealApi
+            ? chunk.available === false
+            : excluded.has(chunk.chunk_id) || q?.excluded_from_retrieval;
+          const acting = chunkActionId === chunk.chunk_id;
           const isExpanded = expandedId === chunk.chunk_id;
           const preview = chunk.content_preview;
           const displayText = isExpanded || preview.length <= 320 ? preview : `${preview.slice(0, 320)}…`;
@@ -1476,8 +1548,8 @@ export function ChunkPreviewPage({ kbId, docId, onNavigate }: ChunkPreviewPagePr
                   <span className="text-xs font-bold text-gray-600 dark:text-gray-400">#{chunk.chunk_index}</span>
                   <span className="text-xs font-medium text-gray-800 dark:text-gray-200 truncate max-w-[200px]">{chunk.section_title}</span>
                   <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${tc.color}`}>{tc.icon} {tc.label}</span>
-                  {useRealApi && chunk.acl_level === 'restricted' && (
-                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${aclConfig.restricted}`}>不可用</span>
+                  {isExcluded && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-700">已排除检索</span>
                   )}
                   {!useRealApi && (
                     <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${aclConfig[chunk.acl_level] || 'bg-gray-100 text-gray-600'}`}>🔒 {chunk.acl_level}</span>
@@ -1508,19 +1580,36 @@ export function ChunkPreviewPage({ kbId, docId, onNavigate }: ChunkPreviewPagePr
                   </button>
                 )}
               </div>
-              {!useRealApi && (
-                <div className="flex items-center justify-end gap-2 px-4 py-2 border-t border-gray-100 dark:border-gray-800">
-                  <button type="button" onClick={() => showToast(`Chunk #${chunk.chunk_index} 已拆分（原型）`)} className="text-[10px] px-2 py-1 border border-gray-200 rounded hover:bg-gray-50 text-gray-600">拆分</button>
-                  <button type="button" onClick={() => showToast(`Chunk #${chunk.chunk_index} 已与下一块合并（原型）`)} className="text-[10px] px-2 py-1 border border-gray-200 rounded hover:bg-gray-50 text-gray-600">合并↓</button>
-                  <button
-                    type="button"
-                    onClick={() => { setExcluded(prev => new Set(prev).add(chunk.chunk_id)); showToast(`Chunk #${chunk.chunk_index} 已排除`); }}
-                    className="text-[10px] px-2 py-1 border border-red-100 rounded hover:bg-red-50 text-red-600"
-                  >
-                    排除
-                  </button>
-                </div>
-              )}
+              <div className="flex items-center justify-end gap-2 px-4 py-2 border-t border-gray-100 dark:border-gray-800">
+                <button
+                  type="button"
+                  disabled={acting || chunk.content_preview.length < 16}
+                  onClick={() => useRealApi ? setSplitTarget(chunk) : showToast(`Chunk #${chunk.chunk_index} 已拆分（原型）`)}
+                  className="text-[10px] px-2 py-1 border border-gray-200 rounded hover:bg-gray-50 text-gray-600 disabled:opacity-40"
+                >
+                  拆分
+                </button>
+                <button
+                  type="button"
+                  disabled={acting || index >= chunks.length - 1}
+                  onClick={() => void handleMergeWithNext(chunk, index)}
+                  className="text-[10px] px-2 py-1 border border-gray-200 rounded hover:bg-gray-50 text-gray-600 disabled:opacity-40"
+                >
+                  合并↓
+                </button>
+                <button
+                  type="button"
+                  disabled={acting}
+                  onClick={() => void handleToggleExclude(chunk)}
+                  className={`text-[10px] px-2 py-1 border rounded disabled:opacity-40 ${
+                    isExcluded
+                      ? 'border-green-200 text-green-700 hover:bg-green-50'
+                      : 'border-red-100 text-red-600 hover:bg-red-50'
+                  }`}
+                >
+                  {isExcluded ? '恢复检索' : '排除检索'}
+                </button>
+              </div>
             </div>
           );
         })}
@@ -1532,6 +1621,15 @@ export function ChunkPreviewPage({ kbId, docId, onNavigate }: ChunkPreviewPagePr
           <span className="text-xs text-gray-500">{chunkPage} / {totalPages}</span>
           <button type="button" disabled={chunkPage >= totalPages} onClick={() => setChunkPage(p => p + 1)} className="p-1.5 rounded border border-gray-200 disabled:opacity-40"><ChevronRight size={14} /></button>
         </div>
+      )}
+
+      {splitTarget && (
+        <ChunkSplitDialog
+          chunk={splitTarget}
+          open
+          onClose={() => setSplitTarget(null)}
+          onConfirm={pos => handleSplitChunk(splitTarget, pos)}
+        />
       )}
     </div>
     </KBDetailLayout>
