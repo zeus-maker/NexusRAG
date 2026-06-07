@@ -307,6 +307,28 @@ export const kbApi = {
     return data;
   },
 
+  async traceRag3Index(datasetId: string, type: 'pageindex' | 'wiki') {
+    const { data } = await apiRequest<Record<string, unknown>>(
+      `/rag3/datasets/${datasetId}/index?type=${type}`,
+    );
+    return data;
+  },
+
+  async runRag3Index(
+    datasetId: string,
+    type: 'pageindex' | 'wiki',
+    docIds?: string[],
+  ) {
+    const { data } = await apiRequest<Record<string, unknown>>(
+      `/rag3/datasets/${datasetId}/index?type=${type}`,
+      {
+        method: 'POST',
+        body: JSON.stringify(docIds?.length ? { doc_ids: docIds } : {}),
+      },
+    );
+    return data;
+  },
+
   async listTags(datasetId: string): Promise<string[]> {
     const { data } = await apiRequest<string[] | Record<string, string[]>>(
       `/datasets/${datasetId}/tags`,

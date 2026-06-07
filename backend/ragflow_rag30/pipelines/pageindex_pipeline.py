@@ -8,7 +8,24 @@ class PageIndexPipeline(BasePipeline):
     channel = "pageindex"
 
     def run(self, query: str, kb_id: str, top_k: int = 10, **ctx) -> PipelineResult:
-        # TODO: 对接 PageIndex 服务 / advanced_rag
+        from rag3.index_service import search_pageindex_hits
+
+        raw_hits = search_pageindex_hits(kb_id, query, top_k=top_k)
+        if raw_hits:
+            hits = [
+                PipelineHit(
+                    chunk_id=h["chunk_id"],
+                    doc_id=h["doc_id"],
+                    doc_name=h["doc_name"],
+                    score=h["score"],
+                    snippet=h["snippet"],
+                    channel=self.channel,
+                    metadata=h.get("metadata") or {},
+                )
+                for h in raw_hits
+            ]
+            return PipelineResult(channel=self.channel, hits=hits, latency_ms=120)
+
         mock_hits = [
             PipelineHit(
                 chunk_id="c-p1",

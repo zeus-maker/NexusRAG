@@ -24,6 +24,8 @@ interface Props {
   rows: QueueRow[];
   graphTrace: IndexTraceSnapshot | null;
   raptorTrace: IndexTraceSnapshot | null;
+  pageindexTrace: IndexTraceSnapshot | null;
+  wikiTrace: IndexTraceSnapshot | null;
   pollCount: number;
   pollIntervalMs: number;
   onRefresh: () => void;
@@ -41,11 +43,59 @@ function tracePercent(trace: IndexTraceSnapshot | null | undefined): number {
   return 0;
 }
 
+function buildIndexStage(
+  key: string,
+  label: string,
+  logTitle: string,
+  vectorDone: boolean,
+  vectorFailed: boolean,
+  triggered: boolean | undefined,
+  trace: IndexTraceSnapshot | null,
+  activeClass: string,
+  onOpenIndexLog: (title: string, msg: string) => void,
+): StageRow {
+  const pct = vectorDone ? tracePercent(trace) : 0;
+  const running = Boolean(trace?.running);
+  const failed = Boolean(trace?.failed);
+  const done = Boolean(trace?.done);
+  return {
+    key,
+    label,
+    percent: vectorDone ? (triggered || running || done || failed ? pct : 5) : 0,
+    statusLabel: vectorFailed
+      ? '跳过'
+      : !vectorDone
+        ? '待向量完成'
+        : failed
+          ? '失败'
+          : done
+            ? '完成'
+            : running
+              ? '构建中'
+              : triggered
+                ? '排队中'
+                : '待触发',
+    statusClass: failed
+      ? 'bg-red-100 text-red-700'
+      : done
+        ? 'bg-green-100 text-green-700'
+        : running || triggered
+          ? activeClass
+          : 'bg-gray-100 text-gray-600',
+    log: trace?.progress_msg,
+    onLog: trace?.progress_msg
+      ? () => onOpenIndexLog(logTitle, trace.progress_msg)
+      : undefined,
+  };
+}
+
 function buildStages(
   doc: Document,
   enhancement: DocEnhancementRecord | undefined,
   graphTrace: IndexTraceSnapshot | null,
   raptorTrace: IndexTraceSnapshot | null,
+  pageindexTrace: IndexTraceSnapshot | null,
+  wikiTrace: IndexTraceSnapshot | null,
   onOpenDocLog: (doc: Document) => void,
   onOpenIndexLog: (title: string, msg: string) => void,
 ): StageRow[] {
@@ -73,104 +123,38 @@ function buildStages(
     },
   ];
 
+  const triggered = enhancement?.indexTriggered;
+
   if (cfg?.enablePageIndex) {
-    const ready = vectorDone;
-    stages.push({
-      key: 'pageindex',
-      label: 'PageIndex',
-      percent: ready ? 100 : vectorRunning ? Math.min(vectorPct, 30) : 0,
-      statusLabel: vectorFailed ? '跳过' : ready ? '已启用' : '待向量完成',
-      statusClass: ready ? 'bg-green-100 text-green-700' : 'bg-purple-100 text-purple-700',
-      log: ready ? '配置已写入 parser_config.ext，检索路由将启用 PageIndex 通道。' : undefined,
-      onLog: ready ? () => onOpenIndexLog('PageIndex', '配置已写入，向量解析完成后在检索阶段生效。') : undefined,
-    });
+    stages.push(buildIndexStage(
+      'pageindex', 'PageIndex', 'PageIndex 构建',
+      vectorDone, vectorFailed, triggered, pageindexTrace,
+      'bg-purple-100 text-purple-700', onOpenIndexLog,
+    ));
   }
 
   if (cfg?.enableWiki) {
-    const ready = vectorDone;
-    stages.push({
-      key: 'wiki',
-      label: 'LLM Wiki',
-      percent: ready ? 100 : vectorRunning ? Math.min(vectorPct, 20) : 0,
-      statusLabel: vectorFailed ? '跳过' : ready ? '已启用' : '待向量完成',
-      statusClass: ready ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-800',
-      log: ready ? '配置已写入 parser_config.ext，检索路由将启用 Wiki 通道。' : undefined,
-      onLog: ready ? () => onOpenIndexLog('LLM Wiki', '配置已写入，向量解析完成后在检索阶段生效。') : undefined,
-    });
+    stages.push(buildIndexStage(
+      'wiki', 'LLM Wiki', 'LLM Wiki 编译',
+      vectorDone, vectorFailed, triggered, wikiTrace,
+      'bg-amber-100 text-amber-800', onOpenIndexLog,
+    ));
   }
 
   if (cfg?.enableGraphRag) {
-    const triggered = enhancement?.indexTriggered;
-    const pct = vectorDone ? tracePercent(graphTrace) : 0;
-    const running = Boolean(graphTrace?.running);
-    const failed = Boolean(graphTrace?.failed);
-    const done = Boolean(graphTrace?.done);
-    stages.push({
-      key: 'graph',
-      label: '知识图谱',
-      percent: vectorDone ? (triggered || running || done || failed ? pct : 5) : 0,
-      statusLabel: vectorFailed
-        ? '跳过'
-        : !vectorDone
-          ? '待向量完成'
-          : failed
-            ? '失败'
-            : done
-              ? '完成'
-              : running
-                ? '构建中'
-                : triggered
-                  ? '排队中'
-                  : '待触发',
-      statusClass: failed
-        ? 'bg-red-100 text-red-700'
-        : done
-          ? 'bg-green-100 text-green-700'
-          : running || triggered
-            ? 'bg-indigo-100 text-indigo-700'
-            : 'bg-gray-100 text-gray-600',
-      log: graphTrace?.progress_msg,
-      onLog: graphTrace?.progress_msg
-        ? () => onOpenIndexLog('知识图谱 GraphRAG', graphTrace.progress_msg)
-        : undefined,
-    });
+    stages.push(buildIndexStage(
+      'graph', '知识图谱', '知识图谱 GraphRAG',
+      vectorDone, vectorFailed, triggered, graphTrace,
+      'bg-indigo-100 text-indigo-700', onOpenIndexLog,
+    ));
   }
 
   if (cfg?.enableRaptor) {
-    const triggered = enhancement?.indexTriggered;
-    const pct = vectorDone ? tracePercent(raptorTrace) : 0;
-    const running = Boolean(raptorTrace?.running);
-    const failed = Boolean(raptorTrace?.failed);
-    const done = Boolean(raptorTrace?.done);
-    stages.push({
-      key: 'raptor',
-      label: 'RAPTOR',
-      percent: vectorDone ? (triggered || running || done || failed ? pct : 5) : 0,
-      statusLabel: vectorFailed
-        ? '跳过'
-        : !vectorDone
-          ? '待向量完成'
-          : failed
-            ? '失败'
-            : done
-              ? '完成'
-              : running
-                ? '构建中'
-                : triggered
-                  ? '排队中'
-                  : '待触发',
-      statusClass: failed
-        ? 'bg-red-100 text-red-700'
-        : done
-          ? 'bg-green-100 text-green-700'
-          : running || triggered
-            ? 'bg-cyan-100 text-cyan-800'
-            : 'bg-gray-100 text-gray-600',
-      log: raptorTrace?.progress_msg,
-      onLog: raptorTrace?.progress_msg
-        ? () => onOpenIndexLog('RAPTOR', raptorTrace.progress_msg)
-        : undefined,
-    });
+    stages.push(buildIndexStage(
+      'raptor', 'RAPTOR', 'RAPTOR',
+      vectorDone, vectorFailed, triggered, raptorTrace,
+      'bg-cyan-100 text-cyan-800', onOpenIndexLog,
+    ));
   }
 
   return stages;
@@ -191,6 +175,8 @@ export function DocumentParseQueuePanel({
   rows,
   graphTrace,
   raptorTrace,
+  pageindexTrace,
+  wikiTrace,
   pollCount,
   pollIntervalMs,
   onRefresh,
@@ -232,6 +218,8 @@ export function DocumentParseQueuePanel({
           enhancement,
           graphTrace,
           raptorTrace,
+          pageindexTrace,
+          wikiTrace,
           onOpenDocLog,
           onOpenIndexLog,
         );

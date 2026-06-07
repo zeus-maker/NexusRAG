@@ -21,6 +21,8 @@ export interface IndexTraceSnapshot {
 export interface ParseQueuePollingState {
   graphTrace: IndexTraceSnapshot | null;
   raptorTrace: IndexTraceSnapshot | null;
+  pageindexTrace: IndexTraceSnapshot | null;
+  wikiTrace: IndexTraceSnapshot | null;
   pollCount: number;
   lastRefreshedAt: number | null;
 }
@@ -64,44 +66,62 @@ export function useParseQueuePolling(
   const [state, setState] = useState<ParseQueuePollingState>({
     graphTrace: null,
     raptorTrace: null,
+    pageindexTrace: null,
+    wikiTrace: null,
     pollCount: 0,
     lastRefreshedAt: null,
   });
   const triggeringRef = useRef<Set<string>>(new Set());
   const documentsRef = useRef(documents);
-  const graphTraceRef = useRef<IndexTraceSnapshot | null>(null);
-  const raptorTraceRef = useRef<IndexTraceSnapshot | null>(null);
+  const tracesRef = useRef({
+    graph: null as IndexTraceSnapshot | null,
+    raptor: null as IndexTraceSnapshot | null,
+    pageindex: null as IndexTraceSnapshot | null,
+    wiki: null as IndexTraceSnapshot | null,
+  });
 
   documentsRef.current = documents;
-  graphTraceRef.current = state.graphTrace;
-  raptorTraceRef.current = state.raptorTrace;
+  tracesRef.current = {
+    graph: state.graphTrace,
+    raptor: state.raptorTrace,
+    pageindex: state.pageindexTrace,
+    wiki: state.wikiTrace,
+  };
 
   const pollOnce = useCallback(async () => {
     refreshDocs();
     const docs = documentsRef.current;
-
     const enhancements = listEnhancementsForKb(kbId);
+
     const needsGraph = enhancements.some(e => e.config.enableGraphRag);
     const needsRaptor = enhancements.some(e => e.config.enableRaptor);
+    const needsPageIndex = enhancements.some(e => e.config.enablePageIndex);
+    const needsWiki = enhancements.some(e => e.config.enableWiki);
 
-    let graphTrace = graphTraceRef.current;
-    let raptorTrace = raptorTraceRef.current;
+    let graphTrace = tracesRef.current.graph;
+    let raptorTrace = tracesRef.current.raptor;
+    let pageindexTrace = tracesRef.current.pageindex;
+    let wikiTrace = tracesRef.current.wiki;
 
     if (needsGraph || graphTrace?.running) {
       try {
-        const raw = await kbApi.traceIndex(kbId, 'graph');
-        graphTrace = normalizeTrace(raw);
-      } catch {
-        /* keep previous */
-      }
+        graphTrace = normalizeTrace(await kbApi.traceIndex(kbId, 'graph'));
+      } catch { /* keep */ }
     }
     if (needsRaptor || raptorTrace?.running) {
       try {
-        const raw = await kbApi.traceIndex(kbId, 'raptor');
-        raptorTrace = normalizeTrace(raw);
-      } catch {
-        /* keep previous */
-      }
+        raptorTrace = normalizeTrace(await kbApi.traceIndex(kbId, 'raptor'));
+      } catch { /* keep */ }
+    }
+    if (needsPageIndex || pageindexTrace?.running) {
+      try {
+        pageindexTrace = normalizeTrace(await kbApi.traceRag3Index(kbId, 'pageindex'));
+      } catch { /* keep */ }
+    }
+    if (needsWiki || wikiTrace?.running) {
+      try {
+        wikiTrace = normalizeTrace(await kbApi.traceRag3Index(kbId, 'wiki'));
+      } catch { /* keep */ }
     }
 
     const batches = new Set(enhancements.filter(e => !e.indexTriggered).map(e => e.batchId));
@@ -119,7 +139,7 @@ export function useParseQueuePolling(
         });
         if (parsedIds.length) {
           await syncKbParserConfigFromUpload(kbId, sample.config);
-          await triggerKbEnhancementIndexes(kbId, sample.config);
+          await triggerKbEnhancementIndexes(kbId, sample.config, parsedIds);
         }
         markBatchIndexTriggered(kbId, batchId);
       } catch {
@@ -135,6 +155,8 @@ export function useParseQueuePolling(
     setState(prev => ({
       graphTrace: graphTrace ?? prev.graphTrace,
       raptorTrace: raptorTrace ?? prev.raptorTrace,
+      pageindexTrace: pageindexTrace ?? prev.pageindexTrace,
+      wikiTrace: wikiTrace ?? prev.wikiTrace,
       pollCount: prev.pollCount + 1,
       lastRefreshedAt: Date.now(),
     }));
@@ -145,6 +167,8 @@ export function useParseQueuePolling(
     || listEnhancementsForKb(kbId).some(e => !e.indexTriggered)
     || state.graphTrace?.running
     || state.raptorTrace?.running
+    || state.pageindexTrace?.running
+    || state.wikiTrace?.running
   );
 
   useEffect(() => {

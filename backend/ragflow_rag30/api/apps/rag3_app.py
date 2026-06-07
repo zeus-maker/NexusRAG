@@ -6,7 +6,17 @@ import time
 
 from quart import request
 
-from api.utils.api_utils import get_json_result, server_error_response, validate_request
+from api.apps import login_required
+from api.utils.api_utils import (
+    add_tenant_id_to_kwargs,
+    get_error_data_result,
+    get_json_result,
+    get_result,
+    server_error_response,
+    validate_request,
+)
+from rag3.index_service import run_index as rag3_run_index
+from rag3.index_service import trace_index as rag3_trace_index
 from fusion import reciprocal_rank_fusion, rerank
 from pipelines import run_pipelines
 from router import RouterEngine
@@ -105,3 +115,31 @@ async def rag3_query():
     except Exception as e:
         logger.exception("rag3_query failed")
         return server_error_response(e)
+
+
+@manager.route("/datasets/<dataset_id>/index", methods=["POST"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def rag3_run_dataset_index(tenant_id, dataset_id):
+    """触发 RAG3 增强索引构建：pageindex | wiki"""
+    index_type = (request.args.get("type", "") or "").lower()
+    body = await request.get_json(silent=True) or {}
+    doc_ids = body.get("doc_ids") if isinstance(body, dict) else None
+    if doc_ids is not None and not isinstance(doc_ids, list):
+        return get_error_data_result(message="doc_ids must be a list")
+    success, result = rag3_run_index(dataset_id, tenant_id, index_type, doc_ids=doc_ids)
+    if success:
+        return get_result(data=result)
+    return get_error_data_result(message=result)
+
+
+@manager.route("/datasets/<dataset_id>/index", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+def rag3_trace_dataset_index(tenant_id, dataset_id):
+    """查询 RAG3 增强索引任务进度（对齐 datasets index trace 字段）"""
+    index_type = (request.args.get("type", "") or "").lower()
+    success, result = rag3_trace_index(dataset_id, tenant_id, index_type)
+    if success:
+        return get_result(data=result)
+    return get_error_data_result(message=result)

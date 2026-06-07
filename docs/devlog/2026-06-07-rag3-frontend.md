@@ -1523,3 +1523,41 @@ PDF 已能渲染，但左栏预览区不出现滚动条，多页内容随容器�
 - `frontend/rag3-web/src/services/kbApi.ts`
 - `frontend/rag3-web/src/pages/KnowledgeBase.tsx`
 - `frontend/rag3-web/src/utils/documentUtil.ts`
+
+---
+
+## 52. RAG3 PageIndex / LLM Wiki 真实 ingest 与 trace API
+
+### 背景与目标
+
+§51 中 PageIndex / Wiki 仅显示「配置已启用」占位进度，无真实构建任务；用户需要与 GraphRAG 同级的 ingest 进度与日志，且检索通道应能读到构建产物。
+
+### 改动摘要
+
+- 后端新增 `rag3/index_service.py`：从 ES 拉取文档分块，构建 PageIndex 树（按页节点）与 Wiki 条目，产物存 Redis；异步任务状态可 `trace`。
+- `rag3_app` 暴露 `POST/GET /v1/rag3/datasets/:id/index?type=pageindex|wiki`（可选 `doc_ids` 限定批次文档）。
+- `PageIndexPipeline` / `WikiPipeline` 优先检索 Redis 产物，无产物时回退 mock。
+- 前端 `kbApi.runRag3Index` / `traceRag3Index`；轮询与队列面板接入真实 pageindex/wiki 进度与 `progress_msg` 日志。
+
+### 验证与风险
+
+- `npm run build` 通过；`python -c "from rag3.index_service import ..."` 通过。
+- 上传勾选 PageIndex+Wiki → 向量完成后队列显示构建进度；`GET /api/v1/rag3/datasets/:id/index?type=pageindex` 返回 `progress`/`progress_msg`。
+- 风险：任务状态仅存 Redis（无 DB 字段）；服务重启后 trace 可能丢失但产物仍在；需**重启 ragflow_server** 加载新路由。
+
+### 反思与沉淀
+
+- RAG3 增强索引与 RAGFlow 原生 graph/raptor 解耦，走 `/v1/rag3/*` 避免改 `dataset_api` 枚举；后续可接真实 PageIndex 服务替换树构建逻辑。
+- Wiki 按库合并条目，重复 doc 构建会 upsert 同 id 条目。
+
+### 涉及文件
+
+- `backend/ragflow_rag30/rag3/index_service.py`（新建）
+- `backend/ragflow_rag30/api/apps/rag3_app.py`
+- `backend/ragflow_rag30/pipelines/pageindex_pipeline.py`
+- `backend/ragflow_rag30/pipelines/wiki_pipeline.py`
+- `frontend/rag3-web/src/services/kbApi.ts`
+- `frontend/rag3-web/src/hooks/useKbData.ts`
+- `frontend/rag3-web/src/hooks/useParseQueuePolling.ts`
+- `frontend/rag3-web/src/components/kb/DocumentParseQueuePanel.tsx`
+- `frontend/rag3-web/src/pages/KnowledgeBase.tsx`

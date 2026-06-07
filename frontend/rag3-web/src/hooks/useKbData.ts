@@ -250,18 +250,21 @@ export async function syncKbParserConfigFromUpload(
 export async function triggerKbEnhancementIndexes(
   kbId: string,
   config: DocumentUploadConfig,
+  docIds?: string[],
 ): Promise<void> {
   if (!useRealApi) return;
   const tasks: Promise<unknown>[] = [];
   if (config.enableGraphRag) {
-    tasks.push(
-      kbApi.runIndex(kbId, 'graph').catch(() => undefined),
-    );
+    tasks.push(kbApi.runIndex(kbId, 'graph').catch(() => undefined));
   }
   if (config.enableRaptor) {
-    tasks.push(
-      kbApi.runIndex(kbId, 'raptor').catch(() => undefined),
-    );
+    tasks.push(kbApi.runIndex(kbId, 'raptor').catch(() => undefined));
+  }
+  if (config.enablePageIndex) {
+    tasks.push(kbApi.runRag3Index(kbId, 'pageindex', docIds).catch(() => undefined));
+  }
+  if (config.enableWiki) {
+    tasks.push(kbApi.runRag3Index(kbId, 'wiki', docIds).catch(() => undefined));
   }
   await Promise.all(tasks);
 }

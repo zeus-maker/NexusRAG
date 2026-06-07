@@ -832,6 +832,8 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
     const enhancementDocIds = new Set(enhancements.map(e => e.docId));
     const graphRunning = parseQueuePolling.graphTrace?.running;
     const raptorRunning = parseQueuePolling.raptorTrace?.running;
+    const pageindexRunning = parseQueuePolling.pageindexTrace?.running;
+    const wikiRunning = parseQueuePolling.wikiTrace?.running;
 
     return documents
       .filter(d => {
@@ -842,13 +844,22 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
         if (!rec.indexTriggered && d.parse_status === 'parsed') return true;
         if (rec.config.enableGraphRag && graphRunning) return true;
         if (rec.config.enableRaptor && raptorRunning) return true;
+        if (rec.config.enablePageIndex && pageindexRunning) return true;
+        if (rec.config.enableWiki && wikiRunning) return true;
         return false;
       })
       .map(doc => ({
         doc,
         enhancement: getDocEnhancement(doc.doc_id),
       }));
-  }, [documents, kbId, parseQueuePolling.graphTrace?.running, parseQueuePolling.raptorTrace?.running]);
+  }, [
+    documents,
+    kbId,
+    parseQueuePolling.graphTrace?.running,
+    parseQueuePolling.raptorTrace?.running,
+    parseQueuePolling.pageindexTrace?.running,
+    parseQueuePolling.wikiTrace?.running,
+  ]);
 
   const uploadQueue = useRealApi ? [] : getUploadQueue();
 
@@ -1109,6 +1120,8 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
           rows={parseQueueRows}
           graphTrace={parseQueuePolling.graphTrace}
           raptorTrace={parseQueuePolling.raptorTrace}
+          pageindexTrace={parseQueuePolling.pageindexTrace}
+          wikiTrace={parseQueuePolling.wikiTrace}
           pollCount={parseQueuePolling.pollCount}
           pollIntervalMs={parseQueuePolling.pollIntervalMs}
           onRefresh={refreshDocs}
