@@ -21,13 +21,15 @@ interface Props {
 export function DocumentParsePreviewPanel({ doc, kbId, governed, onNavigate }: Props) {
   if (useRealApi) {
     return (
-      <KnowledgeChunkWorkspace
-        key={doc.doc_id}
-        doc={doc}
-        kbId={kbId}
-        onNavigate={onNavigate}
-        pageSize={200}
-      />
+      <div className="flex flex-1 h-0 min-h-0 flex-col overflow-hidden">
+        <KnowledgeChunkWorkspace
+          key={doc.doc_id}
+          doc={doc}
+          kbId={kbId}
+          onNavigate={onNavigate}
+          pageSize={200}
+        />
+      </div>
     );
   }
 

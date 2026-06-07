@@ -212,10 +212,10 @@ export function PdfPreviewWithHighlights({ url, highlights = [], className = '' 
   const pages = numPages > 0 ? Array.from({ length: numPages }, (_, i) => i + 1) : [];
 
   return (
-    <div className={`flex flex-col h-full min-h-0 max-h-full overflow-hidden ${className}`}>
+    <div className={`flex flex-col flex-1 h-0 min-h-0 overflow-hidden ${className}`}>
       <div
         ref={containerRef}
-        className="relative flex-1 min-h-0 overflow-y-auto overflow-x-hidden bg-gray-100 dark:bg-gray-800"
+        className="relative h-full min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain bg-gray-100 dark:bg-gray-800"
       >
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-500 z-10 bg-gray-100/80">

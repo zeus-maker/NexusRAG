@@ -1262,3 +1262,30 @@ RAGFlow 用 `react-pdf-highlighter` 的本质是「外层 `h-full min-h-0 overfl
 
 - `frontend/rag3-web/src/components/kb/PdfPreviewWithHighlights.tsx` — 多页滚动预览
 - `frontend/rag3-web/src/hooks/useKbData.ts` — 分块 refetch 才清空 data
+
+---
+
+## 43. 修复 PDF 预览区无滚动条（flex 高度链）
+
+### 背景与目标
+
+PDF 已能渲染，但左栏预览区不出现滚动条，多页内容随容器撑高。根因是 flex 子项使用 `h-full` 未配合 `h-0`，高度随 PDF 内容增长，`overflow-y-auto` 永不触发。对齐 RAGFlow `flex-1 h-0 min-h-0` 模式贯通整条预览高度链。
+
+### 改动摘要
+
+- 预览链路统一 `flex-1 h-0 min-h-0 overflow-hidden`：`DocumentParsePreviewPanel` 包裹层、`KnowledgeChunkWorkspace` 根与左栏、`DocumentScrollFrame`、`PdfPreviewWithHighlights`。
+- 滚动容器改为 `h-full min-h-0 overflow-y-auto overscroll-contain`。
+- 解析预览外框 `h-[min(560px,48vh)]`；分块页工作区 `flex-1 h-0`。
+
+### 验证与风险
+
+- `npm run build` 通过。
+- 多页 PDF 左栏应出现纵向滚动条，在固定高度框内浏览；外层页面不应被 PDF 撑高。
+
+### 涉及文件
+
+- `frontend/rag3-web/src/components/kb/PdfPreviewWithHighlights.tsx`
+- `frontend/rag3-web/src/components/kb/KnowledgeChunkWorkspace.tsx`
+- `frontend/rag3-web/src/components/kb/DocumentScrollFrame.tsx`
+- `frontend/rag3-web/src/components/kb/DocumentParsePreviewPanel.tsx`
+- `frontend/rag3-web/src/pages/KnowledgeBase.tsx`

@@ -1300,10 +1300,7 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
     })()}
 
     {showPreview && previewDoc && canPreview && (
-      <div
-        className="flex-shrink-0 flex flex-col border-t border-gray-200 dark:border-gray-700 overflow-hidden"
-        style={{ height: 'min(560px, 48vh)' }}
-      >
+      <div className="flex-shrink-0 flex flex-col h-[min(560px,48vh)] min-h-0 border-t border-gray-200 dark:border-gray-700 overflow-hidden">
         <DocumentParsePreviewPanel
           key={previewDoc.doc_id}
           doc={previewDoc}
@@ -1573,7 +1570,7 @@ export function ChunkPreviewPage({ kbId, docId, onNavigate }: ChunkPreviewPagePr
       )}
 
       {useRealApi && doc && (
-        <div className="flex-1 min-h-[min(720px,calc(100vh-11rem))] bg-white rounded-xl border border-gray-200 overflow-hidden flex flex-col">
+        <div className="flex-1 h-0 min-h-[min(720px,calc(100vh-11rem))] bg-white rounded-xl border border-gray-200 overflow-hidden flex flex-col">
           <KnowledgeChunkWorkspace
             key={doc.doc_id}
             doc={doc}

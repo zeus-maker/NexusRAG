@@ -154,7 +154,7 @@ export function KnowledgeChunkWorkspace({
 
   /** 左侧：文档预览（对齐 RAGFlow w-2/5） */
   const documentPreviewPane = (
-    <article className="flex flex-col min-w-0 h-full min-h-0 max-h-full overflow-hidden flex-[2] lg:flex-[2] border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-700 bg-gray-50/30 dark:bg-gray-900/20">
+    <article className="flex flex-col min-w-0 min-h-0 overflow-hidden flex-[2] lg:flex-[2] border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-700 bg-gray-50/30 dark:bg-gray-900/20">
       <header className="flex-shrink-0 px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
@@ -174,17 +174,17 @@ export function KnowledgeChunkWorkspace({
           </button>
         </div>
       </header>
-      <div className="flex-1 min-h-0 p-3 overflow-hidden flex flex-col">
+      <div className="flex-1 h-0 min-h-0 p-3 overflow-hidden flex flex-col">
         {!previewUrl ? (
           <p className="text-xs text-gray-500 p-4">无法加载原始文件预览</p>
         ) : (
-          <DocumentScrollFrame className="flex-1 min-h-0 h-full">
+          <DocumentScrollFrame>
             {isPdf ? (
               <PdfPreviewWithHighlights
                 key={`${doc.doc_id}:${previewUrl}`}
                 url={previewUrl}
                 highlights={highlights}
-                className="h-full min-h-0"
+                className="flex-1 h-0 min-h-0"
               />
             ) : (
               <DocumentIframePreview url={previewUrl} title={doc.original_name} />
@@ -281,8 +281,8 @@ export function KnowledgeChunkWorkspace({
 
   if (layout === 'stack') {
     return (
-      <div className="flex flex-col flex-1 min-h-0">
-        <div className="h-[42vh] flex-shrink-0">{documentPreviewPane}</div>
+      <div className="flex flex-col flex-1 h-0 min-h-0 overflow-hidden">
+        <div className="h-[42vh] flex-shrink-0 min-h-0 overflow-hidden flex flex-col">{documentPreviewPane}</div>
         <div className="flex-1 min-h-0">{chunkResultPane}</div>
         {lightboxModal}
       </div>
@@ -290,7 +290,7 @@ export function KnowledgeChunkWorkspace({
   }
 
   return (
-    <div className="flex flex-1 min-h-0 h-full max-h-full overflow-hidden flex-col lg:flex-row">
+    <div className="flex flex-1 h-0 min-h-0 w-full overflow-hidden flex-col lg:flex-row">
       {documentPreviewPane}
       {chunkResultPane}
       {lightboxModal}
