@@ -1076,3 +1076,25 @@ P0 最后一项：检索测试页需从单通道混合结果升级为 PRD §10.5
 - `frontend/rag3-web/src/components/kb/DocumentParsePreviewPanel.tsx`
 - `frontend/rag3-web/src/services/kbMappers.ts`、`kbApi.ts`、`types/index.ts`
 - `frontend/rag3-web/src/pages/KnowledgeBase.tsx`
+
+---
+
+## 36. 修复 PDF 预览 getDocument 参数错误
+
+### 背景与目标
+
+分块页/解析预览加载 PDF 时报错 `getDocument - expected either data, range, or url parameter`。根因是 pdfjs-dist v6 不再接受字符串作为 `getDocument(url)` 首参，且 blob URL 在 worker 中偶发不兼容。
+
+### 改动摘要
+
+- `PdfPreviewWithHighlights`：先 `fetch(url)` 取 `ArrayBuffer`，再 `getDocument({ data })`。
+- 增加 `url` 为空时的早期返回与错误提示。
+
+### 验证与风险
+
+- `npm run build` 通过。
+- 路径：文档管理 → 解析预览 / 分块页，PDF 应正常渲染与高亮。
+
+### 涉及文件
+
+- `frontend/rag3-web/src/components/kb/PdfPreviewWithHighlights.tsx`
