@@ -122,6 +122,11 @@ storybook-static/
 *storybook.log
 
 # --- Project-specific ---
+# 上游 RAGFlow 本地镜像（用户自行 clone/copy，不入库）
+ragflow-0.25.4/
+ragflow-0.25.6/
+ragflow-*/
+
 .workbuddy/
 __v0_runtime_loader.js
 __v0_devtools.tsx

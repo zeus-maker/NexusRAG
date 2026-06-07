@@ -753,3 +753,39 @@ P0 最后一项：检索测试页需从单通道混合结果升级为 PRD §10.5
 - `rag3-bolt-v1.5/src/pages/SystemOpsPages.tsx` / `data/systemOpsMock.ts`
 - `rag3-bolt-v1.5/src/store.ts` / `App.tsx` / `Layout.tsx`
 - `docs/prd/前端原型实现进度.md`
+
+---
+
+## 26. Monorepo 脚手架：backend 迁移 + RAG3 后端扩展 + frontend/rag3-web
+
+### 背景与目标
+
+用户已将 RAGFlow 0.25.6 手动复制到仓库根目录 `ragflow-0.25.6/`（只读上游镜像，不入 git）。接续全栈落地：将二开工作区从 `web/ragflow_rag30` 迁至 `backend/ragflow_rag30`，从 `rag3-bolt-v1.5` 复制生产前端至 `frontend/rag3-web`（不改原型），并补齐 RAG3 路由/流水线/融合/API 脚手架。
+
+**用户可见变化**：仓库具备标准 monorepo 布局与 `CLAUDE.md` 约定；后端新增 `/v1/rag3/health`、`/classify`、`/query` 三条扩展路由；前端具备 API 客户端与 Vite 开发代理，可通过 `VITE_USE_REAL_API` 逐步替换 mock。
+
+### 改动摘要
+
+- **目录重组**：`git mv web/ragflow_rag30 → backend/ragflow_rag30`；新增 `frontend/rag3-web/`（rsync 自 bolt）；`.gitignore` 忽略 `ragflow-0.25.6/` 与 `ragflow-*/`。
+- **RAG3 后端包**：`router/`（四分类 + `RouterEngine.plan`）、`pipelines/`（五通道 mock + `run_pipelines`）、`fusion/`（RRF + rerank 占位）、`security/chunk_acl`（ACL 透传占位）。
+- **API**：`api/apps/rag3_app.py` 注册 `health` / `classify` / `query`，查询路径为 分类 → 多通道 → RRF → 精排。
+- **同步脚本**：`scripts/sync-from-ragflow.sh` 从上游 rsync 复用模块（保护 router/pipelines/fusion 等 RAG3 包）。
+- **前端**：`src/services/api.ts` + `vite.config.ts` 代理 `/api → :9380`；`package.json` 更名为 `rag3-web`。
+
+### 验证与风险
+
+- 验证：`cd frontend/rag3-web && npm install && npm run build` 通过。
+- 后端：`export PYTHONPATH=backend/ragflow_rag30 && python api/ragflow_server.py` 启动后 `curl localhost:9380/v1/rag3/health`（需本地依赖与 DB，未在本机全量验证）。
+- 风险：流水线仍为 mock 数据；`rerank` / `chunk_acl` 为占位；大量 `web/ragflow_rag30` git mv 暂存待一次性 commit；`web/rag3-bolt-v1.5-new` 等历史目录仍保留。
+
+### 反思与沉淀
+
+- 上游镜像与二开工作区分离后，`sync-from-ragflow.sh --dry-run` 可安全预览复用模块差异，RAG3 扩展包列入 PROTECTED 避免被 rsync 覆盖。
+- 前端默认仍走 mock，`VITE_USE_REAL_API=true` 作为模块级切换开关，避免一次性切断原型演示能力。
+
+### 涉及文件
+
+- `CLAUDE.md` / `README.md` / `backend/README.md` — monorepo 约定
+- `backend/ragflow_rag30/router/`、`pipelines/`、`fusion/`、`security/`、`api/apps/rag3_app.py`
+- `frontend/rag3-web/src/services/api.ts`、`vite.config.ts`、`package.json`
+- `scripts/sync-from-ragflow.sh`、`.gitignore`

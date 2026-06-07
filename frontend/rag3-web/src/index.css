@@ -1,0 +1,95 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #d1d5db;
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #9ca3af;
+  }
+
+  .dark ::-webkit-scrollbar-thumb {
+    background: #4b5563;
+  }
+
+  .dark ::-webkit-scrollbar-thumb:hover {
+    background: #6b7280;
+  }
+}
+
+/* 夜间模式：内容区通用浅色类名适配 */
+@layer components {
+  .dark main .bg-white {
+    @apply bg-gray-800 border-gray-700;
+  }
+
+  .dark main .bg-gray-50 {
+    @apply bg-gray-800/60;
+  }
+
+  .dark main .text-gray-900 {
+    @apply text-gray-100;
+  }
+
+  .dark main .text-gray-800 {
+    @apply text-gray-200;
+  }
+
+  .dark main .text-gray-700 {
+    @apply text-gray-300;
+  }
+
+  .dark main .text-gray-600 {
+    @apply text-gray-400;
+  }
+
+  .dark main .text-gray-500 {
+    @apply text-gray-400;
+  }
+
+  .dark main .border-gray-200 {
+    @apply border-gray-700;
+  }
+
+  .dark main .border-gray-100 {
+    @apply border-gray-700;
+  }
+
+  .dark main .hover\:bg-gray-50:hover {
+    @apply bg-gray-700/50;
+  }
+}
+
+@layer utilities {
+  .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .line-clamp-3 {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+}
