@@ -1,7 +1,7 @@
 // 各页面视图 HTML 片段
 const VIEWS_HTML = `
 <!-- 3.1 知识库列表 -->
-<section class="view active" id="view-kb-list">
+<section class="view" id="view-kb-list">
   <div class="page-hd">
     <div><div class="breadcrumb">首页 / 知识库管理</div><h2>知识库管理</h2></div>
     <button class="btn btn-primary" data-modal="modalCreateKB">+ 创建知识库</button>
@@ -61,7 +61,7 @@ const VIEWS_HTML = `
     <button class="btn btn-sm" data-view="kb-documents">文件</button>
     <button class="btn btn-sm" data-view="kb-retrieval">检索测试</button>
     <button class="btn btn-sm" data-view="kb-config">配置</button>
-    <button class="btn btn-sm" data-view="kb-graph">知识图谱</button>
+    <button class="btn btn-sm" data-view="kb-graphrag">知识图谱</button>
     <button class="btn btn-sm" data-view="kb-wiki">Wiki</button>
     <button class="btn btn-sm" data-view="kb-pageindex">PageIndex</button>
     <button class="btn btn-sm" data-view="kb-index">索引状态</button>
@@ -215,9 +215,9 @@ const VIEWS_HTML = `
   <div class="index-grid" style="margin-bottom:20px">
     <div class="index-card"><div class="icon">🔢</div><div>向量索引</div><div class="count">154/156</div><div class="progress" style="margin:8px 0"><span style="width:98.7%"></span></div><div class="pct">98.7%</div><div style="font-size:11px;color:var(--muted);margin-top:6px">健康度 98 · 2min 前</div><button class="btn btn-sm" style="margin-top:8px">重试 2</button></div>
     <div class="index-card"><div class="icon">📝</div><div>全文索引</div><div class="count">156/156</div><div class="progress" style="margin:8px 0"><span style="width:100%"></span></div><div class="pct">100%</div><div style="font-size:11px;color:var(--muted);margin-top:6px">健康度 100 · 5min 前</div></div>
-    <div class="index-card"><div class="icon">🌳</div><div>PageIdx</div><div class="count">85/156</div><div class="progress" style="margin:8px 0"><span style="width:54.5%"></span></div><div class="pct">54.5%</div><div style="font-size:11px;color:var(--muted);margin-top:6px">健康度 85 · 1h 前</div><button class="btn btn-sm" style="margin-top:8px">重试 12</button></div>
-    <div class="index-card"><div class="icon">🔗</div><div>图谱索引</div><div class="count">42/156</div><div class="progress" style="margin:8px 0"><span style="width:26.9%"></span></div><div class="pct">26.9%</div><div style="font-size:11px;color:var(--muted);margin-top:6px">健康度 72 · 3h 前</div><button class="btn btn-sm" style="margin-top:8px">暂停</button></div>
-    <div class="index-card"><div class="icon">📖</div><div>Wiki 编译</div><div class="count">12/42</div><div class="progress" style="margin:8px 0"><span style="width:28.6%"></span></div><div class="pct">28.6%</div><div style="font-size:11px;color:var(--muted);margin-top:6px">健康度 60 · 1d 前</div><button class="btn btn-sm" style="margin-top:8px">编译</button></div>
+    <div class="index-card"><div class="icon">🌳</div><div>PageIndex</div><div class="count">85/156</div><div class="progress" style="margin:8px 0"><span style="width:54.5%"></span></div><div class="pct">54.5%</div><div style="font-size:11px;color:var(--muted);margin-top:6px">健康度 85 · 1h 前</div><button class="btn btn-sm" data-view="kb-pageindex" style="margin-top:8px">管理→</button></div>
+    <div class="index-card"><div class="icon">🔗</div><div>GraphRAG</div><div class="count">42/156</div><div class="progress" style="margin:8px 0"><span style="width:26.9%"></span></div><div class="pct">26.9% · Lazy</div><div style="font-size:11px;color:var(--muted);margin-top:6px">健康度 72 · 3h 前</div><button class="btn btn-sm" data-view="kb-graphrag" style="margin-top:8px">管理→</button></div>
+    <div class="index-card"><div class="icon">📖</div><div>Wiki 编译</div><div class="count">12/42</div><div class="progress" style="margin:8px 0"><span style="width:28.6%"></span></div><div class="pct">28.6%</div><div style="font-size:11px;color:var(--muted);margin-top:6px">健康度 60 · 1d 前</div><button class="btn btn-sm" data-view="kb-wiki" style="margin-top:8px">管理→</button></div>
   </div>
   <div class="card"><div class="card-hd"><h3>失败文档列表</h3></div><div class="card-bd" style="padding:0"><table class="table"><thead><tr><th>文档</th><th>索引类型</th><th>原因</th><th>操作</th></tr></thead><tbody>
     <tr><td>📄 复杂表格报告.pdf</td><td>向量索引</td><td>嵌入超时</td><td><button class="btn btn-sm">重试</button> <button class="btn btn-sm">跳过</button></td></tr>

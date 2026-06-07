@@ -1,17 +1,22 @@
 // 扩展页面视图（§10 RAGFlow兼容层 + §11 RAG3.0增强层）
 const VIEWS_HTML_EXT = `
 <!-- 10.2 首页工作台 -->
-<section class="view" id="view-home">
+<section class="view active" id="view-home">
   <div class="page-hd">
-    <div><h2>欢迎回来，李婷</h2><p>企业级 RAG 3.0 知识库工作台</p></div>
+    <div><h2>欢迎回来，李婷 👋</h2><p>2026年6月6日星期六 · 企业级 RAG 3.0 工作台</p></div>
     <button class="btn btn-primary" data-modal="modalCreateKB">+ 创建知识库</button>
   </div>
-  <div class="metrics">
-    <div class="metric"><div class="label">总文档数</div><div class="value">12,486</div><div class="trend">本月 +18.7%</div></div>
-    <div class="metric"><div class="label">总 Chunk</div><div class="value">1.86M</div></div>
-    <div class="metric"><div class="label">本月查询</div><div class="value">45,200</div></div>
-    <div class="metric"><div class="label">命中率</div><div class="value">94.2%</div></div>
+  <div class="stat-row" style="grid-template-columns:repeat(4,1fr);margin-bottom:20px">
+    <div class="stat-card"><div class="stat-icon blue">📄</div><div><div class="stat-val">12,486</div><div class="stat-lbl">文档总数 · +18.7%</div></div></div>
+    <div class="stat-card"><div class="stat-icon purple">📦</div><div><div class="stat-val">1.86M</div><div class="stat-lbl">Chunk 已向量化</div></div></div>
+    <div class="stat-card"><div class="stat-icon green">📈</div><div><div class="stat-val">45,200</div><div class="stat-lbl">本月查询</div></div></div>
+    <div class="stat-card"><div class="stat-icon amber">🎯</div><div><div class="stat-val">94.2%</div><div class="stat-lbl">7天命中率</div></div></div>
   </div>
+  <div class="card" style="margin-bottom:20px"><div class="card-hd"><h3>RAG 3.0 索引运营</h3><button class="btn btn-sm" data-view="sys-monitor">查看全部 →</button></div><div class="card-bd" style="font-size:13px;display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+    <div><strong>Wiki 编译中</strong><br><span style="color:var(--amber)">3 库 · 12 页</span></div>
+    <div><strong>PageIndex 失败</strong><br><span style="color:var(--red)">2 文档</span> <button class="btn btn-sm" data-view="kb-pageindex">处理</button></div>
+    <div><strong>GraphRAG 建索引</strong><br><span style="color:var(--amber)">3 队列</span> <button class="btn btn-sm" data-view="kb-graphrag">管理</button></div>
+  </div></div>
   <p style="font-size:13px;color:var(--muted);margin-bottom:10px">最近知识库</p>
   <div class="kb-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:20px">
     <div class="kb-card" data-view="kb-detail"><div class="emoji">📚</div><h4>法务合同</h4><p class="desc">156 文档</p></div>
@@ -39,7 +44,7 @@ const VIEWS_HTML_EXT = `
     <button class="btn btn-sm" data-view="kb-documents">文件</button>
     <button class="btn btn-sm" data-view="kb-retrieval">检索测试</button>
     <button class="btn btn-sm active" data-view="kb-config">配置</button>
-    <button class="btn btn-sm" data-view="kb-graph">知识图谱</button>
+    <button class="btn btn-sm" data-view="kb-graphrag">知识图谱</button>
     <button class="btn btn-sm" data-view="kb-wiki">Wiki</button>
     <button class="btn btn-sm" data-view="kb-pageindex">PageIndex</button>
     <button class="btn btn-sm" data-view="kb-index">索引状态</button>
@@ -63,13 +68,13 @@ const VIEWS_HTML_EXT = `
       <div class="form-item"><label>权限</label><select class="select" style="width:100%"><option>团队</option><option>仅自己</option></select></div>
     </div>
   </div>
-  <div class="config-section"><h4>GraphRAG <span class="tag tag-green">启用</span></h4>
+  <div class="config-section"><h4>GraphRAG <span class="tag tag-green">LazyGraphRAG 启用</span></h4>
     <div class="form-row">
-      <div class="form-item"><label>实体类型</label><input class="field" style="width:100%;height:32px" value="ORG, PERSON, CONTRACT"></div>
-      <div class="form-item"><label>方法</label><select class="select" style="width:100%"><option>general</option><option>light</option></select></div>
+      <div class="form-item"><label>模式</label><select class="select" style="width:100%"><option>LazyGraphRAG</option><option>GraphRAG 全量</option><option>LightRAG</option></select></div>
+      <div class="form-item"><label>实体类型</label><input class="field" style="width:100%;height:32px" value="ORG, PERSON, CLAUSE"></div>
       <div class="form-item"><label>LLM</label><select class="select" style="width:100%"><option>DeepSeek-v4</option></select></div>
     </div>
-    <button class="btn btn-sm">生成图谱</button> <button class="btn btn-sm">查看日志</button>
+    <button class="btn btn-sm btn-primary" data-view="kb-graphrag">进入 GraphRAG Hub →</button> <button class="btn btn-sm" data-view="kb-logs">查看日志</button>
   </div>
   <div class="config-section"><h4>RAPTOR <span class="tag tag-red">禁用</span></h4>
     <p style="font-size:13px;color:var(--muted)">max_token / threshold / clustering_method 参数（启用后展开）</p>
@@ -85,7 +90,7 @@ const VIEWS_HTML_EXT = `
     <button class="btn btn-sm" data-view="kb-documents">文件</button>
     <button class="btn btn-sm active" data-view="kb-retrieval">检索测试</button>
     <button class="btn btn-sm" data-view="kb-config">配置</button>
-    <button class="btn btn-sm" data-view="kb-graph">知识图谱</button>
+    <button class="btn btn-sm" data-view="kb-graphrag">知识图谱</button>
     <button class="btn btn-sm" data-view="kb-wiki">Wiki</button>
   </div>
   <div class="retrieval-layout">
@@ -109,17 +114,20 @@ const VIEWS_HTML_EXT = `
   </div>
 </section>
 
-<!-- 11.1 Wiki 管理 -->
+<!-- 11.1 Wiki Hub -->
 <section class="view" id="view-kb-wiki">
-  <div class="page-hd">
-    <div><div class="breadcrumb">法务合同知识库 / Wiki</div><h2>LLM Wiki 知识编译</h2></div>
-    <div class="toolbar" style="margin:0"><button class="btn btn-sm">编译队列</button><button class="btn btn-primary">触发全量编译</button></div>
+  <div class="kb-layout">
+    <nav class="kb-sidenav" data-kb-nav="kb-wiki"></nav>
+    <div class="kb-content">
+  <div class="page-hd compact">
+    <div><div class="breadcrumb">法务合同知识库 / Wiki Hub</div><h2>LLM Wiki 知识编译</h2></div>
+    <div class="toolbar" style="margin:0"><button class="btn btn-sm">编译队列 3</button><button class="btn btn-primary">触发全量编译</button></div>
   </div>
-  <div class="kb-subnav">
-    <button class="btn btn-sm" data-view="kb-config">配置</button>
-    <button class="btn btn-sm active" data-view="kb-wiki">Wiki</button>
-    <button class="btn btn-sm" data-view="kb-pageindex">PageIndex</button>
-    <button class="btn btn-sm" data-view="kb-graph">知识图谱</button>
+  <div class="hub-tabs">
+    <button class="hub-tab active">浏览器</button>
+    <button class="hub-tab">编译队列</button>
+    <button class="hub-tab">编译设置</button>
+    <button class="hub-tab">统计</button>
   </div>
   <div class="tabs"><button class="tab">Layer1 原始资料</button><button class="tab active">Layer2 实体概念</button><button class="tab">Layer3 综合分析</button></div>
   <div class="split-layout">
@@ -145,13 +153,23 @@ const VIEWS_HTML_EXT = `
       <div class="toolbar" style="margin-top:16px"><button class="btn btn-sm">编辑</button><button class="btn btn-sm">版本历史</button><button class="btn btn-sm btn-primary">审核通过</button></div>
     </div>
   </div>
+    </div>
+  </div>
 </section>
 
-<!-- 11.2 PageIndex 树 -->
+<!-- 11.2 PageIndex Hub -->
 <section class="view" id="view-kb-pageindex">
-  <div class="page-hd">
-    <div><div class="breadcrumb">供应商合同模板 V5.pdf / PageIndex</div><h2>PageIndex 树索引</h2></div>
-    <button class="btn">重建树索引</button>
+  <div class="kb-layout">
+    <nav class="kb-sidenav" data-kb-nav="kb-pageindex"></nav>
+    <div class="kb-content">
+  <div class="page-hd compact">
+    <div><div class="breadcrumb">法务合同知识库 / PageIndex Hub</div><h2>PageIndex 树索引</h2></div>
+    <button class="btn">批量重建</button>
+  </div>
+  <div class="hub-tabs">
+    <button class="hub-tab active">概览</button>
+    <button class="hub-tab">文档列表</button>
+    <button class="hub-tab">设置</button>
   </div>
   <div class="split-layout">
     <div class="wiki-tree">
@@ -175,21 +193,7 @@ const VIEWS_HTML_EXT = `
       </div>
     </div></div>
   </div>
-</section>
-
-<!-- 知识图谱 -->
-<section class="view" id="view-kb-graph">
-  <div class="page-hd">
-    <div><div class="breadcrumb">法务合同知识库 / 知识图谱</div><h2>知识图谱</h2></div>
-    <button class="btn btn-danger btn-sm">删除图谱</button>
-  </div>
-  <div class="graph-canvas">
-    <div class="graph-node" style="top:40%;left:45%">供应商<br>实体</div>
-    <div class="graph-node" style="top:25%;left:25%">违约金<br>概念</div>
-    <div class="graph-node" style="top:25%;left:65%">采购方<br>实体</div>
-    <div class="graph-node" style="top:60%;left:30%">合同V5<br>文档</div>
-    <div class="graph-node" style="top:60%;left:60%">保密义务<br>条款</div>
-    <p style="position:absolute;bottom:12px;left:12px;font-size:12px;color:var(--muted)">实体 42 · 关系 128 · 最后更新 3h 前</p>
+    </div>
   </div>
 </section>
 

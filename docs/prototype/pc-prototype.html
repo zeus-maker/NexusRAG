@@ -3,27 +3,29 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>企业级 RAG 3.0 知识库系统 - PC 原型</title>
+  <title>企业级 RAG 3.0 知识库系统 - PC 原型 v3</title>
   <style>
     :root {
-      --primary: #1677ff;
-      --primary-hover: #4096ff;
-      --bg: #f5f5f5;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --primary-light: #eff6ff;
+      --bg: #f9fafb;
       --panel: #ffffff;
-      --text: rgba(0,0,0,.88);
-      --muted: rgba(0,0,0,.45);
-      --border: #d9d9d9;
-      --radius: 6px;
-      --sidebar-w: 220px;
-      --topbar-h: 56px;
-      --statusbar-h: 28px;
-      --green: #52c41a;
-      --amber: #faad14;
-      --red: #ff4d4f;
-      --shadow: 0 1px 2px rgba(0,0,0,.03), 0 1px 6px -1px rgba(0,0,0,.02);
+      --text: #111827;
+      --muted: #6b7280;
+      --border: #e5e7eb;
+      --radius: 8px;
+      --radius-lg: 12px;
+      --sidebar-w: 224px;
+      --topbar-h: 48px;
+      --statusbar-h: 24px;
+      --green: #16a34a;
+      --amber: #d97706;
+      --red: #dc2626;
+      --shadow: 0 1px 3px rgba(0,0,0,.08);
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font: 14px/1.5715 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; color: var(--text); background: var(--bg); }
+    body { font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; color: var(--text); background: var(--bg); -webkit-font-smoothing: antialiased; }
     button, input, select, textarea { font: inherit; }
     button { cursor: pointer; border: none; background: none; }
     a { color: var(--primary); text-decoration: none; }
@@ -40,42 +42,54 @@
     .form-item input { width: 100%; height: 36px; padding: 0 11px; border: 1px solid var(--border); border-radius: var(--radius); outline: none; }
     .form-item input:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(22,119,255,.1); }
     .btn { height: 36px; padding: 0 15px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--panel); display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
-    .btn-primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+    .btn-primary { background: var(--primary); border-color: var(--primary); color: #fff; font-weight: 500; box-shadow: var(--shadow); }
     .btn-primary:hover { background: var(--primary-hover); }
     .btn-block { width: 100%; justify-content: center; }
     .btn-sm { height: 28px; padding: 0 10px; font-size: 13px; }
     .btn-danger { color: var(--red); border-color: #ffa39e; background: #fff2f0; }
 
     /* App Layout */
-    .app { display: none; min-height: 100vh; grid-template-rows: var(--topbar-h) 1fr var(--statusbar-h) 32px; }
-    .app.visible { display: grid; }
-    .topbar { display: flex; align-items: center; gap: 16px; padding: 0 20px; background: var(--panel); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 100; }
-    .topbar-brand { display: flex; align-items: center; gap: 10px; min-width: 180px; }
-    .topbar-brand .mark { width: 32px; height: 32px; border-radius: 6px; background: var(--primary); color: #fff; display: grid; place-items: center; font-weight: 700; font-size: 13px; }
-    .topbar-brand span { font-weight: 600; font-size: 15px; }
-    .topbar-search { flex: 1; max-width: 480px; position: relative; }
-    .topbar-search input { width: 100%; height: 34px; padding: 0 12px 0 32px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); outline: none; }
-    .topbar-search input:focus { border-color: var(--primary); background: #fff; }
-    .topbar-search .icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--muted); }
-    .topbar-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
-    .icon-btn { width: 34px; height: 34px; border: 1px solid var(--border); border-radius: var(--radius); display: grid; place-items: center; background: #fff; }
-    .user-menu { display: flex; align-items: center; gap: 8px; padding: 4px 10px 4px 4px; border: 1px solid var(--border); border-radius: var(--radius); }
-    .user-avatar { width: 26px; height: 26px; border-radius: 50%; background: #e6f4ff; color: var(--primary); display: grid; place-items: center; font-size: 12px; font-weight: 600; }
+    .app { display: none; height: 100vh; flex-direction: column; }
+    .app.visible { display: flex; }
+    .topbar { display: flex; align-items: center; gap: 12px; height: var(--topbar-h); padding: 0 16px; background: var(--panel); border-bottom: 1px solid var(--border); flex-shrink: 0; z-index: 100; }
+    .topbar-toggle { width: 32px; height: 32px; border-radius: var(--radius); display: grid; place-items: center; color: var(--muted); }
+    .topbar-toggle:hover { background: #f3f4f6; }
+    .topbar-breadcrumb { flex: 1; display: flex; align-items: center; gap: 6px; font-size: 13px; min-width: 0; overflow: hidden; }
+    .crumb { color: var(--muted); white-space: nowrap; }
+    .crumb.current { color: var(--text); font-weight: 600; }
+    .crumb-sep { color: #d1d5db; }
+    .topbar-search { position: relative; flex-shrink: 0; }
+    .topbar-search input { width: 208px; height: 32px; padding: 0 12px 0 30px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: #f9fafb; outline: none; font-size: 12px; }
+    .topbar-search input:focus { border-color: var(--primary); background: #fff; box-shadow: 0 0 0 2px rgba(37,99,235,.15); }
+    .topbar-search .icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 12px; }
+    .topbar-actions { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+    .icon-btn { width: 32px; height: 32px; border-radius: var(--radius); display: grid; place-items: center; background: transparent; color: var(--muted); position: relative; }
+    .icon-btn:hover { background: #f3f4f6; }
+    .icon-btn .notif-dot { position: absolute; top: 6px; right: 6px; width: 6px; height: 6px; background: var(--red); border-radius: 50%; }
+    .user-menu { display: flex; align-items: center; gap: 8px; padding: 4px 8px 4px 4px; border-radius: var(--radius-lg); }
+    .user-menu:hover { background: #f3f4f6; }
+    .user-avatar { width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: #fff; display: grid; place-items: center; font-size: 11px; font-weight: 700; }
 
-    .body-wrap { display: flex; min-height: 0; }
-    .sidebar { width: var(--sidebar-w); background: var(--panel); border-right: 1px solid var(--border); padding: 12px 8px; overflow-y: auto; flex-shrink: 0; transition: width .2s; }
+    .body-wrap { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+    .sidebar { width: var(--sidebar-w); background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; transition: width .25s; }
     .sidebar.collapsed { width: 64px; }
-    .sidebar.collapsed .nav-label, .sidebar.collapsed .nav-sub, .sidebar.collapsed .collapse-text { display: none; }
-    .nav-group { margin-bottom: 4px; }
-    .nav-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 12px; border-radius: var(--radius); color: var(--text); text-align: left; }
-    .nav-item:hover { background: rgba(0,0,0,.04); }
-    .nav-item.active { background: #e6f4ff; color: var(--primary); font-weight: 500; }
-    .nav-item .icon { width: 18px; text-align: center; flex-shrink: 0; }
-    .nav-sub { padding-left: 40px; }
-    .nav-sub .nav-item { padding: 6px 12px; font-size: 13px; }
-    .sidebar-toggle { margin: 8px 12px 0; padding: 6px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; width: calc(100% - 24px); text-align: left; }
+    .sidebar.collapsed .nav-label, .sidebar.collapsed .nav-sub, .sidebar.collapsed .sidebar-logo-text, .sidebar.collapsed .sidebar-footer { display: none; }
+    .sidebar-logo { display: flex; align-items: center; gap: 10px; height: var(--topbar-h); padding: 0 16px; border-bottom: 1px solid #f3f4f6; flex-shrink: 0; }
+    .sidebar-logo .mark { width: 28px; height: 28px; border-radius: var(--radius); background: var(--primary); color: #fff; display: grid; place-items: center; font-size: 14px; flex-shrink: 0; }
+    .sidebar-logo-text .title { font-size: 14px; font-weight: 700; line-height: 1.2; }
+    .sidebar-logo-text .sub { font-size: 10px; color: var(--muted); }
+    .sidebar-nav { flex: 1; overflow-y: auto; padding: 8px 0; }
+    .nav-group { margin-bottom: 2px; }
+    .nav-item { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 16px; color: #4b5563; text-align: left; font-size: 14px; transition: background .15s; border-right: 2px solid transparent; }
+    .nav-item:hover { background: #f9fafb; color: var(--text); }
+    .nav-item.active { background: var(--primary-light); color: var(--primary); font-weight: 500; border-right-color: var(--primary); }
+    .nav-item .icon { width: 18px; text-align: center; flex-shrink: 0; opacity: .85; }
+    .nav-sub { background: rgba(249,250,251,.7); }
+    .nav-sub .nav-item { padding: 8px 16px 8px 44px; font-size: 13px; gap: 8px; }
+    .sidebar-footer { padding: 12px 16px; border-top: 1px solid #f3f4f6; font-size: 10px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+    .sidebar-footer .dot-live { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
 
-    .main { flex: 1; overflow-y: auto; padding: 20px 24px; min-width: 0; }
+    .main { flex: 1; overflow-y: auto; padding: 24px; min-width: 0; background: var(--bg); }
     .view { display: none; }
     .view.active { display: block; }
 
@@ -87,7 +101,7 @@
     .field, .select { height: 32px; padding: 0 11px; border: 1px solid var(--border); border-radius: var(--radius); outline: none; background: #fff; }
     .field:focus, .select:focus { border-color: var(--primary); }
 
-    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow); }
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); }
     .card-hd { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
     .card-hd h3 { font-size: 15px; font-weight: 600; }
     .card-bd { padding: 16px; }
@@ -109,8 +123,8 @@
     .dot-red { background: var(--red); }
 
     .kb-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
-    .kb-card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px; cursor: pointer; transition: box-shadow .2s, border-color .2s; }
-    .kb-card:hover { border-color: var(--primary); box-shadow: 0 4px 12px rgba(22,119,255,.12); }
+    .kb-card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px; cursor: pointer; transition: box-shadow .2s, border-color .2s; }
+    .kb-card:hover { border-color: #93c5fd; box-shadow: 0 4px 12px rgba(37,99,235,.1); }
     .kb-card .emoji { font-size: 24px; margin-bottom: 8px; }
     .kb-card h4 { font-size: 15px; margin-bottom: 4px; }
     .kb-card .desc { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
@@ -209,9 +223,11 @@
     .switch.off { background: #d9d9d9; }
     .switch.off::after { right: auto; left: 2px; }
 
-    .statusbar { display: flex; justify-content: space-between; align-items: center; padding: 0 20px; background: var(--panel); border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); }
-    .statusbar span { display: flex; align-items: center; gap: 6px; }
-    .app-footer { text-align: center; padding: 6px; font-size: 12px; color: var(--muted); background: var(--panel); border-top: 1px solid var(--border); }
+    .statusbar { display: flex; align-items: center; gap: 16px; height: var(--statusbar-h); padding: 0 16px; background: #f9fafb; border-top: 1px solid var(--border); font-size: 10px; color: var(--muted); flex-shrink: 0; }
+    .statusbar span { display: flex; align-items: center; gap: 4px; }
+    .statusbar .sep { width: 1px; height: 12px; background: #d1d5db; }
+    .statusbar .grow { flex: 1; }
+    .app-footer { display: none; }
 
     /* Modal */
     .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 200; place-items: center; }
@@ -257,11 +273,58 @@
     .result-item { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; margin-bottom: 8px; font-size: 13px; }
     .result-item .score { float: right; color: var(--green); font-weight: 600; }
 
+    /* v1.6 KB 左侧子导航 + Hub */
+    .kb-layout { display: grid; grid-template-columns: 168px 1fr; gap: 20px; align-items: start; }
+    .kb-sidenav { display: flex; flex-direction: column; gap: 2px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 8px; position: sticky; top: 0; }
+    .kb-nav-item { display: block; width: 100%; text-align: left; padding: 8px 12px; border-radius: var(--radius); font-size: 13px; color: #4b5563; border: none; background: none; cursor: pointer; }
+    .kb-nav-item:hover { background: #f3f4f6; color: var(--text); }
+    .kb-nav-item.active { background: var(--primary-light); color: var(--primary); font-weight: 600; }
+    .kb-content { min-width: 0; }
+    .page-hd.compact { margin-bottom: 16px; }
+    .page-hd.compact h2 { font-size: 18px; }
+    .page-hd.compact p { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .hub-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 20px; flex-wrap: wrap; }
+    .hub-tab { padding: 10px 16px; font-size: 13px; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+    .hub-tab.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
+    .hub-badge { font-size: 10px; padding: 1px 6px; border-radius: 10px; background: #e5e7eb; color: #374151; }
+    .hub-badge.warn { background: #fef3c7; color: #b45309; }
+    .hub-panel { display: none; }
+    .hub-panel.active { display: block; }
+    .stat-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+    .stat-card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px; display: flex; align-items: center; gap: 12px; }
+    .stat-icon { width: 36px; height: 36px; border-radius: var(--radius); display: grid; place-items: center; font-size: 16px; }
+    .stat-icon.blue { background: #dbeafe; }
+    .stat-icon.purple { background: #ede9fe; }
+    .stat-icon.green { background: #dcfce7; }
+    .stat-icon.amber { background: #fef3c7; }
+    .stat-icon.red { background: #fee2e2; }
+    .stat-val { font-size: 20px; font-weight: 700; }
+    .stat-lbl { font-size: 11px; color: var(--muted); }
+    .mode-switch { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+    .mode-opt { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--border); border-radius: var(--radius-lg); font-size: 13px; cursor: pointer; }
+    .mode-opt.active { border-color: var(--primary); background: var(--primary-light); color: var(--primary); }
+    .mode-card { display: flex; gap: 10px; padding: 12px; border: 2px solid var(--border); border-radius: var(--radius-lg); margin-bottom: 8px; cursor: pointer; }
+    .mode-card.active { border-color: var(--primary); background: var(--primary-light); }
+    .mode-card p { font-size: 12px; color: var(--muted); margin-top: 4px; }
+    .hint-bar { font-size: 12px; color: var(--muted); padding: 10px 12px; background: #f9fafb; border-radius: var(--radius); margin-bottom: 12px; border: 1px solid var(--border); }
+    .graph-split { display: grid; grid-template-columns: 200px 1fr; gap: 12px; }
+    .graph-canvas.bolt { min-height: 320px; border-radius: var(--radius-lg); border: 1px solid var(--border); background: radial-gradient(circle at 30% 40%, #dbeafe, #f9fafb); }
+    .graph-node.highlight { border-color: #f97316; box-shadow: 0 0 0 3px rgba(249,115,22,.2); }
+    .graph-edges { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+    .debug-bar { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding: 10px; background: #f9fafb; border-radius: var(--radius); font-size: 13px; flex-wrap: wrap; }
+    .channel-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 16px; }
+    .channel-card { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border: 2px solid var(--border); border-radius: var(--radius-lg); font-size: 13px; cursor: pointer; background: var(--panel); }
+    .channel-card.on { border-color: var(--primary); background: var(--primary-light); }
+    .ch-lat { font-size: 11px; color: var(--muted); }
+    .decision-tree { font-size: 13px; line-height: 2; font-family: ui-monospace, monospace; }
+    .tag-blue { background: var(--primary-light); border-color: #93c5fd; color: var(--primary); }
+
     @media (max-width: 768px) {
       .sidebar { display: none; }
-      .kb-grid, .metrics, .index-grid, .home-apps { grid-template-columns: 1fr; }
-      .chat-layout, .split-layout, .retrieval-layout { grid-template-columns: 1fr; }
+      .kb-grid, .metrics, .index-grid, .home-apps, .stat-row, .channel-grid { grid-template-columns: 1fr; }
+      .chat-layout, .split-layout, .retrieval-layout, .kb-layout, .graph-split { grid-template-columns: 1fr; }
       .conv-list { display: none; }
+      .topbar-search { display: none; }
     }
   </style>
 </head>
@@ -271,9 +334,9 @@
 <div class="login-page" id="loginPage">
   <div class="login-card">
     <div class="login-logo">
-      <div class="mark">R3</div>
+      <div class="mark">⚡</div>
       <h1>RAG 3.0 知识库系统</h1>
-      <p>企业级智能检索增强生成平台</p>
+      <p>企业级智能检索增强生成平台 · bolt v1.3 设计语言</p>
     </div>
     <div class="form-item">
       <label>用户名 / 邮箱</label>
@@ -291,56 +354,65 @@
 <!-- 主应用 -->
 <div class="app" id="app">
   <header class="topbar">
-    <div class="topbar-brand">
-      <div class="mark">R3</div>
-      <span>RAG 3.0</span>
-    </div>
+    <button class="topbar-toggle" id="sidebarToggle" title="收起侧边栏">☰</button>
+    <div class="topbar-breadcrumb" id="topBreadcrumb"><span class="crumb current">工作台</span></div>
     <div class="topbar-search">
       <span class="icon">⌕</span>
-      <input type="search" placeholder="搜索知识库、文档、对话历史...">
+      <input type="search" placeholder="搜索知识库、文档...">
     </div>
     <div class="topbar-actions">
-      <button class="icon-btn" title="通知">🔔</button>
-      <button class="icon-btn" title="帮助">❓</button>
-      <button class="icon-btn" title="语言">🌐</button>
+      <button class="icon-btn" title="通知">🔔<span class="notif-dot"></span></button>
+      <button class="icon-btn" title="帮助">?</button>
       <div class="user-menu">
         <div class="user-avatar">李</div>
-        <span style="font-size:13px">李婷</span>
+        <span style="font-size:13px;color:#374151">李婷</span>
       </div>
     </div>
   </header>
 
   <div class="body-wrap">
     <aside class="sidebar" id="sidebar">
-      <div class="nav-group">
-        <button class="nav-item" data-view="home"><span class="icon">🏠</span><span class="nav-label">首页</span></button>
-        <button class="nav-item active" data-view="kb-list"><span class="icon">📚</span><span class="nav-label">知识库</span></button>
-        <button class="nav-item" data-view="chat"><span class="icon">💬</span><span class="nav-label">对话</span></button>
-        <button class="nav-item" data-view="search"><span class="icon">🔍</span><span class="nav-label">搜索</span></button>
-        <button class="nav-item" data-view="agent"><span class="icon">🤖</span><span class="nav-label">Agent</span></button>
-        <button class="nav-item" data-view="eval-dashboard"><span class="icon">📊</span><span class="nav-label">评测中心</span></button>
-        <div class="nav-sub">
-          <button class="nav-item" data-view="eval-dashboard"><span class="nav-label">仪表盘</span></button>
-          <button class="nav-item" data-view="eval-tasks"><span class="nav-label">评测任务</span></button>
-          <button class="nav-item" data-view="eval-ab"><span class="nav-label">A/B 测试</span></button>
-          <button class="nav-item" data-view="eval-cost"><span class="nav-label">成本中心</span></button>
-          <button class="nav-item" data-view="eval-replay"><span class="nav-label">回放评测</span></button>
-        </div>
-        <button class="nav-item" data-view="sys-users"><span class="icon">⚙️</span><span class="nav-label">系统管理</span></button>
-        <div class="nav-sub">
-          <button class="nav-item" data-view="sys-users"><span class="nav-label">用户管理</span></button>
-          <button class="nav-item" data-view="sys-roles"><span class="nav-label">角色管理</span></button>
-          <button class="nav-item" data-view="sys-models"><span class="nav-label">模型提供商</span></button>
-          <button class="nav-item" data-view="sys-datasource"><span class="nav-label">数据源</span></button>
-          <button class="nav-item" data-view="sys-mcp"><span class="nav-label">MCP</span></button>
-          <button class="nav-item" data-view="sys-classifier"><span class="nav-label">分类器路由</span></button>
-          <button class="nav-item" data-view="sys-pipeline"><span class="nav-label">流水线配置</span></button>
-          <button class="nav-item" data-view="sys-security"><span class="nav-label">安全合规</span></button>
-          <button class="nav-item" data-view="sys-audit"><span class="nav-label">审计日志</span></button>
-          <button class="nav-item" data-view="sys-monitor"><span class="nav-label">系统监控</span></button>
+      <div class="sidebar-logo">
+        <div class="mark">⚡</div>
+        <div class="sidebar-logo-text">
+          <div class="title">RAG 3.0</div>
+          <div class="sub">企业知识库系统</div>
         </div>
       </div>
-      <button class="sidebar-toggle" id="sidebarToggle">◀ <span class="collapse-text">收起侧边栏</span></button>
+      <nav class="sidebar-nav">
+        <div class="nav-group">
+          <button class="nav-item active" data-view="home"><span class="icon">🏠</span><span class="nav-label">工作台</span></button>
+          <button class="nav-item" data-view="kb-list"><span class="icon">📚</span><span class="nav-label">知识库管理</span></button>
+          <button class="nav-item" data-view="chat"><span class="icon">💬</span><span class="nav-label">智能对话</span></button>
+          <button class="nav-item" data-view="search"><span class="icon">🔍</span><span class="nav-label">搜索应用</span></button>
+          <button class="nav-item" data-view="agent"><span class="icon">🤖</span><span class="nav-label">Agent 编排</span></button>
+          <button class="nav-item" data-view="eval-dashboard"><span class="icon">📊</span><span class="nav-label">评测中心</span></button>
+          <div class="nav-sub">
+            <button class="nav-item" data-view="eval-dashboard"><span class="nav-label">仪表盘</span></button>
+            <button class="nav-item" data-view="eval-tasks"><span class="nav-label">评测任务</span></button>
+            <button class="nav-item" data-view="eval-ab"><span class="nav-label">A/B 测试</span></button>
+            <button class="nav-item" data-view="eval-cost"><span class="nav-label">成本中心</span></button>
+            <button class="nav-item" data-view="eval-replay"><span class="nav-label">回放评测</span></button>
+          </div>
+          <button class="nav-item" data-view="sys-users"><span class="icon">⚙️</span><span class="nav-label">系统管理</span></button>
+          <div class="nav-sub">
+            <button class="nav-item" data-view="sys-users"><span class="nav-label">用户管理</span></button>
+            <button class="nav-item" data-view="sys-roles"><span class="nav-label">角色权限</span></button>
+            <button class="nav-item" data-view="sys-pipeline"><span class="nav-label">流水线配置</span></button>
+            <button class="nav-item" data-view="sys-classifier"><span class="nav-label">分类器路由</span></button>
+            <button class="nav-item" data-view="sys-fusion"><span class="nav-label">融合与精排</span></button>
+            <button class="nav-item" data-view="sys-retrieval-strategy"><span class="nav-label">检索策略</span></button>
+            <button class="nav-item" data-view="sys-generation-strategy"><span class="nav-label">生成策略</span></button>
+            <button class="nav-item" data-view="sys-security"><span class="nav-label">安全合规</span></button>
+            <button class="nav-item" data-view="sys-models"><span class="nav-label">模型管理</span></button>
+            <button class="nav-item" data-view="sys-audit"><span class="nav-label">审计日志</span></button>
+            <button class="nav-item" data-view="sys-monitor"><span class="nav-label">系统监控</span></button>
+            <button class="nav-item" data-view="sys-datasource"><span class="nav-label">数据源</span></button>
+            <button class="nav-item" data-view="sys-mcp"><span class="nav-label">MCP</span></button>
+          </div>
+        </div>
+      </nav>
+      <div class="sidebar-footer"><span class="dot-live"></span> PROD 环境 · v3.6</div>
     </aside>
 
     <main class="main" id="mainContent">
@@ -349,13 +421,16 @@
   </div>
 
   <div class="statusbar">
-    <span><span class="dot dot-green"></span> SSE 已连接</span>
-    <span>环境: PROD</span>
-    <span>版本 v1.0</span>
-    <span>最近 API 120ms</span>
-    <span>GPU 78%</span>
+    <span><span class="dot dot-green"></span> 连接正常</span>
+    <span class="sep"></span>
+    <span>延迟 120ms</span>
+    <span class="sep"></span>
+    <span>PROD 环境</span>
+    <span class="sep"></span>
+    <span>v3.6 原型</span>
+    <span class="grow"></span>
+    <span>© 2026 RAG 3.0 Knowledge Base System</span>
   </div>
-  <div class="app-footer">© 2026 RAG 3.0 Knowledge Base System</div>
 </div>
 
 <!-- 模态框 -->
@@ -417,6 +492,7 @@
 
 <script src="pc-prototype-views.js"></script>
 <script src="pc-prototype-views-ext.js"></script>
+<script src="pc-prototype-v16-views.js"></script>
 <script src="pc-prototype-app.js"></script>
 </body>
 </html>
