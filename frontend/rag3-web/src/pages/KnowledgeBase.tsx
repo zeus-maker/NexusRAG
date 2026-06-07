@@ -1570,7 +1570,7 @@ export function ChunkPreviewPage({ kbId, docId, onNavigate }: ChunkPreviewPagePr
       )}
 
       {useRealApi && doc && (
-        <div className="flex-1 min-h-[520px] bg-white rounded-xl border border-gray-200 overflow-hidden flex flex-col">
+        <div className="flex-1 min-h-[min(720px,calc(100vh-11rem))] bg-white rounded-xl border border-gray-200 overflow-hidden flex flex-col">
           <KnowledgeChunkWorkspace
             key={doc.doc_id}
             doc={doc}

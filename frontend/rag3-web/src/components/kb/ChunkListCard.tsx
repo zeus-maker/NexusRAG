@@ -101,7 +101,11 @@ export function ChunkListCard({
           </button>
         )}
 
-        <p className={`text-xs leading-relaxed text-gray-600 dark:text-gray-400 ${hasImage ? 'line-clamp-3' : 'line-clamp-4'}`}>
+        <p className={`text-xs leading-relaxed text-gray-600 dark:text-gray-400 ${
+          selected
+            ? 'line-clamp-2'
+            : hasImage ? 'line-clamp-3' : 'line-clamp-4'
+        }`}>
           {chunk.content_preview || '（无文本内容）'}
         </p>
 

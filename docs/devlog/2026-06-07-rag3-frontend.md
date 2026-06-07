@@ -1123,3 +1123,29 @@ P0 最后一项：检索测试页需从单通道混合结果升级为 PRD §10.5
 
 - `frontend/rag3-web/src/components/kb/ChunkListCard.tsx`、`ImageLightbox.tsx`
 - `frontend/rag3-web/src/components/kb/KnowledgeChunkWorkspace.tsx`、`ChunkImage.tsx`、`ChunkContentView.tsx`
+
+---
+
+## 38. 分块工作区左右对调：左 PDF 右列表（对齐 RAGFlow）
+
+### 背景与目标
+
+用户要求布局与 RAGFlow 一致：PDF 预览在左、分块列表在右；右侧点击分块后左侧 PDF 高亮定位。
+
+### 改动摘要
+
+- `KnowledgeChunkWorkspace` 重构为双栏：`flex-[2]` 左文档预览 + `flex-[3]` 右分块结果（对应 RAGFlow w-2/5 / w-3/5）。
+- 左侧仅保留文档头与 PDF/iframe 预览，移除原右侧上方的选中块详情条。
+- 右侧列表点击更新 `selectedChunkId` → `buildChunkHighlightRects` → 左侧 `PdfPreviewWithHighlights` 高亮并滚动。
+- 选中块在右侧卡片下展开 `ChunkContentView` 全文；解析预览模式保留「排除检索」快捷按钮。
+
+### 验证与风险
+
+- `npm run build` 通过。
+- 路径：分块页 / 文档解析预览 → 左 PDF、右列表；点不同分块应切换高亮框。
+
+### 涉及文件
+
+- `frontend/rag3-web/src/components/kb/KnowledgeChunkWorkspace.tsx`
+- `frontend/rag3-web/src/components/kb/ChunkListCard.tsx`
+- `frontend/rag3-web/src/pages/KnowledgeBase.tsx`
