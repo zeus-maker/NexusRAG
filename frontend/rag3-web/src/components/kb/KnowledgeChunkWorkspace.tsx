@@ -5,7 +5,8 @@ import { useChunks, setKbChunkAvailability } from '../../hooks/useKbData';
 import { kbApi } from '../../services/kbApi';
 import { buildChunkHighlightRects, isPdfFileName } from '../../utils/documentUtil';
 import { ChunkContentView } from './ChunkContentView';
-import { ChunkImage } from './ChunkImage';
+import { ChunkListCard } from './ChunkListCard';
+import { ImageLightbox } from './ImageLightbox';
 import { PdfPreviewWithHighlights } from './PdfPreviewWithHighlights';
 
 export interface ChunkWorkspaceActions {
@@ -41,6 +42,7 @@ export function KnowledgeChunkWorkspace({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [togglingAvail, setTogglingAvail] = useState(false);
+  const [lightbox, setLightbox] = useState<{ imageId: string; title: string } | null>(null);
 
   const { data: chunkResult, loading, refresh: refreshChunks } = useChunks(kbId, doc.doc_id, {
     page: chunkPage,
@@ -110,74 +112,23 @@ export function KnowledgeChunkWorkspace({
         </p>
         <p className="text-[10px] text-gray-400 truncate">{doc.original_name}</p>
       </div>
-      <div className="flex-1 overflow-y-auto p-2 min-h-0 space-y-1">
+      <div className="flex-1 overflow-y-auto p-2.5 min-h-0 space-y-2.5">
         {loading && <p className="text-xs text-gray-500 p-2">加载中…</p>}
         {!loading && chunkResult.items.length === 0 && (
           <p className="text-xs text-gray-500 p-2">暂无分块</p>
         )}
         {chunkResult.items.map((chunk, index) => (
-          <button
+          <ChunkListCard
             key={chunk.chunk_id}
-            type="button"
-            onClick={() => setSelectedChunkId(chunk.chunk_id)}
-            className={`w-full text-left px-2 py-1.5 rounded-lg text-xs transition-colors ${
-              selectedChunk?.chunk_id === chunk.chunk_id
-                ? 'bg-cyan-50 dark:bg-cyan-900/30 border border-cyan-200'
-                : 'hover:bg-gray-50 dark:hover:bg-gray-800 border border-transparent'
-            }`}
-          >
-            <div className="flex items-start gap-2">
-              {chunk.image_id && (
-                <ChunkImage
-                  imageId={chunk.image_id}
-                  className="w-12 h-12 flex-shrink-0 rounded border border-gray-200 object-contain bg-white"
-                />
-              )}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="font-medium text-gray-800 dark:text-gray-200">#{chunk.chunk_index}</span>
-                  {chunk.page_number > 0 && (
-                    <span className="text-[10px] text-gray-400">P{chunk.page_number}</span>
-                  )}
-                  {chunk.doc_type_kwd && (
-                    <span className="text-[10px] px-1 rounded bg-gray-100 text-gray-500">{chunk.doc_type_kwd}</span>
-                  )}
-                  {chunk.available === false && (
-                    <span className="text-[10px] text-red-500">已排除</span>
-                  )}
-                </div>
-                <div className="text-gray-500 line-clamp-2 mt-0.5">{chunk.content_preview.slice(0, 120)}</div>
-              </div>
-            </div>
-            {showChunkActions && actions && (
-              <div className="flex gap-1 mt-1.5 justify-end" onClick={e => e.stopPropagation()}>
-                <button
-                  type="button"
-                  disabled={actions.chunkActionId === chunk.chunk_id || chunk.content_preview.length < 16}
-                  onClick={() => actions.onSplit?.(chunk)}
-                  className="text-[10px] px-1.5 py-0.5 border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40"
-                >
-                  拆分
-                </button>
-                <button
-                  type="button"
-                  disabled={actions.chunkActionId === chunk.chunk_id || index >= chunkResult.items.length - 1}
-                  onClick={() => actions.onMergeNext?.(chunk, index)}
-                  className="text-[10px] px-1.5 py-0.5 border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40"
-                >
-                  合并↓
-                </button>
-                <button
-                  type="button"
-                  disabled={actions.chunkActionId === chunk.chunk_id}
-                  onClick={() => actions.onToggleExclude?.(chunk)}
-                  className="text-[10px] px-1.5 py-0.5 border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40"
-                >
-                  {chunk.available === false ? '恢复' : '排除'}
-                </button>
-              </div>
-            )}
-          </button>
+            chunk={chunk}
+            index={index}
+            selected={selectedChunk?.chunk_id === chunk.chunk_id}
+            showActions={showChunkActions}
+            actions={actions}
+            totalInPage={chunkResult.items.length}
+            onSelect={() => setSelectedChunkId(chunk.chunk_id)}
+            onImageZoom={(imageId, title) => setLightbox({ imageId, title })}
+          />
         ))}
       </div>
       {pageSize < chunkResult.total && (
@@ -238,7 +189,11 @@ export function KnowledgeChunkWorkspace({
               </button>
             )}
           </div>
-          <ChunkContentView chunk={selectedChunk} maxHeight="max-h-32" />
+          <ChunkContentView
+            chunk={selectedChunk}
+            maxHeight="max-h-40"
+            onImageClick={imageId => setLightbox({ imageId, title: `Chunk #${selectedChunk.chunk_index}` })}
+          />
         </div>
       )}
       <div className="flex-1 min-h-0 p-3 flex flex-col gap-2 overflow-hidden">
@@ -275,21 +230,35 @@ export function KnowledgeChunkWorkspace({
     </div>
   );
 
+  const listWidth = showChunkActions
+    ? 'w-full lg:w-[22rem] xl:w-96'
+    : 'w-full lg:w-80';
+
+  const lightboxModal = lightbox ? (
+    <ImageLightbox
+      imageId={lightbox.imageId}
+      title={lightbox.title}
+      onClose={() => setLightbox(null)}
+    />
+  ) : null;
+
   if (layout === 'stack') {
     return (
       <div className="flex flex-col flex-1 min-h-0">
         <div className="h-64 flex-shrink-0 border-b border-gray-200">{previewPane}</div>
         <div className="flex-1 min-h-0">{chunkList}</div>
+        {lightboxModal}
       </div>
     );
   }
 
   return (
     <div className="flex flex-1 min-h-0 flex-col lg:flex-row">
-      <div className="w-full lg:w-72 flex-shrink-0 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 flex flex-col min-h-0 max-h-[40vh] lg:max-h-none">
+      <div className={`${listWidth} flex-shrink-0 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 flex flex-col min-h-0 max-h-[45vh] lg:max-h-none`}>
         {chunkList}
       </div>
       {previewPane}
+      {lightboxModal}
     </div>
   );
 }

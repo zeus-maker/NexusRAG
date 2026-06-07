@@ -1098,3 +1098,28 @@ P0 最后一项：检索测试页需从单通道混合结果升级为 PRD §10.5
 ### 涉及文件
 
 - `frontend/rag3-web/src/components/kb/PdfPreviewWithHighlights.tsx`
+
+---
+
+## 37. 优化分块列表审阅布局与图片放大预览
+
+### 背景与目标
+
+分块列表原先为紧凑按钮行，缩略图过小、信息层次弱，不便逐条审阅；图片无法放大查看细节。
+
+### 改动摘要
+
+- 新增 `ChunkListCard`：卡片式布局，顶栏展示序号/页码/类型/排除状态，正文 3~4 行预览 + 字数，有图时展示可点击缩略图。
+- 新增 `ImageLightbox`：点击列表或详情区图片全屏放大，支持 Esc/点击空白关闭。
+- 分块页侧栏加宽（`xl:w-96`），卡片间距加大；选中态 cyan 描边更明显。
+- `ChunkContentView` 详情区图片同样支持点击放大。
+
+### 验证与风险
+
+- `npm run build` 通过。
+- 路径：分块页 / 解析预览 → 左侧列表审阅卡片；点击图片应弹出灯箱。
+
+### 涉及文件
+
+- `frontend/rag3-web/src/components/kb/ChunkListCard.tsx`、`ImageLightbox.tsx`
+- `frontend/rag3-web/src/components/kb/KnowledgeChunkWorkspace.tsx`、`ChunkImage.tsx`、`ChunkContentView.tsx`

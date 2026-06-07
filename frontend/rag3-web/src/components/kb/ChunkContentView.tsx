@@ -6,25 +6,33 @@ interface Props {
   chunk: Chunk;
   cacheBust?: string | number;
   maxHeight?: string;
+  onImageClick?: (imageId: string) => void;
 }
 
 function hasHtmlMarkup(text: string): boolean {
   return /<[a-z][\s\S]*>/i.test(text);
 }
 
-export function ChunkContentView({ chunk, cacheBust, maxHeight = 'max-h-48' }: Props) {
+export function ChunkContentView({ chunk, cacheBust, maxHeight = 'max-h-48', onImageClick }: Props) {
   const html = chunk.content_html || '';
   const showHtml = html && hasHtmlMarkup(html);
 
   return (
     <div className="space-y-2">
       {chunk.image_id && (
-        <div className="flex justify-end">
-          <ChunkImage
-            imageId={chunk.image_id}
-            cacheBust={cacheBust}
-            className="max-h-24 max-w-[140px] rounded border border-gray-200 object-contain"
-          />
+        <div className="flex justify-start">
+          <button
+            type="button"
+            onClick={() => onImageClick?.(chunk.image_id!)}
+            className="rounded-lg border border-gray-200 overflow-hidden hover:ring-2 hover:ring-cyan-300 transition-shadow"
+            title="点击放大预览"
+          >
+            <ChunkImage
+              imageId={chunk.image_id}
+              cacheBust={cacheBust}
+              className="max-h-32 max-w-[200px] object-contain bg-gray-50"
+            />
+          </button>
         </div>
       )}
       {showHtml ? (

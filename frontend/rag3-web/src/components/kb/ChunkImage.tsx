@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type MouseEvent } from 'react';
 import { getStoredAuth } from '../../services/http';
 import { kbApi } from '../../services/kbApi';
 
@@ -7,9 +7,11 @@ interface Props {
   alt?: string;
   className?: string;
   cacheBust?: string | number;
+  onClick?: (e: MouseEvent) => void;
+  title?: string;
 }
 
-export function ChunkImage({ imageId, alt = '分块图片', className = '', cacheBust }: Props) {
+export function ChunkImage({ imageId, alt = '分块图片', className = '', cacheBust, onClick, title }: Props) {
   const [url, setUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -44,5 +46,13 @@ export function ChunkImage({ imageId, alt = '分块图片', className = '', cach
   if (!url) {
     return <div className={`bg-gray-100 animate-pulse rounded ${className}`} />;
   }
-  return <img src={url} alt={alt} className={className} />;
+  return (
+    <img
+      src={url}
+      alt={alt}
+      title={title}
+      className={`${className}${onClick ? ' cursor-zoom-in' : ''}`}
+      onClick={onClick}
+    />
+  );
 }
