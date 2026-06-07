@@ -85,7 +85,7 @@ export function ClassifierPage({ onNavigate }: ClassifierPageProps) {
         />
       )}
       {activeTab === 2 && <MatrixTab matrix={matrix} setMatrix={setMatrix} showToast={showToast} />}
-      {activeTab === 3 && <FullTestTab showToast={showToast} />}
+      {activeTab === 3 && <FullTestTab showToast={showToast} onNavigate={onNavigate} />}
       {activeTab === 4 && <OnlineLearningTab onNavigate={onNavigate} />}
     </div>
   );
@@ -436,7 +436,7 @@ function MatrixTab({
   );
 }
 
-function FullTestTab({ showToast }: { showToast: (m: string) => void }) {
+function FullTestTab({ showToast, onNavigate }: { showToast: (m: string) => void; onNavigate?: ClassifierPageProps['onNavigate'] }) {
   const [query, setQuery] = useState('违约金比例是多少？');
   const [result, setResult] = useState<FullRouteTestResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -511,9 +511,11 @@ function FullTestTab({ showToast }: { showToast: (m: string) => void }) {
             </div>
           </div>
 
-          <BtnSecondary onClick={() => showToast('已跳转对话 Trace（mock）')}>
-            <ExternalLink size={12} /> 在对话页查看 QueryTraceTimeline
-          </BtnSecondary>
+          {onNavigate && (
+            <BtnSecondary onClick={() => onNavigate('sys-traces')}>
+              <ExternalLink size={12} /> 在链路追踪查看完整 Trace
+            </BtnSecondary>
+          )}
         </>
       )}
     </div>

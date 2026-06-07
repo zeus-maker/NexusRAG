@@ -14,7 +14,8 @@ import { EvalSatisfactionPage } from './pages/EvalSatisfaction';
 import { CostCenterPage, ReplayPage } from './pages/EvalExtra';
 import { EvalRouteLearningPage } from './pages/EvalRouteLearning';
 import { UserManagePage, RoleManagePage, PipelineConfigPage, AuditLogPage, MonitorPage } from './pages/System';
-import { ClassifierPage, SecurityPage, ModelsPage, TracesPage } from './pages/SystemExtra';
+import { ClassifierPage, SecurityPage, ModelsPage } from './pages/SystemExtra';
+import { TracesPage } from './pages/TracesPage';
 import { FusionConfigPage } from './pages/FusionConfigPage';
 import { RetrievalStrategyPage } from './pages/RetrievalStrategyPage';
 import { GenerationStrategyPage } from './pages/GenerationStrategyPage';
@@ -122,7 +123,7 @@ export default function App() {
       case 'sys-monitor':
         return <MonitorPage onNavigate={navigate} initialTab={state.monitorTab ?? 0} />;
       case 'sys-traces':
-        return <TracesPage />;
+        return <TracesPage onNavigate={navigate} />;
       default:
         return <HomePage onNavigate={navigate} currentUser={state.currentUser} />;
     }

@@ -606,3 +606,70 @@ P0 最后一项：检索测试页需从单通道混合结果升级为 PRD §10.5
 - `rag3-bolt-v1.5/src/pages/RetrievalTestPage.tsx`
 - `rag3-bolt-v1.5/src/pages/KBExtra.tsx`
 - `rag3-bolt-v1.5/src/App.tsx`
+
+---
+
+## 22. 链路追踪页深化与布局优化（§11.5.3）
+
+### 背景与目标
+
+原 `SystemExtra.tsx` 内嵌 Traces 页仅 3 条扁平 Span、顺序瀑布图（无法表达并行检索），无筛选、无 L1–L5 层、无错误/超时样例，与 PRD §11.5.3 Trace 详情 ASCII 差距大。需对齐监控/融合页的布局规范，并与分类器、对话 Trace、检索测试台形成跳转闭环。
+
+**用户可见变化**：链路追踪页含运营统计四卡、搜索/状态/Tier 筛选、7 条 Trace（含 ACL 失败与 Milvus 超时）；详情四 Tab（概览 L1–L5、Span 树+属性面板、真实时间轴瀑布图、JSON）；可跳转 Langfuse（mock）、对话、查询路由、融合配置、检索测试台；对话与分类器测试可深链至 `sys-traces`。
+
+### 改动摘要
+
+- `tracesMock.ts`：嵌套 Span 树、`startMs` 时间轴、L1–L5 layers、7 条多场景 Trace、`flattenSpans`/`filterTraces`。
+- `TracesPage.tsx` 独立页面：暗色适配、`HubStatCard` 统计、列表+详情双栏、Span 树可折叠选中。
+- 瀑布图改为按 `startMs`/`durationMs` 定位（支持并行 channel）。
+- 从 `SystemExtra.tsx` 移除旧实现；`App.tsx` 传入 `onNavigate`。
+- `ClassifierPage` / `Chat.tsx` QueryTraceTimeline 增加「查看完整 Trace」跳转。
+
+### 验证与风险
+
+- 验证：`npm run build` 通过；系统管理 → 链路追踪可筛选/切换 Trace；Span 树选中显示 input/output；瀑布图 pageindex/vector 条带可重叠。
+- 风险：仍为 mock，未接 Langfuse/Phoenix API；时间范围筛选仅 UI 未过滤数据。
+
+### 反思与沉淀
+
+- 并行检索的 Span 必须用 `startMs` 甘特，顺序累加瀑布会误导排障；mock 层保留树+扁平两种视图供不同 Tab 消费。
+- Trace 作为 L1–L5 可观测枢纽，概览 Tab 深链到路由/融合/检索测试台，比孤立列表更符合 RAG 3.0 运维路径。
+
+### 涉及文件
+
+- `rag3-bolt-v1.5/src/data/tracesMock.ts`
+- `rag3-bolt-v1.5/src/pages/TracesPage.tsx`
+- `rag3-bolt-v1.5/src/pages/SystemExtra.tsx`
+- `rag3-bolt-v1.5/src/App.tsx`
+- `rag3-bolt-v1.5/src/pages/ClassifierPage.tsx`
+- `rag3-bolt-v1.5/src/pages/Chat.tsx`
+
+---
+
+## 23. 链路追踪对标 Langfuse/Phoenix/OTel 深化设计
+
+### 背景与目标
+
+对照 [Langfuse Trace 视图](https://langfuse.com/faq/all/what-does-a-good-trace-look-like)、[Phoenix Sessions](https://arize.com/docs/phoenix/tracing/llm-traces/sessions) 与 [OpenTelemetry RAG 可观测性](https://uptrace.dev/guides/opentelemetry-rag-observability) 行业实践，在 §22 基础上补齐 Session 聚合、Observation 类型、OTel `rag.*` 质量属性与多视图切换，使原型更贴近真实 APM 排障路径。
+
+**用户可见变化**：列表可切换 Trace/Session；筛选增加环境、质量告警；统计卡增加空召回率/截断率；详情五 Tab（概览含 Phoenix 评测+OTel 信号+阶段 P95、Span 树含 generation 标签、时间轴、日志序列表、JSON）；Session 回放线程；深链回放评测。
+
+### 改动摘要
+
+- `tracesMock.ts`：`TraceQuality`/`TraceEval`/`TraceSession`；`annotateObservationKinds`；`TRACE_SESSIONS`；`STAGE_P95_MS`；`logSpansChronological`；OTel 属性 `rag.reranking.*`。
+- `TracesPage.tsx`：Trace/Session 双模式、质量徽章、评测分、Log 视图、树展开/折叠全部。
+
+### 验证与风险
+
+- 验证：`npm run build` 通过；Session 切换显示连贯性/轮次；质量告警筛选命中 tr-003/tr-005/tr-007；Log Tab 按 startMs 排序。
+- 风险：Session 多轮仅 mock 首条 Trace；时间范围/环境筛选仍为 UI 占位。
+
+### 反思与沉淀
+
+- Langfuse 强调 observation 类型（generation 计费过滤）与 Tree/Timeline/Log 三视图 — 原型已覆盖，Agent Graph 留 P2。
+- OTel 文档指出 rerank 与 empty_retrieval 是隐性瓶颈与领先指标 — 概览 Tab 显式展示 `rag.*` 属性便于后续接告警规则。
+
+### 涉及文件
+
+- `rag3-bolt-v1.5/src/data/tracesMock.ts`
+- `rag3-bolt-v1.5/src/pages/TracesPage.tsx`

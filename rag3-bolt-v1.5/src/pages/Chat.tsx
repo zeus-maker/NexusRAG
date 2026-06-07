@@ -132,7 +132,7 @@ function MarkdownContent({ text, citations, onCiteClick }: { text: string; citat
   );
 }
 
-function QueryTraceTimeline({ expanded }: { expanded: boolean }) {
+function QueryTraceTimeline({ expanded, onViewFull }: { expanded: boolean; onViewFull?: () => void }) {
   if (!expanded) return null;
   const total = QUERY_TRACE_STEPS.reduce((s, x) => s + x.ms, 0);
   return (
@@ -150,6 +150,11 @@ function QueryTraceTimeline({ expanded }: { expanded: boolean }) {
         ))}
       </div>
       <p className="text-[9px] text-gray-400 mt-1.5">{QUERY_TRACE_STEPS.map(s => s.detail).join(' → ')}</p>
+      {onViewFull && (
+        <button type="button" onClick={onViewFull} className="mt-2 text-[10px] text-blue-600 hover:underline">
+          查看完整 Trace →
+        </button>
+      )}
     </div>
   );
 }
@@ -508,7 +513,7 @@ export function ChatPage({ convId, onNavigate }: ChatPageProps) {
                         <button type="button" onClick={() => setExpandedTrace(prev => { const n = new Set(prev); n.has(msg.id) ? n.delete(msg.id) : n.add(msg.id); return n; })} className="mt-2 text-[10px] text-gray-500 hover:text-blue-600 flex items-center gap-1">
                           <ChevronDown size={12} className={`transition-transform ${expandedTrace.has(msg.id) ? 'rotate-180' : ''}`} /> 查询链路 Trace
                         </button>
-                        <QueryTraceTimeline expanded={expandedTrace.has(msg.id)} />
+                        <QueryTraceTimeline expanded={expandedTrace.has(msg.id)} onViewFull={() => onNavigate('sys-traces')} />
                       </>
                     )}
                     {!msg.is_streaming && (
