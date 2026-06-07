@@ -474,3 +474,58 @@
 - `rag3-bolt-v1.5/src/pages/MonitorPage.tsx`
 - `rag3-bolt-v1.5/src/App.tsx`
 - `rag3-bolt-v1.5/src/pages/Home.tsx`
+
+---
+
+## 18. 工作台对齐知识库管理布局并功能深化
+
+### 背景与目标
+
+用户反馈工作台与知识库管理页视觉契约不一致（居中 `max-w-[1400px]` Hero 双栏 vs KB 全宽 `p-6 gap-5` 骨架），且运营能力分散难检索。目标将工作台改为与 `KBListPage` 同构的页头 + 统计条 + 工具栏 + 内容区，并按 §10.2 / US-1.9 / §14.2 分层组织功能。
+
+**用户可见变化**：工作台全宽布局；六指标横排统计卡；工具栏含搜索、7d/30d 周期、四分段 Tab（概览 / 运营分析 / 我的知识库 / 平台动态）；知识库卡对齐 KB 列表（描述、存储、索引进度、文档/检索/索引快捷链）；运营 Tab 含 RAG3 Widget + 排行榜；动态 Tab 支持类型筛选与表格/卡片视图；顶栏可直接打开创建知识库向导。
+
+### 改动摘要
+
+- 新增 `data/homeMock.ts`：趋势、排行榜、任务、动态、快捷入口等 mock 集中管理。
+- `Home.tsx` 重构：`SystemSectionTabs` 分段；`WorkbenchKBCard` 复用 KB 卡片信息密度；`KBCreateDialog` 接入创建流；告警条（索引中 + PI 失败）、评测进行中横幅；我的知识库 Tab 支持状态筛选、分页、网格/表格切换。
+
+### 验证与风险
+
+- 验证：`npm run build` 通过；`home` 四 Tab 可切换；创建知识库弹窗可打开；排行榜 / RAG3 / 动态深链可达。
+- 风险：运营数据仍为静态 mock；分段 Tab 与工具栏筛选联动仅在「我的知识库」「平台动态」生效，概览/运营 Tab 搜索不筛侧栏内容。
+
+### 反思与沉淀
+
+- 列表型管理页（KB、工作台）宜共用「页头 → 统计 → 白底工具栏 → 内容」四层骨架，分段 Tab 放工具栏内比单独 Hero 更省纵向空间。
+- mock 数据抽到 `homeMock.ts` 后 `Home.tsx` 专注布局与交互，后续接 `/api/v1/admin/dashboard` 只需替换数据源。
+
+### 涉及文件
+
+- `rag3-bolt-v1.5/src/data/homeMock.ts`
+- `rag3-bolt-v1.5/src/pages/Home.tsx`
+
+---
+
+## 19. 工作台补全统计项并恢复 Wiki / PageIndex 首屏展示
+
+### 背景与目标
+
+§18 重构后统计仅 6 项，且 RAG3 Widget、Wiki Hub、PageIndex 管理仅藏在「运营分析」Tab，概览首屏丢失 §14.2 要求的增强索引运营入口。用户要求扩充统计并恢复 LLM Wiki、PageIndex 独立展示。
+
+**用户可见变化**：统计区拆为「平台运营」10 项 +「RAG3 增强索引」8 项双行；概览 Tab 首屏恢复 RAG3 运营 Widget + **LLM Wiki** / **PageIndex 管理** 双栏面板（队列预览、Hub 深链）；Hub 快捷条文案恢复为 Wiki Hub / PageIndex 管理 / 知识图谱管理。
+
+### 改动摘要
+
+- `homeMock.ts`：`getPlatformStats()`、`RAG3_INDEX_STATS`（联动 `WIKI_STATS` / `PAGEINDEX_STATS`）。
+- `Home.tsx`：`WikiHubPanel`、`PageIndexHubPanel`；RAG3 统计卡可点击跳转 Hub；概览置顶 RAG3 Widget + Wiki/PI 面板。
+
+### 验证与风险
+
+- 验证：`npm run build` 通过；`home` 概览可见双行统计与 Wiki/PI 面板；Hub 按钮文案与深链正确。
+- 风险：统计仍为 mock 聚合；双行 18 卡窄屏需纵向滚动，后续可考虑折叠「RAG3 行」。
+
+### 涉及文件
+
+- `rag3-bolt-v1.5/src/data/homeMock.ts`
+- `rag3-bolt-v1.5/src/pages/Home.tsx`
