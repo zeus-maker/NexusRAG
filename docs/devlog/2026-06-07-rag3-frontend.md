@@ -1012,3 +1012,31 @@ P0 最后一项：检索测试页需从单通道混合结果升级为 PRD §10.5
 - `frontend/rag3-web/src/hooks/useKbData.ts`
 - `frontend/rag3-web/src/components/kb/ChunkSplitDialog.tsx`、`DocumentParsePreviewPanel.tsx`
 - `frontend/rag3-web/src/pages/KnowledgeBase.tsx`
+
+---
+
+## 34. 修复 PDF 解析失败：补全 DeepDOC xgb 模型
+
+### 背景与目标
+
+用户上传 PDF 后状态变「失败」。`task_executor_0.log` 根因为 DeepDOC 初始化时缺少 `rag/res/deepdoc/updown_concat_xgb.model`，运行时从 HuggingFace 拉取 `InfiniFlow/text_concat_xgb_v1.0` 因网络/缓存失败（`LocalEntryNotFoundError`），与嵌入模型配置无关。
+
+### 改动摘要
+
+- 新增 `scripts/download-deepdoc-models.sh`：经 `hf-mirror.com` curl 下载模型至 `rag/res/deepdoc/`。
+- `install.sh` / `start-task-executor.sh` 集成检查与安装提示。
+- 本地已落盘 `updown_concat_xgb.model`（约 5.7MB）。
+- 前端文档表失败行展示 `progress_msg` 末行，便于对照日志。
+- `backend/README.md` 常见问题补充 PDF 解析与 embedding 两类失败处理。
+
+### 验证与风险
+
+- 需**重启 task_executor** 后对失败文档点「重新解析」或「批量解析」。
+- 若下一步报 `No default embedding model`，仍需在「模型与 KEY」配置嵌入模型。
+- 模型二进制不入库，新环境须执行 `download-deepdoc-models.sh`。
+
+### 涉及文件
+
+- `backend/ragflow_rag30/scripts/download-deepdoc-models.sh`、`install.sh`、`start-task-executor.sh`
+- `backend/README.md`
+- `frontend/rag3-web/src/services/kbMappers.ts`、`types/index.ts`、`pages/KnowledgeBase.tsx`
