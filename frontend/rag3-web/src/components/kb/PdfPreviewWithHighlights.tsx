@@ -7,6 +7,8 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker;
 
+const VISIBLE_BUFFER = 1; // 视口上下各多渲染 1 页
+
 interface Props {
   url: string;
   highlights?: PdfHighlightRect[];
@@ -28,10 +30,11 @@ export function PdfPreviewWithHighlights({ url, highlights = [], className = '' 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [numPages, setNumPages] = useState(0);
-  const [pages, setPages] = useState<PageMeta[]>([]);
+  const [pageSize, setPageSize] = useState<PageMeta | null>(null);
   const [refSize, setRefSize] = useState<{ width: number; height: number } | null>(null);
   const [renderedPages, setRenderedPages] = useState<Set<number>>(() => new Set());
   const [focusPage, setFocusPage] = useState(1);
+  const [visibleRange, setVisibleRange] = useState({ start: 1, end: 2 });
 
   const highlightPage = highlights[0]?.pageNumber ?? 1;
 
@@ -58,15 +61,29 @@ export function PdfPreviewWithHighlights({ url, highlights = [], className = '' 
     renderedRef.current.add(pageNumber);
     setRenderedPages(prev => new Set(prev).add(pageNumber));
 
-    setPages(prev => {
-      const next = [...prev];
-      const idx = pageNumber - 1;
-      if (next[idx]) {
-        next[idx] = { pageNumber, width: viewport.width, height: viewport.height };
-      }
-      return next;
-    });
+    if (pageNumber === 1) {
+      setPageSize({ pageNumber: 1, width: viewport.width, height: viewport.height });
+    }
   }, []);
+
+  const updateVisibleRange = useCallback(() => {
+    const el = containerRef.current;
+    if (!el || !pageSize || !numPages) return;
+
+    const pageH = pageSize.height + 16; // gap-4
+    const scrollTop = el.scrollTop;
+    const viewH = el.clientHeight;
+    const first = Math.floor(scrollTop / pageH) + 1;
+    const last = Math.ceil((scrollTop + viewH) / pageH);
+    const start = Math.max(1, first - VISIBLE_BUFFER);
+    const end = Math.min(numPages, last + VISIBLE_BUFFER);
+    setVisibleRange({ start, end });
+    setFocusPage(Math.max(1, Math.min(numPages, first)));
+
+    for (let p = start; p <= end; p++) {
+      void renderPage(p);
+    }
+  }, [numPages, pageSize, renderPage]);
 
   useEffect(() => {
     if (!url) {
@@ -79,7 +96,7 @@ export function PdfPreviewWithHighlights({ url, highlights = [], className = '' 
     setLoading(true);
     setError(null);
     setNumPages(0);
-    setPages([]);
+    setPageSize(null);
     setRefSize(null);
     setRenderedPages(new Set());
     renderedRef.current.clear();
@@ -104,13 +121,9 @@ export function PdfPreviewWithHighlights({ url, highlights = [], className = '' 
         const s = Math.min(1.5, Math.max(0.55, (containerWidth - 24) / vp1.width));
         const vp = page1.getViewport({ scale: s });
 
-        const placeholders: PageMeta[] = Array.from({ length: pdf.numPages }, (_, i) => ({
-          pageNumber: i + 1,
-          width: vp.width,
-          height: vp.height,
-        }));
+        setPageSize({ pageNumber: 1, width: vp.width, height: vp.height });
         setNumPages(pdf.numPages);
-        setPages(placeholders);
+        setVisibleRange({ start: 1, end: Math.min(pdf.numPages, 2) });
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : 'PDF 加载失败');
       } finally {
@@ -121,38 +134,45 @@ export function PdfPreviewWithHighlights({ url, highlights = [], className = '' 
     return () => { cancelled = true; };
   }, [url]);
 
-  // 懒加载：仅渲染视口内页面（及相邻页）
   useEffect(() => {
-    const root = containerRef.current;
-    if (!root || !numPages) return;
+    if (!loading && pageSize) {
+      void renderPage(1);
+      updateVisibleRange();
+    }
+  }, [loading, pageSize, updateVisibleRange, renderPage]);
 
-    const observer = new IntersectionObserver(
-      entries => {
-        entries.forEach(entry => {
-          if (!entry.isIntersecting) return;
-          const pageNum = Number((entry.target as HTMLElement).dataset.page);
-          if (pageNum > 0) void renderPage(pageNum);
+  // 虚拟列表卸载页后允许重新渲染 canvas
+  useEffect(() => {
+    for (const p of [...renderedRef.current]) {
+      if (p < visibleRange.start || p > visibleRange.end) {
+        renderedRef.current.delete(p);
+        setRenderedPages(prev => {
+          const next = new Set(prev);
+          next.delete(p);
+          return next;
         });
-      },
-      { root, rootMargin: '120px 0px', threshold: 0.01 },
-    );
+      }
+    }
+    for (let p = visibleRange.start; p <= visibleRange.end; p++) {
+      void renderPage(p);
+    }
+  }, [visibleRange, renderPage]);
 
-    const slots = root.querySelectorAll('[data-page]');
-    slots.forEach(el => observer.observe(el));
-    return () => observer.disconnect();
-  }, [numPages, pages.length, renderPage, url]);
+  const scrollToPage = useCallback((page: number) => {
+    const el = containerRef.current;
+    if (!el || !pageSize || !numPages) return;
+    const clamped = Math.max(1, Math.min(numPages, page));
+    const pageH = pageSize.height + 16;
+    el.scrollTo({ top: (clamped - 1) * pageH, behavior: 'smooth' });
+    setFocusPage(clamped);
+    void renderPage(clamped);
+  }, [numPages, pageSize, renderPage]);
 
-  // 选中分块时滚到对应页
   useEffect(() => {
-    if (!highlightPage || !numPages) return;
-    setFocusPage(highlightPage);
-    void renderPage(highlightPage);
-    const timer = window.setTimeout(() => {
-      const el = document.getElementById(`pdf-page-${highlightPage}`);
-      el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 80);
+    if (!highlightPage || !numPages || !pageSize) return;
+    const timer = window.setTimeout(() => scrollToPage(highlightPage), 60);
     return () => window.clearTimeout(timer);
-  }, [highlights, highlightPage, numPages, renderPage]);
+  }, [highlights, highlightPage, numPages, pageSize, scrollToPage]);
 
   const scaleRect = (rect: PdfHighlightRect, pageW: number, pageH: number) => {
     if (!refSize) return null;
@@ -166,18 +186,23 @@ export function PdfPreviewWithHighlights({ url, highlights = [], className = '' 
     };
   };
 
-  const scrollToPage = (page: number) => {
-    const clamped = Math.max(1, Math.min(numPages, page));
-    setFocusPage(clamped);
-    void renderPage(clamped);
-    const el = document.getElementById(`pdf-page-${clamped}`);
-    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
+  const pageH = pageSize ? pageSize.height + 16 : 0;
+  const pageW = pageSize?.width ?? 0;
+  const totalScrollHeight = numPages * pageH;
+  const topSpacer = (visibleRange.start - 1) * pageH;
+  const bottomSpacer = (numPages - visibleRange.end) * pageH;
+
+  const visiblePages = pageSize
+    ? Array.from(
+        { length: visibleRange.end - visibleRange.start + 1 },
+        (_, i) => visibleRange.start + i,
+      )
+    : [];
 
   return (
     <div className={`flex flex-col h-full min-h-0 ${className}`}>
-      {numPages > 1 && (
-        <div className="flex-shrink-0 flex items-center justify-center gap-2 py-1.5 px-2 border-b border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-900/80 text-xs text-gray-600">
+      {numPages > 0 && (
+        <div className="flex-shrink-0 flex items-center justify-center gap-2 py-1.5 px-2 border-b border-gray-200 dark:border-gray-700 bg-white/90 dark:bg-gray-900/90 text-xs text-gray-600">
           <button
             type="button"
             disabled={focusPage <= 1}
@@ -187,7 +212,7 @@ export function PdfPreviewWithHighlights({ url, highlights = [], className = '' 
           >
             <ChevronLeft size={14} />
           </button>
-          <span className="tabular-nums min-w-[4rem] text-center">
+          <span className="tabular-nums min-w-[4.5rem] text-center">
             {focusPage} / {numPages} 页
           </span>
           <button
@@ -204,7 +229,8 @@ export function PdfPreviewWithHighlights({ url, highlights = [], className = '' 
 
       <div
         ref={containerRef}
-        className="relative flex-1 min-h-0 overflow-y-auto overflow-x-hidden bg-gray-100 dark:bg-gray-800 rounded-b-xl scroll-smooth"
+        onScroll={updateVisibleRange}
+        className="relative flex-1 min-h-0 overflow-y-auto overflow-x-hidden bg-gray-100 dark:bg-gray-800 scroll-smooth"
       >
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-500 z-10 bg-gray-100/80">
@@ -214,50 +240,57 @@ export function PdfPreviewWithHighlights({ url, highlights = [], className = '' 
         {error && (
           <div className="p-4 text-xs text-red-600">{error}</div>
         )}
-        <div className="flex flex-col items-center gap-4 p-3">
-          {pages.map(page => {
-            const pageHighlights = highlights.filter(h => h.pageNumber === page.pageNumber);
-            const isRendered = renderedPages.has(page.pageNumber);
-            return (
-              <div
-                key={page.pageNumber}
-                id={`pdf-page-${page.pageNumber}`}
-                data-page={page.pageNumber}
-                className="relative shadow-md bg-white flex-shrink-0"
-                style={{ width: page.width, minHeight: page.height }}
-              >
-                {!isRendered && (
+        {pageSize && (
+          <div className="relative w-full" style={{ height: totalScrollHeight }}>
+            <div className="absolute left-0 right-0 flex flex-col items-center" style={{ top: topSpacer }}>
+              {visiblePages.map(pageNumber => {
+                const pageHighlights = highlights.filter(h => h.pageNumber === pageNumber);
+                const isRendered = renderedPages.has(pageNumber);
+                return (
                   <div
-                    className="absolute inset-0 flex items-center justify-center text-[10px] text-gray-400 bg-white"
-                    style={{ width: page.width, height: page.height }}
+                    key={pageNumber}
+                    id={`pdf-page-${pageNumber}`}
+                    data-page={pageNumber}
+                    className="relative shadow-md bg-white flex-shrink-0 mb-4 last:mb-0"
+                    style={{ width: pageW, minHeight: pageSize.height }}
                   >
-                    滚动加载…
-                  </div>
-                )}
-                <canvas
-                  ref={el => { canvasRefs.current[page.pageNumber] = el; }}
-                  className="block max-w-full"
-                />
-                {pageHighlights.map((rect, idx) => {
-                  const box = scaleRect(rect, page.width, page.height);
-                  if (!box || box.width <= 0 || box.height <= 0) return null;
-                  return (
-                    <div
-                      key={idx}
-                      className="absolute pointer-events-none border-2 border-amber-400 bg-amber-300/30 rounded-sm z-10"
-                      style={{
-                        left: box.left,
-                        top: box.top,
-                        width: box.width,
-                        height: box.height,
-                      }}
+                    {!isRendered && (
+                      <div
+                        className="absolute inset-0 flex items-center justify-center text-[10px] text-gray-400 bg-white z-0"
+                        style={{ height: pageSize.height }}
+                      >
+                        加载中…
+                      </div>
+                    )}
+                    <canvas
+                      ref={el => { canvasRefs.current[pageNumber] = el; }}
+                      className="block max-w-full relative z-[1]"
                     />
-                  );
-                })}
-              </div>
-            );
-          })}
-        </div>
+                    {pageHighlights.map((rect, idx) => {
+                      const box = scaleRect(rect, pageW, pageSize.height);
+                      if (!box || box.width <= 0 || box.height <= 0) return null;
+                      return (
+                        <div
+                          key={idx}
+                          className="absolute pointer-events-none border-2 border-amber-400 bg-amber-300/30 rounded-sm z-10"
+                          style={{
+                            left: box.left,
+                            top: box.top,
+                            width: box.width,
+                            height: box.height,
+                          }}
+                        />
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+            {bottomSpacer > 0 && (
+              <div aria-hidden style={{ position: 'absolute', bottom: 0, height: bottomSpacer, width: 1 }} />
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

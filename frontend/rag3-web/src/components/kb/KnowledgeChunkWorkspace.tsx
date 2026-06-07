@@ -7,6 +7,8 @@ import { buildChunkHighlightRects, isPdfFileName } from '../../utils/documentUti
 import { ChunkContentView } from './ChunkContentView';
 import { ChunkListCard } from './ChunkListCard';
 import { ImageLightbox } from './ImageLightbox';
+import { DocumentIframePreview } from './DocumentIframePreview';
+import { DocumentScrollFrame } from './DocumentScrollFrame';
 import { PdfPreviewWithHighlights } from './PdfPreviewWithHighlights';
 
 export interface ChunkWorkspaceActions {
@@ -147,21 +149,21 @@ export function KnowledgeChunkWorkspace({
           </button>
         </div>
       </header>
-      <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+      <div className="flex-1 min-h-0 p-3 overflow-hidden flex flex-col">
         {!previewUrl ? (
           <p className="text-xs text-gray-500 p-4">无法加载原始文件预览</p>
-        ) : isPdf ? (
-          <PdfPreviewWithHighlights
-            url={previewUrl}
-            highlights={highlights}
-            className="flex-1 min-h-0"
-          />
         ) : (
-          <iframe
-            title="文档预览"
-            src={previewUrl}
-            className="flex-1 min-h-0 w-full rounded-xl border border-gray-200 bg-white"
-          />
+          <DocumentScrollFrame className="flex-1 min-h-0 h-full">
+            {isPdf ? (
+              <PdfPreviewWithHighlights
+                url={previewUrl}
+                highlights={highlights}
+                className="h-full min-h-0"
+              />
+            ) : (
+              <DocumentIframePreview url={previewUrl} title={doc.original_name} />
+            )}
+          </DocumentScrollFrame>
         )}
       </div>
     </article>
