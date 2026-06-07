@@ -8,7 +8,8 @@ import { mockConversations, mockKBs } from '../mockData';
 import type { ChatMessage, Citation, Conversation } from '../types';
 import { ChatSettingsPanel, DEFAULT_CHAT_SETTINGS, type ChatSettings } from '../components/ChatSettingsPanel';
 import { CONV_MESSAGES, CONV_PINNED, QUERY_TRACE_STEPS } from '../data/chatMock';
-import { consumePageIndexChatPrefill } from '../utils/pageIndexChatPrefill';
+import { consumePageIndexChatPrefill, type PageIndexChatPrefill } from '../utils/pageIndexChatPrefill';
+import { rag3Api, useRealApi } from '../services/api';
 
 const SAMPLE_RESPONSES = [
   {
@@ -187,12 +188,14 @@ export function ChatPage({ convId, onNavigate }: ChatPageProps) {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const prefillRef = useRef<PageIndexChatPrefill | null>(null);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2200); };
 
   useEffect(() => {
     const prefill = consumePageIndexChatPrefill();
     if (!prefill) return;
+    prefillRef.current = prefill;
     setInput(prefill.query);
     setCurrentConv(null);
     setMessages([]);
@@ -206,6 +209,10 @@ export function ChatPage({ convId, onNavigate }: ChatPageProps) {
         ? `已载入 PageIndex 测试查询（${prefill.docName}），按 Enter 发送`
         : '已载入 PageIndex 测试查询，按 Enter 发送',
     );
+    if (prefill.autoSend) {
+      window.setTimeout(() => sendMessage(prefill.query), 200);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadConversation = useCallback((id: string) => {
@@ -251,13 +258,48 @@ export function ChatPage({ convId, onNavigate }: ChatPageProps) {
     startStreamingResponse(text, messages.length + 1);
   };
 
-  const startStreamingResponse = (text: string, msgCount: number) => {
-    const sample = SAMPLE_RESPONSES.find(s => text.includes(s.question.slice(0, 8))) || SAMPLE_RESPONSES[msgCount % 2] || SAMPLE_RESPONSES[0];
-    setLastCompareB(sample.compareB || '');
-    const aiMsgId = (Date.now() + 1).toString();
-    setMessages(prev => [...prev, { id: aiMsgId, role: 'assistant', content: '', citations: [], confidence: 0, is_streaming: true, created_at: new Date().toISOString() }]);
+  const resolveMockSample = (text: string, msgCount: number) => (
+    SAMPLE_RESPONSES.find(s => text.includes(s.question.slice(0, 8))) || SAMPLE_RESPONSES[msgCount % 2] || SAMPLE_RESPONSES[0]
+  );
+
+  const fetchRag3Answer = async (text: string) => {
+    const kbId = chatSettings.kbIds[0] || prefillRef.current?.kbId;
+    if (!kbId) throw new Error('请先选择知识库');
+    const result = await rag3Api.query(text, kbId, {
+      pipeline_ids: prefillRef.current?.pipelineIds,
+      top_k: 8,
+    });
+    const citations: Citation[] = (result.citations ?? result.fusion.slice(0, 5).map((h, i) => ({
+      index: i + 1,
+      doc_name: h.doc_name,
+      page_number: Number((h.metadata as Record<string, unknown> | undefined)?.page) || 0,
+      section: (h.snippet || '').slice(0, 48),
+      snippet: (h.snippet || '').slice(0, 200),
+      relevance_score: h.wrrf_score,
+    })));
+    return {
+      content: result.answer || result.fusion.map(h => h.snippet).join('\n\n') || '未找到相关内容。',
+      citations,
+      confidence: result.fusion[0]?.wrrf_score ?? 0.75,
+      tier: result.classification,
+      channels: result.channels ?? result.pipelines,
+      latency: result.latency_ms,
+      compareB: result.fusion[1]?.snippet?.slice(0, 120) ?? '',
+    };
+  };
+
+  const streamAssistantContent = (
+    aiMsgId: string,
+    fullContent: string,
+    meta: {
+      citations: Citation[];
+      confidence: number;
+      tier: string;
+      channels: string[];
+      latency: number;
+    },
+  ) => {
     setIsStreaming(true);
-    const fullContent = sample.content;
     let charIndex = 0;
     streamRef.current = setInterval(() => {
       charIndex += Math.floor(Math.random() * 6) + 3;
@@ -265,9 +307,15 @@ export function ChatPage({ convId, onNavigate }: ChatPageProps) {
         if (streamRef.current) clearInterval(streamRef.current);
         streamRef.current = null;
         setMessages(prev => prev.map(m => m.id === aiMsgId ? {
-          ...m, content: fullContent, citations: sample.citations, confidence: sample.confidence,
-          confidence_level: 'high', routing_tier: sample.tier, channels: sample.channels,
-          latency_ms: sample.latency, is_streaming: false,
+          ...m,
+          content: fullContent,
+          citations: meta.citations,
+          confidence: meta.confidence,
+          confidence_level: 'high',
+          routing_tier: meta.tier,
+          channels: meta.channels,
+          latency_ms: meta.latency,
+          is_streaming: false,
         } : m));
         setIsStreaming(false);
       } else {
@@ -276,8 +324,68 @@ export function ChatPage({ convId, onNavigate }: ChatPageProps) {
     }, 25);
   };
 
+  const startStreamingResponse = (text: string, msgCount: number) => {
+    const aiMsgId = (Date.now() + 1).toString();
+    setMessages(prev => [...prev, { id: aiMsgId, role: 'assistant', content: '', citations: [], confidence: 0, is_streaming: true, created_at: new Date().toISOString() }]);
+
+    if (useRealApi) {
+      setIsStreaming(true);
+      void fetchRag3Answer(text)
+        .then(answer => {
+          setLastCompareB(answer.compareB);
+          streamAssistantContent(aiMsgId, answer.content, {
+            citations: answer.citations,
+            confidence: answer.confidence,
+            tier: answer.tier,
+            channels: answer.channels,
+            latency: answer.latency,
+          });
+        })
+        .catch(err => {
+          setIsStreaming(false);
+          setMessages(prev => prev.map(m => m.id === aiMsgId ? {
+            ...m,
+            content: `检索失败：${err instanceof Error ? err.message : '未知错误'}`,
+            is_streaming: false,
+          } : m));
+          showToast('RAG3 查询失败');
+        });
+      return;
+    }
+
+    const sample = resolveMockSample(text, msgCount);
+    setLastCompareB(sample.compareB || '');
+    streamAssistantContent(aiMsgId, sample.content, {
+      citations: sample.citations,
+      confidence: sample.confidence,
+      tier: sample.tier,
+      channels: sample.channels,
+      latency: sample.latency,
+    });
+  };
+
   const finishResponse = (text: string, msgCount: number) => {
-    const sample = SAMPLE_RESPONSES[msgCount % 2] || SAMPLE_RESPONSES[0];
+    if (useRealApi) {
+      void fetchRag3Answer(text)
+        .then(answer => {
+          setLastCompareB(answer.compareB);
+          setMessages(prev => [...prev, {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: answer.content,
+            citations: answer.citations,
+            confidence: answer.confidence,
+            confidence_level: 'high',
+            routing_tier: answer.tier,
+            channels: answer.channels,
+            latency_ms: answer.latency,
+            created_at: new Date().toISOString(),
+          }]);
+        })
+        .catch(err => showToast(err instanceof Error ? err.message : 'RAG3 查询失败'));
+      return;
+    }
+    const sample = resolveMockSample(text, msgCount);
     setLastCompareB(sample.compareB || '');
     setMessages(prev => [...prev, {
       id: (Date.now() + 1).toString(), role: 'assistant', content: sample.content,

@@ -305,6 +305,12 @@ async def _run_build(task_id: str, kb_id: str, tenant_id: str, index_type: str, 
             progress_msg="\n".join(msgs + [f"{datetime.now():%H:%M:%S} {index_type} 构建完成 ({time.time() - started:.1f}s)"]),
             process_duration=time.time() - started,
         )
+        if index_type == "pageindex":
+            try:
+                from rag3.pageindex_hub_service import record_pageindex_build
+                record_pageindex_build(kb_id, success=True)
+            except Exception:
+                pass
     except Exception as e:
         logger.exception("rag3 index build failed task=%s type=%s", task_id, index_type)
         _update_task(
@@ -313,6 +319,12 @@ async def _run_build(task_id: str, kb_id: str, tenant_id: str, index_type: str, 
             progress_msg=f"{datetime.now():%H:%M:%S} [ERROR] {index_type} 构建失败: {e}",
             process_duration=time.time() - started,
         )
+        if index_type == "pageindex":
+            try:
+                from rag3.pageindex_hub_service import record_pageindex_build
+                record_pageindex_build(kb_id, success=False, fail_reason=str(e)[:120])
+            except Exception:
+                pass
     finally:
         _RUNNING_TASKS.discard(task_id)
 
@@ -422,17 +434,28 @@ def load_wiki_entries(kb_id: str) -> list[dict[str, Any]]:
         return []
 
 
-def search_pageindex_hits(kb_id: str, query: str, top_k: int = 10) -> list[dict[str, Any]]:
+def search_pageindex_hits(
+    kb_id: str,
+    query: str,
+    top_k: int = 10,
+    *,
+    doc_id: str | None = None,
+    mode: str = "llm_prompt",
+) -> list[dict[str, Any]]:
     """从已构建 PageIndex 树检索：优先 PageIndex SDK，否则关键词匹配。"""
     q = (query or "").strip()
     if not q:
         return []
 
+    thinking = (mode or "llm_prompt").lower() == "mcts_hybrid"
+
     try:
         from rag3.pageindex_integration import is_pageindex_cloud_enabled, search_pageindex_cloud
 
         if is_pageindex_cloud_enabled():
-            cloud_hits = search_pageindex_cloud(kb_id, q, top_k=top_k)
+            cloud_hits = search_pageindex_cloud(
+                kb_id, q, top_k=top_k, doc_id=doc_id, thinking=thinking,
+            )
             if cloud_hits:
                 return cloud_hits
     except Exception:
@@ -452,6 +475,8 @@ def search_pageindex_hits(kb_id: str, query: str, top_k: int = 10) -> list[dict[
     )
     hits: list[dict[str, Any]] = []
     for doc in documents:
+        if doc_id and doc["id"] != doc_id:
+            continue
         tree = load_pageindex_tree(kb_id, doc["id"])
         if not tree:
             continue
@@ -487,6 +512,15 @@ def _count_tree_nodes(node: dict[str, Any] | None) -> int:
     for child in node.get("children") or []:
         total += _count_tree_nodes(child)
     return total
+
+
+def _tree_depth_from_root(node: dict[str, Any] | None, depth: int = 0) -> int:
+    if not node:
+        return depth
+    children = node.get("children") or []
+    if not children:
+        return depth + 1
+    return max(_tree_depth_from_root(c, depth + 1) for c in children if isinstance(c, dict))
 
 
 def list_pageindex_documents(dataset_id: str, tenant_id: str) -> tuple[bool, dict[str, Any] | str]:
@@ -525,6 +559,14 @@ def list_pageindex_documents(dataset_id: str, tenant_id: str) -> tuple[bool, dic
             pending += 1
         tree = load_pageindex_tree(dataset_id, doc_id)
         node_count = _count_tree_nodes(tree.get("root") if tree else None)
+        tree_source = (tree or {}).get("source") or ""
+        toc_source = "llm" if tree_source == "pageindex_cloud" else "deepdoc" if tree else "deepdoc"
+        fail_reason = None
+        if status == "failed":
+            if trace_ok and isinstance(trace, dict) and float(trace.get("progress", 0)) < 0:
+                fail_reason = (trace.get("progress_msg") or "").split("\n")[-1].strip() or "建树失败"
+            elif doc.get("progress") == -1:
+                fail_reason = "向量解析失败"
         items.append({
             "id": doc_id,
             "name": doc.get("name") or doc_id,
@@ -534,6 +576,9 @@ def list_pageindex_documents(dataset_id: str, tenant_id: str) -> tuple[bool, dic
             "tree_status": status,
             "nodes": node_count,
             "chunk_count": tree.get("chunk_count") if tree else 0,
+            "tree_depth": _tree_depth_from_root(tree.get("root") if tree else None),
+            "toc_source": toc_source,
+            "fail_reason": fail_reason,
             "updated": doc.get("update_date") or doc.get("create_date") or "",
             "parse_progress": doc.get("progress"),
         })
@@ -605,20 +650,106 @@ def list_wiki_hub_entries(dataset_id: str, tenant_id: str) -> tuple[bool, dict[s
     }
 
 
-def search_pageindex_library(kb_id: str, query: str, top_k: int = 10) -> list[dict[str, Any]]:
-    hits = search_pageindex_hits(kb_id, query, top_k=top_k)
-    return [
+def _format_pageindex_hit(h: dict[str, Any]) -> dict[str, Any]:
+    meta = h.get("metadata") or {}
+    return {
+        "doc_id": h["doc_id"],
+        "doc_name": h["doc_name"],
+        "node_id": meta.get("node_id", h["chunk_id"]),
+        "node_title": (h["snippet"] or "")[:40] or h["doc_name"],
+        "page_range": meta.get("page", ""),
+        "confidence": h["score"],
+        "excerpt": h["snippet"],
+    }
+
+
+def search_pageindex_library(
+    kb_id: str,
+    query: str,
+    top_k: int = 10,
+    *,
+    doc_id: str | None = None,
+    mode: str | None = None,
+) -> dict[str, Any]:
+    from rag3.pageindex_hub_service import (
+        build_search_steps,
+        get_pageindex_settings,
+        record_pageindex_search,
+    )
+
+    settings = get_pageindex_settings(kb_id)
+    effective_mode = (mode or settings.get("search_mode") or "llm_prompt").lower()
+    started = time.time()
+    hits_raw = search_pageindex_hits(
+        kb_id, query, top_k=top_k, doc_id=doc_id, mode=effective_mode,
+    )
+    latency_ms = max(1, int((time.time() - started) * 1000))
+    hits = [_format_pageindex_hit(h) for h in hits_raw]
+    hops = 4 if effective_mode == "mcts_hybrid" else 2
+    record_pageindex_search(
+        kb_id,
+        latency_ms=latency_ms,
+        mode=effective_mode,
+        hops=hops,
+        doc_id=doc_id or (hits[0]["doc_id"] if hits else None),
+    )
+    if doc_id:
+        docs_searched = 1
+    else:
+        all_docs, _ = DocumentService.get_by_kb_id(
+            kb_id=kb_id, page_number=0, items_per_page=0, orderby="create_time",
+            desc=False, keywords="", run_status=[], types=[], suffix=[],
+        )
+        docs_searched = sum(1 for d in all_docs if load_pageindex_tree(kb_id, d["id"]))
+    step_hits = [
         {
-            "doc_id": h["doc_id"],
-            "doc_name": h["doc_name"],
-            "node_id": h["metadata"].get("node_id", h["chunk_id"]),
-            "node_title": h["snippet"][:40] or h["doc_name"],
-            "page_range": h["metadata"].get("page", ""),
-            "confidence": h["score"],
-            "excerpt": h["snippet"],
+            "node_id": h["node_id"],
+            "node_title": h["node_title"],
+            "excerpt": h["excerpt"],
         }
         for h in hits
     ]
+    return {
+        "query": query,
+        "mode": effective_mode,
+        "hits": hits,
+        "total": len(hits),
+        "total_ms": latency_ms,
+        "docs_searched": docs_searched,
+        "steps": build_search_steps(step_hits, effective_mode, latency_ms),
+    }
+
+
+def get_pageindex_hub_analytics(dataset_id: str, tenant_id: str) -> tuple[bool, dict[str, Any] | str]:
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+    from rag3.pageindex_hub_service import get_pageindex_analytics
+
+    documents, _ = DocumentService.get_by_kb_id(
+        kb_id=dataset_id,
+        page_number=0,
+        items_per_page=0,
+        orderby="create_time",
+        desc=True,
+        keywords="",
+        run_status=[],
+        types=[],
+        suffix=[],
+    )
+    items = []
+    trees: dict[str, dict] = {}
+    for doc in documents:
+        doc_id = doc["id"]
+        tree = load_pageindex_tree(dataset_id, doc_id)
+        if tree:
+            trees[doc_id] = tree
+        items.append({
+            "id": doc_id,
+            "name": doc.get("name") or doc_id,
+            "file_type": doc.get("suffix") or doc.get("type") or "",
+            "tree_status": "completed" if tree else "pending",
+        })
+    return True, get_pageindex_analytics(dataset_id, items, trees)
 
 
 def search_wiki_library(kb_id: str, query: str, top_k: int = 10) -> list[dict[str, Any]]:

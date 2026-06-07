@@ -6,11 +6,17 @@ export interface PageIndexChatPrefill {
   docId?: string;
   docName?: string;
   pipeline?: 'pageindex';
+  pipelineIds?: string[];
+  autoSend?: boolean;
 }
 
 export function stashPageIndexChatPrefill(payload: PageIndexChatPrefill) {
   try {
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ ...payload, pipeline: 'pageindex' }));
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
+      ...payload,
+      pipeline: 'pageindex',
+      pipelineIds: payload.pipelineIds ?? ['pageindex'],
+    }));
   } catch {
     /* ignore */
   }

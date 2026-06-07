@@ -245,6 +245,9 @@ def search_pageindex_cloud(
     kb_id: str,
     query: str,
     top_k: int = 10,
+    *,
+    doc_id: str | None = None,
+    thinking: bool = True,
 ) -> list[dict[str, Any]]:
     """对已建树且含 pageindex_doc_id 的文档调用 PageIndex 检索 API。"""
     if not is_pageindex_cloud_enabled() or not (query or "").strip():
@@ -267,6 +270,8 @@ def search_pageindex_cloud(
 
     hits: list[dict[str, Any]] = []
     for doc in documents:
+        if doc_id and doc["id"] != doc_id:
+            continue
         tree = _load_pageindex_artifact(kb_id, doc["id"])
         if not tree or tree.get("source") != "pageindex_cloud":
             continue
@@ -276,7 +281,7 @@ def search_pageindex_cloud(
         doc_name = tree.get("doc_name") or doc.get("name", "")
 
         try:
-            submitted = client.submit_query(pi_doc_id, query, thinking=True)
+            submitted = client.submit_query(pi_doc_id, query, thinking=thinking)
             retrieval_id = submitted.get("retrieval_id") if isinstance(submitted, dict) else None
             if not retrieval_id:
                 continue

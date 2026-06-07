@@ -1696,3 +1696,42 @@ RAG3 PageIndex 建树此前为按页码分组 chunk 的启发式 mock，与 Vect
 - `frontend/rag3-web/src/pages/Chat.tsx`
 - `frontend/rag3-web/src/utils/pageIndexTreeUtils.ts`（新建）
 - `frontend/rag3-web/src/utils/pageIndexChatPrefill.ts`（新建）
+
+---
+
+## 57. PageIndex Hub 全量落地：统计/设置/真 PDF/对话 RAG
+
+### 背景与目标
+
+用户要求「都实现」：统计 Tab、建树设置持久化、真实 PDF 预览、失败分布、周建树图、对话真 RAG（`/rag3/query`）、MCTS 模式、增强搜索 steps 等全部接线，去掉 API 模式下的「演示数据」横幅。
+
+### 改动摘要
+
+- **后端 Hub 服务**：`pageindex_hub_service.py` 提供 Redis 设置 `rag3:pageindex:settings:{kb}`、检索/建树指标 `rag3:pageindex:metrics:{kb}`；`index_service.search_pageindex_library` 支持 `doc_id`、`mode`（`llm_prompt`/`mcts_hybrid`），返回 `steps`、`total_ms` 并记录 metrics；建树成功/失败调用 `record_pageindex_build`；文档列表补 `fail_reason`、`toc_source`、`tree_depth`。
+- **RAG3 API**：`GET/PUT .../pageindex/settings`、`GET .../pageindex/analytics`；增强 `POST .../pageindex/search`；`POST /rag3/query` 支持 `pipeline_ids` 覆盖，返回 `answer`、`citations`、`channels`、`doc_id` 融合字段。
+- **前端 Hub**：`hubApi` + `usePageIndexHubData` 接 settings/analytics/search(mode)；统计/设置 Tab 用真实 API；概览失败分布与周建树图来自 analytics；`HubDocumentPdfPreview` 在 API 模式用 `kbApi.fetchDocumentPreview` + `PdfPreviewWithHighlights` 滚到命中页；库级/单文档搜索传 MCTS 模式；队列「暂停」在 API 模式禁用。
+- **对话**：`useRealApi` 时 `Chat.tsx` 调 `rag3Api.query`，预填可带 `pipelineIds: ['pageindex']`。
+
+### 验证与风险
+
+- `npm run build` 通过；`python -c "from rag3.index_service import search_pageindex_library"` 导入正常。
+- 手动：Hub 统计 Tab 应显示检索后递增的 P50/P95；设置保存后刷新仍保留；单文档调试右侧加载真实 PDF；对话页发送预填查询应返回 fusion 拼接的 answer。
+- 风险：真实 PageIndex 树多数无 bbox，预览仅滚到 `startPage`；FinanceBench 98.7% 仍为产品基准常量；队列暂停未实现后端能力。
+
+### 反思与沉淀
+
+- Hub 检索 metrics 与 `/rag3/query` 应共用 `search_pageindex_library` 记录逻辑，避免统计与调试数据分叉。
+- 对话 answer 当前为检索片段拼接，未接 LLM 生成；后续可在 query 路径增加 summarization 步骤。
+
+### 涉及文件
+
+- `backend/ragflow_rag30/rag3/pageindex_hub_service.py` — 设置/metrics/analytics/steps
+- `backend/ragflow_rag30/rag3/index_service.py` — 增强搜索、建树记录、文档字段
+- `backend/ragflow_rag30/api/apps/rag3_app.py` — settings/analytics/search/query
+- `backend/ragflow_rag30/fusion/rrf_fusion.py` — FusedHit 带 doc_id/metadata
+- `backend/ragflow_rag30/pipelines/pageindex_pipeline.py` — 读取持久化 search_mode
+- `frontend/rag3-web/src/services/hubApi.ts`、`api.ts` — 新 API 契约
+- `frontend/rag3-web/src/hooks/useEnhancementHubData.ts` — analytics/settings/search
+- `frontend/rag3-web/src/pages/Hub/PageIndexHubPage.tsx` — Stats/Settings/PDF 预览
+- `frontend/rag3-web/src/pages/Chat.tsx` — 真 RAG 查询
+- `frontend/rag3-web/src/utils/pageIndexChatPrefill.ts` — pipelineIds

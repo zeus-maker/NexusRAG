@@ -9,8 +9,11 @@ class PageIndexPipeline(BasePipeline):
 
     def run(self, query: str, kb_id: str, top_k: int = 10, **ctx) -> PipelineResult:
         from rag3.index_service import search_pageindex_hits
+        from rag3.pageindex_hub_service import get_pageindex_settings
 
-        raw_hits = search_pageindex_hits(kb_id, query, top_k=top_k)
+        settings = get_pageindex_settings(kb_id)
+        mode = settings.get("search_mode") or "llm_prompt"
+        raw_hits = search_pageindex_hits(kb_id, query, top_k=top_k, mode=mode)
         if raw_hits:
             hits = [
                 PipelineHit(

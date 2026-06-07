@@ -17,10 +17,51 @@ export const hubApi = {
     return data;
   },
 
-  async searchPageIndex(datasetId: string, query: string, topK = 10) {
-    const { data } = await apiRequest<{ hits: Array<Record<string, unknown>>; total: number }>(
+  async searchPageIndex(
+    datasetId: string,
+    query: string,
+    options?: { topK?: number; docId?: string; mode?: string },
+  ) {
+    const { data } = await apiRequest<{
+      hits: Array<Record<string, unknown>>;
+      total: number;
+      total_ms?: number;
+      mode?: string;
+      docs_searched?: number;
+      steps?: Array<Record<string, unknown>>;
+    }>(
       `/rag3/datasets/${datasetId}/pageindex/search`,
-      { method: 'POST', body: JSON.stringify({ query, top_k: topK }) },
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          query,
+          top_k: options?.topK ?? 10,
+          doc_id: options?.docId,
+          mode: options?.mode,
+        }),
+      },
+    );
+    return data;
+  },
+
+  async getPageIndexSettings(datasetId: string) {
+    const { data } = await apiRequest<Record<string, unknown>>(
+      `/rag3/datasets/${datasetId}/pageindex/settings`,
+    );
+    return data;
+  },
+
+  async savePageIndexSettings(datasetId: string, settings: Record<string, unknown>) {
+    const { data } = await apiRequest<Record<string, unknown>>(
+      `/rag3/datasets/${datasetId}/pageindex/settings`,
+      { method: 'PUT', body: JSON.stringify(settings) },
+    );
+    return data;
+  },
+
+  async getPageIndexAnalytics(datasetId: string) {
+    const { data } = await apiRequest<Record<string, unknown>>(
+      `/rag3/datasets/${datasetId}/pageindex/analytics`,
     );
     return data;
   },

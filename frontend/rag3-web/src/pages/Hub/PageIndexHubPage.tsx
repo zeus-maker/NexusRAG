@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import {
   GitBranch, FileText, CheckCircle, AlertCircle, ChevronDown, ChevronRight,
   Search, Eye, RefreshCw, Folder, FolderOpen, Settings, Play, RotateCcw,
@@ -21,6 +21,9 @@ import {
 } from '../../data/pageIndexMock';
 import { findTreeNode, findTreeNodeAncestorIds } from '../../utils/pageIndexTreeUtils';
 import { openPageIndexChatTest } from '../../utils/pageIndexChatPrefill';
+import { PdfPreviewWithHighlights } from '../../components/kb/PdfPreviewWithHighlights';
+import { kbApi } from '../../services/kbApi';
+import type { PdfHighlightRect } from '../../utils/documentUtil';
 
 interface PageIndexHubPageProps {
   kbId?: string;
@@ -149,7 +152,7 @@ export default function PageIndexHubPage({ kbId, onNavigate }: PageIndexHubPageP
           />
         )}
         {activeTab === 4 && <SettingsTab showToast={showToast} />}
-        {activeTab === 5 && <StatsTab isApiMode={hub.isApiMode} />}
+        {activeTab === 5 && <StatsTab />}
       </HubPageShell>
       </PageIndexHubContext.Provider>
     </HubKBLayout>
@@ -256,10 +259,10 @@ function OverviewTab({ onViewDoc, onRetry }: { onViewDoc: (id: string) => void; 
 
         <div className={`${hubCard} p-4`}>
           <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-3">
-            失败原因分布{hub.isApiMode ? '（演示）' : ''}
+            失败原因分布
           </h3>
           <div className="space-y-2">
-            {(hub.isApiMode ? PAGEINDEX_STATS.failDist.slice(0, 1) : PAGEINDEX_STATS.failDist).map(item => (
+            {(hub.analytics.failDist.length ? hub.analytics.failDist : PAGEINDEX_STATS.failDist).map(item => (
               <div key={item.reason} className="flex items-center gap-3">
                 <span className="flex-1 text-xs text-gray-600 dark:text-gray-400">{item.reason}</span>
                 <span className="text-xs text-gray-500 w-4 text-right">{item.count}</span>
@@ -283,7 +286,7 @@ function OverviewTab({ onViewDoc, onRetry }: { onViewDoc: (id: string) => void; 
           <div className={`${hubCard} px-4 py-3 flex-shrink-0`}>
             <p className="text-[10px] text-gray-400">近 7 天建树</p>
             <div className="flex items-end gap-1 h-12 mt-1">
-              {(hub.isApiMode ? stats.weeklyBuilds : PAGEINDEX_STATS.weeklyBuilds).map((v, i) => (
+              {(hub.analytics.weeklyBuilds.length ? hub.analytics.weeklyBuilds : PAGEINDEX_STATS.weeklyBuilds).map((v, i) => (
                 <div key={i} className="w-4 bg-cyan-500 rounded-t-sm opacity-80" style={{ height: `${(v / maxWeekly) * 100}%`, minHeight: 4 }} />
               ))}
             </div>
@@ -517,7 +520,12 @@ function BuildQueueTab({
                       <button type="button" onClick={() => onViewDoc(item.docId)} className="text-[10px] text-cyan-600 hover:underline">查看树</button>
                     )}
                     {item.stage !== 'done' && item.stage !== 'failed' && (
-                      <button type="button" onClick={() => showToast('已暂停')} className="text-[10px] text-gray-600 flex items-center gap-0.5"><Pause size={10} /> 暂停</button>
+                      <button
+                        type="button"
+                        disabled={hub.isApiMode}
+                        onClick={() => showToast(hub.isApiMode ? '队列暂停暂不支持' : '已暂停')}
+                        className={`text-[10px] flex items-center gap-0.5 ${hub.isApiMode ? 'text-gray-400 cursor-not-allowed' : 'text-gray-600'}`}
+                      ><Pause size={10} /> 暂停</button>
                     )}
                     {item.stage === 'failed' && (
                       <>
@@ -564,8 +572,8 @@ function LibrarySearchTab({
   const handleSearch = () => {
     setSearching(true);
     setResult(null);
-    void hub.runLibrarySearch(testQuery).then(r => {
-      setResult({ ...r, mode: searchMode });
+    void hub.runLibrarySearch(testQuery, searchMode).then(r => {
+      setResult(r);
       setSearching(false);
     });
   };
@@ -630,7 +638,7 @@ function LibrarySearchTab({
                   <button type="button" onClick={() => onOpenDoc(hit.docId, true)} className="text-[10px] text-blue-600 hover:underline">单文档调试</button>
                   <button
                     type="button"
-                    onClick={() => openPageIndexChatTest(onNavigate, { kbId, query: result?.query || testQuery, docId: hit.docId, docName: hit.docName })}
+                    onClick={() => openPageIndexChatTest(onNavigate, { kbId, query: result?.query || testQuery, docId: hit.docId, docName: hit.docName, pipelineIds: ['pageindex'] })}
                     className="text-[10px] text-gray-500 hover:underline"
                   >在对话中测试</button>
                 </div>
@@ -650,29 +658,26 @@ function LibrarySearchTab({
   );
 }
 
-function StatsTab({ isApiMode }: { isApiMode?: boolean }) {
-  const maxWeekly = Math.max(...PAGEINDEX_ANALYTICS.weeklySearches);
-  const maxType = Math.max(...PAGEINDEX_ANALYTICS.docTypeDist.map(d => d.count));
+function StatsTab() {
+  const hub = usePageIndexHubContext();
+  const analytics = hub.analytics;
+  const maxWeekly = Math.max(...(analytics.weeklySearches.length ? analytics.weeklySearches : [1]));
+  const maxType = Math.max(...(analytics.docTypeDist.map(d => d.count).length ? analytics.docTypeDist.map(d => d.count) : [1]));
 
   return (
     <div className="space-y-4">
-      {isApiMode && (
-        <div className={`${hubCard} p-3 text-xs text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800`}>
-          以下统计指标仍为产品演示数据；检索延迟与命中统计待后端 metrics API 接入后替换。
-        </div>
-      )}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <HubStatCard label="P50 延迟" value={`${PAGEINDEX_ANALYTICS.searchLatencyP50}ms`} icon={<Clock size={18} className="text-cyan-600" />} />
-        <HubStatCard label="P95 延迟" value={`${PAGEINDEX_ANALYTICS.searchLatencyP95}ms`} icon={<Clock size={18} className="text-amber-500" />} />
-        <HubStatCard label="平均推理跳数" value={`${PAGEINDEX_ANALYTICS.avgHops} 跳`} icon={<TrendingUp size={18} className="text-blue-500" />} />
-        <HubStatCard label="FinanceBench" value={`${PAGEINDEX_ANALYTICS.vectorCompare.pageindexRecall}%`} icon={<BarChart2 size={18} className="text-green-500" />} />
+        <HubStatCard label="P50 延迟" value={`${analytics.searchLatencyP50 || '—'}ms`} icon={<Clock size={18} className="text-cyan-600" />} />
+        <HubStatCard label="P95 延迟" value={`${analytics.searchLatencyP95 || '—'}ms`} icon={<Clock size={18} className="text-amber-500" />} />
+        <HubStatCard label="平均推理跳数" value={`${analytics.avgHops} 跳`} icon={<TrendingUp size={18} className="text-blue-500" />} />
+        <HubStatCard label="FinanceBench" value={`${analytics.vectorCompare.pageindexRecall}%`} icon={<BarChart2 size={18} className="text-green-500" />} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className={`${hubCard} p-4`}>
           <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-3">文档类型分布</h3>
           <div className="space-y-2">
-            {PAGEINDEX_ANALYTICS.docTypeDist.map(item => (
+            {analytics.docTypeDist.map(item => (
               <div key={item.type} className="flex items-center gap-3">
                 <span className="flex-1 text-xs text-gray-600 dark:text-gray-400">{item.type}</span>
                 <span className="text-xs text-gray-500 w-8 text-right">{item.count}</span>
@@ -688,7 +693,7 @@ function StatsTab({ isApiMode }: { isApiMode?: boolean }) {
         <div className={`${hubCard} p-4`}>
           <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-3">树深度分布（已建树）</h3>
           <div className="space-y-2">
-            {PAGEINDEX_ANALYTICS.depthDist.map(item => (
+            {analytics.depthDist.map(item => (
               <div key={item.depth} className="flex items-center justify-between text-xs py-2 border-b border-gray-50 dark:border-gray-800 last:border-0">
                 <span className="text-gray-600 dark:text-gray-400">{item.depth}</span>
                 <span className="font-medium text-gray-900 dark:text-gray-100">{item.count} 文档</span>
@@ -709,7 +714,7 @@ function StatsTab({ isApiMode }: { isApiMode?: boolean }) {
             </tr>
           </thead>
           <tbody>
-            {PAGEINDEX_ANALYTICS.topDocs.map((d, i) => (
+            {(analytics.topDocs.length ? analytics.topDocs : PAGEINDEX_ANALYTICS.topDocs).map((d, i) => (
               <tr key={d.docId} className="border-b border-gray-50 dark:border-gray-800/50">
                 <td className="py-2 text-xs text-gray-800 dark:text-gray-200">
                   <span className="text-gray-400 mr-2">{i + 1}</span>{d.name}
@@ -725,7 +730,7 @@ function StatsTab({ isApiMode }: { isApiMode?: boolean }) {
       <div className={`${hubCard} p-4`}>
         <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-2">近 7 天库级树搜索量</h3>
         <div className="flex items-end gap-1 h-16">
-          {PAGEINDEX_ANALYTICS.weeklySearches.map((v, i) => (
+          {analytics.weeklySearches.map((v, i) => (
             <div key={i} className="flex-1 flex flex-col items-center gap-1">
               <div className="w-full bg-cyan-500 rounded-t-sm opacity-80" style={{ height: `${(v / maxWeekly) * 100}%`, minHeight: 4 }} />
               <span className="text-[9px] text-gray-400">{v}</span>
@@ -740,14 +745,22 @@ function StatsTab({ isApiMode }: { isApiMode?: boolean }) {
 function SettingsTab({ showToast }: { showToast: (m: string) => void }) {
   const hub = usePageIndexHubContext();
   const [settings, setSettings] = useState(PAGEINDEX_DEFAULT_SETTINGS);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    void hub.loadSettings().then(s => setSettings(s));
+  }, [hub]);
+
+  const handleSave = () => {
+    setSaving(true);
+    void hub.saveSettings(settings)
+      .then(s => { setSettings(s); showToast('建树设置已保存'); })
+      .catch(() => showToast('保存失败'))
+      .finally(() => setSaving(false));
+  };
 
   return (
     <div className="space-y-4">
-      {hub.isApiMode && (
-        <div className={`${hubCard} p-3 text-xs text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800`}>
-          建树设置当前为前端演示配置，尚未持久化到后端；实际建树由 RAG3 <code className="text-[10px]">POST /rag3/datasets/:id/index?type=pageindex</code> 与 <code className="text-[10px]">PAGEINDEX_API_KEY</code> 驱动。
-        </div>
-      )}
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
       <div className={`${hubCard} p-5`}>
         <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-4 flex items-center gap-2">
@@ -847,7 +860,9 @@ function SettingsTab({ showToast }: { showToast: (m: string) => void }) {
           </label>
           <div className="flex gap-2 pt-2">
             <BtnSecondary className="flex-1 justify-center" onClick={() => setSettings(PAGEINDEX_DEFAULT_SETTINGS)}>重置默认</BtnSecondary>
-            <BtnPrimary className="flex-1 justify-center" onClick={() => showToast('建树设置已保存')}>保存配置</BtnPrimary>
+            <BtnPrimary className="flex-1 justify-center" onClick={handleSave} disabled={saving}>
+              {saving ? '保存中…' : '保存配置'}
+            </BtnPrimary>
           </div>
         </div>
       </div>
@@ -857,6 +872,103 @@ function SettingsTab({ showToast }: { showToast: (m: string) => void }) {
 }
 
 /* ── PDF 解析预览 + bbox 高亮（§11.2.3 联动解析预览） ── */
+
+function HubDocumentPdfPreview({
+  docId,
+  docName,
+  page,
+  bbox,
+  nodeTitle,
+  highlightFromSearch,
+  onOpenParse,
+  useRealPreview,
+}: {
+  docId: string;
+  docName: string;
+  page: number;
+  bbox?: PageIndexBbox;
+  nodeTitle?: string;
+  highlightFromSearch?: boolean;
+  onOpenParse: () => void;
+  useRealPreview: boolean;
+}) {
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const objectUrlRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!useRealPreview) return;
+    let cancelled = false;
+    setLoadError(null);
+    setPdfUrl(null);
+    kbApi.fetchDocumentPreview(docId)
+      .then(blob => {
+        if (cancelled) return;
+        if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+        const url = URL.createObjectURL(blob);
+        objectUrlRef.current = url;
+        setPdfUrl(url);
+      })
+      .catch(() => {
+        if (!cancelled) setLoadError('PDF 预览加载失败');
+      });
+    return () => {
+      cancelled = true;
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = null;
+      }
+    };
+  }, [docId, useRealPreview]);
+
+  const highlights: PdfHighlightRect[] = useMemo(() => {
+    if (!page || page < 1) return [];
+    return [{ pageNumber: page, x1: 8, y1: 8, x2: 12, y2: 12 }];
+  }, [page]);
+
+  if (!useRealPreview) {
+    return (
+      <PdfBboxPreview
+        docName={docName}
+        page={page}
+        bbox={bbox}
+        nodeTitle={nodeTitle}
+        highlightFromSearch={highlightFromSearch}
+        onOpenParse={onOpenParse}
+      />
+    );
+  }
+
+  return (
+    <div className={`${hubCard} flex flex-col overflow-hidden h-full`}>
+      <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between gap-2 flex-shrink-0">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 truncate">解析预览</p>
+          <p className="text-[10px] text-gray-400">{page > 0 ? `P${page}` : 'PDF'} · 真实文档</p>
+        </div>
+        <button type="button" onClick={onOpenParse} className="text-[10px] text-cyan-600 hover:underline flex-shrink-0">全屏 →</button>
+      </div>
+      <div className="flex-1 min-h-[240px]">
+        {loadError && (
+          <div className="p-4 text-xs text-amber-700 dark:text-amber-300">
+            {loadError} · <button type="button" onClick={onOpenParse} className="text-cyan-600 hover:underline">打开知识库预览</button>
+          </div>
+        )}
+        {pdfUrl && !loadError && (
+          <PdfPreviewWithHighlights url={pdfUrl} highlights={highlights} className="h-full" />
+        )}
+        {!pdfUrl && !loadError && (
+          <div className="flex items-center justify-center h-full text-xs text-gray-400">加载 PDF…</div>
+        )}
+      </div>
+      {nodeTitle && page > 0 && (
+        <div className={`px-3 py-2 border-t text-[10px] flex-shrink-0 ${highlightFromSearch ? 'border-cyan-100 bg-cyan-50/50 text-cyan-800' : 'border-gray-100 text-gray-500'}`}>
+          {highlightFromSearch ? '搜索命中' : '选中节点'}: <strong>{nodeTitle}</strong> · P{page}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const PDF_PAGE_MOCK_LINES: Record<number, string[]> = {
   3: [
@@ -1016,6 +1128,7 @@ function DocDetailView({
       query: searchResult?.query || testQuery,
       docId: doc.id,
       docName: doc.name,
+      pipelineIds: ['pageindex'],
     });
   };
 
@@ -1168,26 +1281,30 @@ function DocDetailView({
 
           {/* 窄屏下 PDF 预览折叠在搜索调试下方 */}
           <div className="xl:hidden">
-            <PdfBboxPreview
+            <HubDocumentPdfPreview
+              docId={doc.id}
               docName={doc.name}
               page={previewPage}
               bbox={previewBbox}
               nodeTitle={selectedNode.title}
               highlightFromSearch={!!highlightNodeId && highlightNodeId === selectedNodeId}
               onOpenParse={openParsePreview}
+              useRealPreview={hub.isApiMode}
             />
           </div>
         </div>
 
         {/* 右侧：PDF bbox 预览（大屏常驻） */}
         <div className="hidden xl:flex w-72 flex-shrink-0 border-l border-gray-200 dark:border-gray-800 p-4 bg-white/50 dark:bg-gray-900/50">
-          <PdfBboxPreview
+          <HubDocumentPdfPreview
+            docId={doc.id}
             docName={doc.name}
             page={previewPage}
             bbox={previewBbox}
             nodeTitle={selectedNode.title}
             highlightFromSearch={!!highlightNodeId && highlightNodeId === selectedNodeId}
             onOpenParse={openParsePreview}
+            useRealPreview={hub.isApiMode}
           />
         </div>
       </div>

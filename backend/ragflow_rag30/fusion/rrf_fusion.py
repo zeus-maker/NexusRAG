@@ -9,11 +9,17 @@ from pipelines.base_pipeline import PipelineHit, PipelineResult
 @dataclass
 class FusedHit:
     chunk_id: str
+    doc_id: str
     doc_name: str
     wrrf_score: float
     snippet: str
     sources: list[str]
     rank: int = 0
+    metadata: dict = None
+
+    def __post_init__(self):
+        if self.metadata is None:
+            self.metadata = {}
 
 
 def reciprocal_rank_fusion(
@@ -38,10 +44,12 @@ def reciprocal_rank_fusion(
             else:
                 merged[key] = FusedHit(
                     chunk_id=hit.chunk_id,
+                    doc_id=hit.doc_id,
                     doc_name=hit.doc_name,
                     wrrf_score=contrib,
                     snippet=hit.snippet,
                     sources=[res.channel],
+                    metadata=dict(hit.metadata or {}),
                 )
 
     fused = sorted(merged.values(), key=lambda h: h.wrrf_score, reverse=True)

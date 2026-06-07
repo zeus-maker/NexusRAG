@@ -29,19 +29,34 @@ export interface Rag3ClassifyResult {
   pipeline_ids: string[];
 }
 
+export interface Rag3Citation {
+  index: number;
+  doc_id: string;
+  doc_name: string;
+  page_number: number;
+  section: string;
+  snippet: string;
+  relevance_score: number;
+}
+
 export interface Rag3FusionHit {
   rank: number;
   chunk_id: string;
+  doc_id?: string;
   doc_name: string;
   wrrf_score: number;
   snippet: string;
   sources: string[];
+  metadata?: Record<string, unknown>;
 }
 
 export interface Rag3QueryResult {
   query: string;
   kb_id: string;
+  answer?: string;
+  citations?: Rag3Citation[];
   pipelines: string[];
+  channels?: string[];
   fusion: Rag3FusionHit[];
   classification: string;
   routing_reason: string;
@@ -57,7 +72,11 @@ export const rag3Api = {
       body: JSON.stringify({ query, kb_id: kbId, user_roles: userRoles }),
     }),
 
-  query: (query: string, kbId: string, options?: { use_rerank?: boolean; top_k?: number }) =>
+  query: (
+    query: string,
+    kbId: string,
+    options?: { use_rerank?: boolean; top_k?: number; pipeline_ids?: string[] },
+  ) =>
     request<Rag3QueryResult>('/rag3/query', {
       method: 'POST',
       body: JSON.stringify({ query, kb_id: kbId, ...options }),

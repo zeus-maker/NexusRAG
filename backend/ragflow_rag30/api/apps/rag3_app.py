@@ -17,6 +17,7 @@ from api.utils.api_utils import (
 )
 from rag3.index_service import (
     get_pageindex_document_tree,
+    get_pageindex_hub_analytics,
     list_pageindex_documents,
     list_wiki_hub_entries,
     run_index as rag3_run_index,
@@ -24,6 +25,7 @@ from rag3.index_service import (
     search_wiki_library,
     trace_index as rag3_trace_index,
 )
+from rag3.pageindex_hub_service import get_pageindex_settings, save_pageindex_settings
 from fusion import reciprocal_rank_fusion, rerank
 from pipelines import run_pipelines
 from router import RouterEngine
@@ -86,6 +88,9 @@ async def rag3_query():
 
         t0 = time.time()
         plan = _engine.plan(query, roles, kb_id)
+        override_pipelines = body.get("pipeline_ids")
+        if isinstance(override_pipelines, list) and override_pipelines:
+            plan.pipeline_ids = [str(p) for p in override_pipelines]
 
         if plan.decision.skip_retrieval:
             return get_json_result(data={
@@ -100,18 +105,47 @@ async def rag3_query():
         if use_rerank:
             fused = rerank(query, fused, top_n=min(5, top_k))
 
+        citations = []
+        answer_parts = [f"根据知识库检索，与「{query}」相关的内容如下：", ""]
+        for i, h in enumerate(fused[:5], start=1):
+            page_raw = (h.metadata or {}).get("page", "")
+            page_num = 0
+            if isinstance(page_raw, (int, float)):
+                page_num = int(page_raw)
+            elif isinstance(page_raw, str):
+                digits = "".join(ch for ch in page_raw if ch.isdigit())
+                page_num = int(digits) if digits else 0
+            answer_parts.append(f"**{i}. {h.doc_name}**")
+            answer_parts.append(h.snippet)
+            answer_parts.append("")
+            citations.append({
+                "index": i,
+                "doc_id": h.doc_id,
+                "doc_name": h.doc_name,
+                "page_number": page_num,
+                "section": (h.snippet or "")[:48],
+                "snippet": (h.snippet or "")[:200],
+                "relevance_score": h.wrrf_score,
+            })
+        answer = "\n".join(answer_parts).strip() if fused else "未在知识库中找到与问题相关的内容。"
+
         return get_json_result(data={
             "query": query,
             "kb_id": kb_id,
+            "answer": answer,
+            "citations": citations,
             "pipelines": [r.channel for r in channel_results],
+            "channels": [r.channel for r in channel_results],
             "fusion": [
                 {
                     "rank": h.rank,
                     "chunk_id": h.chunk_id,
+                    "doc_id": h.doc_id,
                     "doc_name": h.doc_name,
                     "wrrf_score": h.wrrf_score,
                     "snippet": h.snippet,
                     "sources": h.sources,
+                    "metadata": h.metadata or {},
                 }
                 for h in fused
             ],
@@ -172,6 +206,33 @@ def rag3_get_pageindex_tree(tenant_id, dataset_id, doc_id):
     return get_error_data_result(message=result)
 
 
+@manager.route("/datasets/<dataset_id>/pageindex/settings", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+def rag3_get_pageindex_settings(tenant_id, dataset_id):
+    return get_json_result(data=get_pageindex_settings(dataset_id))
+
+
+@manager.route("/datasets/<dataset_id>/pageindex/settings", methods=["PUT"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def rag3_save_pageindex_settings(tenant_id, dataset_id):
+    body = await request.get_json(silent=True) or {}
+    if not isinstance(body, dict):
+        return get_error_data_result(message="settings must be an object")
+    return get_json_result(data=save_pageindex_settings(dataset_id, body))
+
+
+@manager.route("/datasets/<dataset_id>/pageindex/analytics", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+def rag3_get_pageindex_analytics(tenant_id, dataset_id):
+    success, result = get_pageindex_hub_analytics(dataset_id, tenant_id)
+    if success:
+        return get_result(data=result)
+    return get_error_data_result(message=result)
+
+
 @manager.route("/datasets/<dataset_id>/pageindex/search", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
@@ -179,8 +240,12 @@ async def rag3_pageindex_search(tenant_id, dataset_id):
     body = await request.get_json(silent=True) or {}
     query = body.get("query", "")
     top_k = int(body.get("top_k", 10))
-    hits = search_pageindex_library(dataset_id, query, top_k=top_k)
-    return get_json_result(data={"query": query, "hits": hits, "total": len(hits)})
+    doc_id = body.get("doc_id") or None
+    mode = body.get("mode") or None
+    result = search_pageindex_library(
+        dataset_id, query, top_k=top_k, doc_id=doc_id, mode=mode,
+    )
+    return get_json_result(data=result)
 
 
 @manager.route("/datasets/<dataset_id>/wiki/entries", methods=["GET"])  # noqa: F821

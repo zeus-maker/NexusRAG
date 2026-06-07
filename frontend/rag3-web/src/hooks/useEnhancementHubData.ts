@@ -2,13 +2,15 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   PAGEINDEX_DOCUMENTS as MOCK_PI_DOCS,
   PAGEINDEX_STATS as MOCK_PI_STATS,
-  PAGEINDEX_TREE_V5,
+  PAGEINDEX_ANALYTICS as MOCK_PI_ANALYTICS,
+  PAGEINDEX_DEFAULT_SETTINGS,
   getPageIndexDoc as mockGetPiDoc,
   getPageIndexTree as mockGetPiTree,
   runMockLibrarySearch,
   runMockTreeSearch,
   type PageIndexDocument,
   type PageIndexLibrarySearchResult,
+  type PageIndexSearchMode,
   type PageIndexSearchResult,
   type PageIndexTreeNode,
 } from '../data/pageIndexMock';
@@ -68,8 +70,22 @@ export interface PageIndexTraceSnapshot {
   doc_ids: string[];
 }
 
+export interface PageIndexAnalyticsView {
+  searchLatencyP50: number;
+  searchLatencyP95: number;
+  avgHops: number;
+  weeklySearches: number[];
+  weeklyBuilds: number[];
+  docTypeDist: Array<{ type: string; count: number; pct: number }>;
+  depthDist: Array<{ depth: string; count: number }>;
+  topDocs: Array<{ docId: string; name: string; searches: number; avgMs: number }>;
+  failDist: Array<{ reason: string; count: number }>;
+  vectorCompare: { financeBench: string; pageindexRecall: number; vectorRecall: number };
+}
+
 function mapPiDoc(raw: Record<string, unknown>): PageIndexDocument {
   const status = String(raw.tree_status ?? 'pending') as PageIndexDocument['treeStatus'];
+  const toc = String(raw.toc_source ?? 'deepdoc') as PageIndexDocument['tocSource'];
   return {
     id: String(raw.id),
     name: String(raw.name ?? '—'),
@@ -78,11 +94,88 @@ function mapPiDoc(raw: Record<string, unknown>): PageIndexDocument {
     pages: Number(raw.pages) || 0,
     treeStatus: status,
     nodes: Number(raw.nodes) || 0,
-    depth: 3,
+    depth: Number(raw.tree_depth) || 3,
     avgToken: 120,
-    tocSource: 'deepdoc',
+    tocSource: toc === 'llm' || toc === 'manual' ? toc : 'deepdoc',
     updated: String(raw.updated ?? '—'),
+    failReason: typeof raw.fail_reason === 'string' ? raw.fail_reason : undefined,
     buildProgress: typeof raw.parse_progress === 'number' ? Math.round(raw.parse_progress * 100) : undefined,
+  };
+}
+
+function mapAnalytics(raw: Record<string, unknown> | undefined): PageIndexAnalyticsView {
+  if (!raw || !Object.keys(raw).length) return { ...MOCK_PI_ANALYTICS };
+  const docTypes = (raw.doc_type_dist as Array<Record<string, unknown>> | undefined) ?? [];
+  const totalType = docTypes.reduce((s, d) => s + Number(d.count || 0), 0) || 1;
+  return {
+    searchLatencyP50: Number(raw.search_latency_p50) || 0,
+    searchLatencyP95: Number(raw.search_latency_p95) || 0,
+    avgHops: Number(raw.avg_hops) || 1,
+    weeklySearches: (raw.weekly_searches as number[] | undefined) ?? MOCK_PI_ANALYTICS.weeklySearches,
+    weeklyBuilds: (raw.weekly_builds as number[] | undefined) ?? MOCK_PI_ANALYTICS.weeklyBuilds,
+    docTypeDist: docTypes.map(d => ({
+      type: String(d.label ?? d.type ?? ''),
+      count: Number(d.count) || 0,
+      pct: Math.round((Number(d.count) || 0) / totalType * 1000) / 10,
+    })),
+    depthDist: ((raw.depth_dist as Array<Record<string, unknown>> | undefined) ?? []).map(d => ({
+      depth: String(d.depth ?? ''),
+      count: Number(d.count) || 0,
+    })),
+    topDocs: ((raw.top_docs as Array<Record<string, unknown>> | undefined) ?? []).map(d => ({
+      docId: String(d.doc_id ?? ''),
+      name: String(d.name ?? ''),
+      searches: Number(d.searches) || 0,
+      avgMs: Number(d.avg_ms) || 0,
+    })),
+    failDist: ((raw.fail_dist as Array<Record<string, unknown>> | undefined) ?? []).map(d => ({
+      reason: String(d.reason ?? ''),
+      count: Number(d.count) || 0,
+    })),
+    vectorCompare: {
+      financeBench: String((raw.vector_compare as Record<string, unknown> | undefined)?.finance_bench ?? 'FinanceBench'),
+      pageindexRecall: Number((raw.vector_compare as Record<string, unknown> | undefined)?.pageindex_recall) || 98.7,
+      vectorRecall: Number((raw.vector_compare as Record<string, unknown> | undefined)?.vector_recall) || 52.3,
+    },
+  };
+}
+
+export function mapPageIndexSettingsFromApi(raw: Record<string, unknown> | undefined) {
+  if (!raw) return { ...PAGEINDEX_DEFAULT_SETTINGS };
+  const docTypes = (raw.doc_types as Record<string, boolean> | undefined) ?? {};
+  return {
+    tocMode: (raw.toc_mode as typeof PAGEINDEX_DEFAULT_SETTINGS.tocMode) ?? PAGEINDEX_DEFAULT_SETTINGS.tocMode,
+    maxDepth: Number(raw.max_depth) || PAGEINDEX_DEFAULT_SETTINGS.maxDepth,
+    maxTokenPerNode: Number(raw.max_token_per_node) || PAGEINDEX_DEFAULT_SETTINGS.maxTokenPerNode,
+    searchMode: (raw.search_mode as PageIndexSearchMode) ?? PAGEINDEX_DEFAULT_SETTINGS.searchMode,
+    searchDepth: Number(raw.search_depth) || PAGEINDEX_DEFAULT_SETTINGS.searchDepth,
+    branchFactor: Number(raw.branch_factor) || PAGEINDEX_DEFAULT_SETTINGS.branchFactor,
+    docTypes: {
+      contract: docTypes.contract ?? PAGEINDEX_DEFAULT_SETTINGS.docTypes.contract,
+      financial: docTypes.financial ?? PAGEINDEX_DEFAULT_SETTINGS.docTypes.financial,
+      paper: docTypes.paper ?? PAGEINDEX_DEFAULT_SETTINGS.docTypes.paper,
+      email: docTypes.email ?? PAGEINDEX_DEFAULT_SETTINGS.docTypes.email,
+    },
+    autoBuildOnUpload: Boolean(raw.auto_build_on_upload ?? PAGEINDEX_DEFAULT_SETTINGS.autoBuildOnUpload),
+    incrementalRebuild: Boolean(raw.incremental_rebuild ?? PAGEINDEX_DEFAULT_SETTINGS.incrementalRebuild),
+    llmModel: String(raw.llm_model ?? PAGEINDEX_DEFAULT_SETTINGS.llmModel),
+    semanticToc: Boolean(raw.semantic_toc ?? PAGEINDEX_DEFAULT_SETTINGS.semanticToc),
+  };
+}
+
+export function mapPageIndexSettingsToApi(settings: typeof PAGEINDEX_DEFAULT_SETTINGS) {
+  return {
+    toc_mode: settings.tocMode,
+    max_depth: settings.maxDepth,
+    max_token_per_node: settings.maxTokenPerNode,
+    search_mode: settings.searchMode,
+    search_depth: settings.searchDepth,
+    branch_factor: settings.branchFactor,
+    doc_types: settings.docTypes,
+    auto_build_on_upload: settings.autoBuildOnUpload,
+    incremental_rebuild: settings.incrementalRebuild,
+    llm_model: settings.llmModel,
+    semantic_toc: settings.semanticToc,
   };
 }
 
@@ -103,6 +196,7 @@ function normalizePiTrace(raw: Record<string, unknown> | undefined): PageIndexTr
 export function usePageIndexHubData(kbId: string) {
   const { data: kb } = useKnowledgeBase(kbId);
   const [stats, setStats] = useState(MOCK_PI_STATS);
+  const [analytics, setAnalytics] = useState<PageIndexAnalyticsView>(MOCK_PI_ANALYTICS);
   const [documents, setDocuments] = useState<PageIndexDocument[]>(MOCK_PI_DOCS);
   const [trace, setTrace] = useState<PageIndexTraceSnapshot | null>(null);
   const [loading, setLoading] = useState(useRealApi);
@@ -110,19 +204,24 @@ export function usePageIndexHubData(kbId: string) {
   const refresh = useCallback(() => {
     if (!useRealApi) {
       setStats(MOCK_PI_STATS);
+      setAnalytics(MOCK_PI_ANALYTICS);
       setDocuments(MOCK_PI_DOCS);
       setTrace(null);
       setLoading(false);
       return;
     }
     setLoading(true);
-    hubApi.listPageIndexDocuments(kbId)
-      .then(data => {
+    Promise.all([
+      hubApi.listPageIndexDocuments(kbId),
+      hubApi.getPageIndexAnalytics(kbId).catch(() => undefined),
+    ])
+      .then(([data, analyticsRaw]) => {
         const s = data?.stats ?? {};
         const docs = (data?.documents ?? []).map(d => mapPiDoc(d));
         const completed = Number(s.completed) || 0;
         const total = Number(s.total) || docs.length;
         const totalNodes = docs.reduce((sum, d) => sum + (d.nodes || 0), 0);
+        const analyticsView = mapAnalytics(analyticsRaw as Record<string, unknown> | undefined);
         setStats({
           ...MOCK_PI_STATS,
           total,
@@ -133,12 +232,16 @@ export function usePageIndexHubData(kbId: string) {
           buildRate: Number(s.build_rate) || 0,
           totalNodes,
           avgNodes: total ? Math.round(totalNodes / Math.max(completed, 1)) : 0,
+          weeklyBuilds: analyticsView.weeklyBuilds,
+          failDist: analyticsView.failDist.length ? analyticsView.failDist : MOCK_PI_STATS.failDist,
         });
+        setAnalytics(analyticsView);
         setDocuments(docs);
         setTrace(normalizePiTrace(data?.trace as Record<string, unknown> | undefined));
       })
       .catch(() => {
         setStats(MOCK_PI_STATS);
+        setAnalytics(MOCK_PI_ANALYTICS);
         setDocuments([]);
         setTrace(null);
       })
@@ -170,15 +273,18 @@ export function usePageIndexHubData(kbId: string) {
     }
   }, [kbId]);
 
-  const runLibrarySearch = useCallback(async (query: string): Promise<PageIndexLibrarySearchResult> => {
+  const runLibrarySearch = useCallback(async (
+    query: string,
+    mode: PageIndexSearchMode = 'mcts_hybrid',
+  ): Promise<PageIndexLibrarySearchResult> => {
     if (!useRealApi) return runMockLibrarySearch(query);
-    const res = await hubApi.searchPageIndex(kbId, query);
+    const res = await hubApi.searchPageIndex(kbId, query, { mode });
     return {
       query,
-      mode: 'llm_prompt',
-      docsSearched: documents.length,
-      totalMs: 120,
-      hits: (res?.hits ?? []).map((h, i) => ({
+      mode: (res?.mode as PageIndexSearchMode) ?? mode,
+      docsSearched: Number(res?.docs_searched) || documents.filter(d => d.treeStatus === 'completed').length,
+      totalMs: Number(res?.total_ms) || 0,
+      hits: (res?.hits ?? []).map(h => ({
         docId: String(h.doc_id),
         docName: String(h.doc_name),
         nodeId: String(h.node_id),
@@ -188,25 +294,48 @@ export function usePageIndexHubData(kbId: string) {
         excerpt: String(h.excerpt ?? ''),
       })),
     };
-  }, [kbId, documents.length]);
+  }, [kbId, documents]);
 
-  const runTreeSearch = useCallback(async (query: string, docId: string): Promise<PageIndexSearchResult | null> => {
+  const runTreeSearch = useCallback(async (
+    query: string,
+    docId: string,
+    mode: PageIndexSearchMode = 'mcts_hybrid',
+  ): Promise<PageIndexSearchResult | null> => {
     if (!useRealApi) return runMockTreeSearch(query, docId);
-    const res = await hubApi.searchPageIndex(kbId, query, 5);
-    const hit = res?.hits?.find(h => h.doc_id === docId) ?? res?.hits?.[0];
+    const res = await hubApi.searchPageIndex(kbId, query, { topK: 5, docId, mode });
+    const hit = res?.hits?.[0];
     if (!hit) return null;
+    const steps = (res?.steps ?? []).map((s, i) => ({
+      step: Number(s.step) || i + 1,
+      action: String(s.action ?? '树检索'),
+      result: String(s.result ?? ''),
+      ms: Number(s.ms) || 0,
+      nodeId: s.node_id ? String(s.node_id) : undefined,
+    }));
     return {
       query,
-      mode: 'llm_prompt',
+      mode: (res?.mode as PageIndexSearchMode) ?? mode,
       targetNodeId: String(hit.node_id),
       targetTitle: String(hit.node_title),
       pageRange: String(hit.page_range ?? ''),
       tokenCount: 200,
       confidence: Number(hit.confidence) || 0,
-      totalMs: 95,
-      steps: [{ step: 1, action: '树检索', result: String(hit.excerpt), ms: 95, nodeId: String(hit.node_id) }],
+      totalMs: Number(res?.total_ms) || 0,
+      steps: steps.length ? steps : [{ step: 1, action: '树检索', result: String(hit.excerpt), ms: Number(res?.total_ms) || 0, nodeId: String(hit.node_id) }],
       excerpt: String(hit.excerpt ?? ''),
     };
+  }, [kbId]);
+
+  const loadSettings = useCallback(async () => {
+    if (!useRealApi) return { ...PAGEINDEX_DEFAULT_SETTINGS };
+    const raw = await hubApi.getPageIndexSettings(kbId);
+    return mapPageIndexSettingsFromApi(raw as Record<string, unknown>);
+  }, [kbId]);
+
+  const saveSettings = useCallback(async (settings: typeof PAGEINDEX_DEFAULT_SETTINGS) => {
+    if (!useRealApi) return settings;
+    const raw = await hubApi.savePageIndexSettings(kbId, mapPageIndexSettingsToApi(settings));
+    return mapPageIndexSettingsFromApi(raw as Record<string, unknown>);
   }, [kbId]);
 
   const runBuild = useCallback(async (docIds?: string[]) => {
@@ -218,6 +347,7 @@ export function usePageIndexHubData(kbId: string) {
   return {
     kb,
     stats,
+    analytics,
     documents,
     trace,
     loading,
@@ -227,6 +357,8 @@ export function usePageIndexHubData(kbId: string) {
     runLibrarySearch,
     runTreeSearch,
     runBuild,
+    loadSettings,
+    saveSettings,
     isApiMode: useRealApi,
   };
 }
