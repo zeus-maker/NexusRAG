@@ -1,12 +1,14 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useContext } from 'react';
 import {
   Network, ChevronRight, Eye, Users, GitBranch, Settings, Layers, X,
   Search, RefreshCw, CheckCircle, AlertCircle, Play, Filter, RotateCcw,
   Pause, Globe, MapPin, DollarSign, BarChart3, FileText, ArrowLeft, Clock,
 } from 'lucide-react';
+import { HubKBLayout } from '../../components/HubKBLayout';
 import { HubPageShell } from '../../components/HubPageShell';
 import { HubBadge, HubStatCard, hubCard, hubInput, hubSelect, BtnPrimary, BtnSecondary } from '../../components/hubUi';
-import { mockKBs } from '../../mockData';
+import { useGraphHubData } from '../../hooks/useEnhancementHubData';
+import { GraphHubContext } from './graphHubContext';
 import {
   GRAPH_STATS, GRAPH_NODES, GRAPH_EDGES, GRAPH_COMMUNITIES, GRAPH_BUILD_QUEUE,
   GRAPH_REVIEW_QUEUE, GRAPH_SOURCE_DOCS, GRAPH_DEFAULT_SETTINGS, ENTITY_TYPE_CFG,
@@ -24,7 +26,8 @@ interface GraphRAGHubPageProps {
 const PIPELINE_STEPS = ['切块', '实体抽取', '关系抽取', '图谱写入', '社区检测', '社区摘要'];
 
 export default function GraphRAGHubPage({ kbId, onNavigate }: GraphRAGHubPageProps) {
-  const kb = mockKBs.find(k => k.kb_id === (kbId || 'kb-001')) || mockKBs[0];
+  const graph = useGraphHubData(kbId || 'kb-001');
+  const kb = graph.kb;
   const [activeTab, setActiveTab] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
   const [indexMode, setIndexMode] = useState<GraphIndexMode>('lazy');
@@ -36,7 +39,8 @@ export default function GraphRAGHubPage({ kbId, onNavigate }: GraphRAGHubPagePro
   const pendingReview = GRAPH_REVIEW_QUEUE.filter(r => r.status === 'pending').length;
   const activeBuild = GRAPH_BUILD_QUEUE.filter(b => b.stage !== 'done' && b.stage !== 'failed').length;
   const onQueryCommunities = GRAPH_COMMUNITIES.filter(c => c.summaryStatus === 'on_query').length;
-  const indexedDocCount = GRAPH_SOURCE_DOCS.filter(d => d.indexStatus === 'indexed').length;
+  const sourceDocs = graph.isApiMode ? graph.sourceDocs : GRAPH_SOURCE_DOCS;
+  const indexedDocCount = sourceDocs.filter(d => d.indexStatus === 'indexed').length;
 
   const tabs = [
     '概览',
@@ -51,13 +55,14 @@ export default function GraphRAGHubPage({ kbId, onNavigate }: GraphRAGHubPagePro
   const openDocGraph = (doc: GraphSourceDoc) => setSelectedDocId(doc.id);
 
   if (selectedDocId) {
-    const doc = getGraphSourceDoc(selectedDocId);
+    const doc = graph.getDoc(selectedDocId);
     if (!doc) {
       setSelectedDocId(null);
       return null;
     }
     return (
-      <>
+      <HubKBLayout kbId={kbId || kb.kb_id} activeKey="graphrag-hub" onNavigate={onNavigate}>
+        <GraphHubContext.Provider value={graph}>
         {toast && <div className="fixed top-4 right-4 z-50 px-4 py-2 bg-gray-900 text-white text-sm rounded-lg shadow-lg">{toast}</div>}
         <DocGraphDetailView
           doc={doc}
@@ -69,16 +74,18 @@ export default function GraphRAGHubPage({ kbId, onNavigate }: GraphRAGHubPagePro
           }}
           showToast={showToast}
         />
-      </>
+        </GraphHubContext.Provider>
+      </HubKBLayout>
     );
   }
 
   return (
-    <>
+    <HubKBLayout kbId={kbId || kb.kb_id} activeKey="graphrag-hub" onNavigate={onNavigate}>
+      <GraphHubContext.Provider value={graph}>
       {toast && <div className="fixed top-4 right-4 z-50 px-4 py-2 bg-gray-900 text-white text-sm rounded-lg shadow-lg">{toast}</div>}
       <HubPageShell
         title="知识图谱管理"
-        subtitle={`${kb.name} · 文档切块→实体/关系抽取→入图 · ${indexedDocCount}/${GRAPH_SOURCE_DOCS.length} 文档已索引 · ${GRAPH_STATS.entities.toLocaleString()} 实体`}
+        subtitle={`${kb.name} · 文档切块→实体/关系抽取→入图 · ${indexedDocCount}/${sourceDocs.length} 文档已索引 · ${(graph.isApiMode ? graph.stats.entities : GRAPH_STATS.entities).toLocaleString()} 实体${graph.isApiMode ? ' · API' : ''}`}
         icon={<Network size={16} className="text-amber-600" />}
         badge={pendingReview > 0 ? { label: `${pendingReview} 待复核`, variant: 'indexing' } : { label: '已构建', variant: 'active' }}
         onBack={() => onNavigate('kb-detail', { selectedKBId: kbId || kb.kb_id })}
@@ -109,7 +116,8 @@ export default function GraphRAGHubPage({ kbId, onNavigate }: GraphRAGHubPagePro
         {activeTab === 5 && <EntityReviewTab showToast={showToast} />}
         {activeTab === 6 && <SettingsTab indexMode={indexMode} onModeChange={setIndexMode} showToast={showToast} />}
       </HubPageShell>
-    </>
+      </GraphHubContext.Provider>
+    </HubKBLayout>
   );
 }
 
@@ -124,11 +132,13 @@ function DocumentsTab({
   const [statusFilter, setStatusFilter] = useState<GraphDocIndexStatus | 'all'>('all');
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  const filtered = useMemo(() => GRAPH_SOURCE_DOCS.filter(d => {
+  const graph = useContext(GraphHubContext);
+  const docs = graph?.isApiMode ? graph.sourceDocs : GRAPH_SOURCE_DOCS;
+  const filtered = useMemo(() => docs.filter(d => {
     if (statusFilter !== 'all' && d.indexStatus !== statusFilter) return false;
     if (search && !d.name.includes(search)) return false;
     return true;
-  }), [search, statusFilter]);
+  }), [search, statusFilter, docs]);
 
   const toggle = (id: string) => {
     const next = new Set(selected);
@@ -139,10 +149,10 @@ function DocumentsTab({
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <HubStatCard label="知识库文档" value={String(GRAPH_SOURCE_DOCS.length)} icon={<FileText size={18} className="text-amber-500" />} />
-        <HubStatCard label="已入图" value={String(GRAPH_SOURCE_DOCS.filter(d => d.indexStatus === 'indexed').length)} icon={<CheckCircle size={18} className="text-green-500" />} />
-        <HubStatCard label="构建中" value={String(GRAPH_SOURCE_DOCS.filter(d => d.indexStatus === 'building').length)} icon={<RefreshCw size={18} className="text-blue-500" />} />
-        <HubStatCard label="待构建" value={String(GRAPH_SOURCE_DOCS.filter(d => d.indexStatus === 'pending').length)} icon={<Clock size={18} className="text-gray-500" />} />
+        <HubStatCard label="知识库文档" value={String(docs.length)} icon={<FileText size={18} className="text-amber-500" />} />
+        <HubStatCard label="已入图" value={String(docs.filter(d => d.indexStatus === 'indexed').length)} icon={<CheckCircle size={18} className="text-green-500" />} />
+        <HubStatCard label="构建中" value={String(docs.filter(d => d.indexStatus === 'building').length)} icon={<RefreshCw size={18} className="text-blue-500" />} />
+        <HubStatCard label="待构建" value={String(docs.filter(d => d.indexStatus === 'pending').length)} icon={<Clock size={18} className="text-gray-500" />} />
       </div>
 
       <div className="flex flex-wrap gap-2 items-center justify-between">

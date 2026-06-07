@@ -432,6 +432,165 @@ def search_pageindex_hits(kb_id: str, query: str, top_k: int = 10) -> list[dict[
     return hits[:top_k]
 
 
+def _doc_tree_status(kb_id: str, doc_id: str) -> str:
+    return "completed" if load_pageindex_tree(kb_id, doc_id) else "pending"
+
+
+def _count_tree_nodes(node: dict[str, Any] | None) -> int:
+    if not node:
+        return 0
+    total = 1
+    for child in node.get("children") or []:
+        total += _count_tree_nodes(child)
+    return total
+
+
+def list_pageindex_documents(dataset_id: str, tenant_id: str) -> tuple[bool, dict[str, Any] | str]:
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+    documents, _ = DocumentService.get_by_kb_id(
+        kb_id=dataset_id,
+        page_number=0,
+        items_per_page=0,
+        orderby="create_time",
+        desc=True,
+        keywords="",
+        run_status=[],
+        types=[],
+        suffix=[],
+    )
+    trace_ok, trace = trace_index(dataset_id, tenant_id, "pageindex")
+    task_running = trace_ok and isinstance(trace, dict) and 0 <= float(trace.get("progress", -2)) < 1
+
+    items = []
+    completed = pending = building = failed = 0
+    for doc in documents:
+        doc_id = doc["id"]
+        has_tree = load_pageindex_tree(dataset_id, doc_id) is not None
+        if has_tree:
+            status = "completed"
+            completed += 1
+        elif task_running and doc_id in (trace.get("doc_ids") or []):
+            status = "building"
+            building += 1
+        elif doc.get("progress", 0) == -1:
+            status = "failed"
+            failed += 1
+        else:
+            status = "pending"
+            pending += 1
+        tree = load_pageindex_tree(dataset_id, doc_id)
+        node_count = _count_tree_nodes(tree.get("root") if tree else None)
+        items.append({
+            "id": doc_id,
+            "name": doc.get("name") or doc_id,
+            "file_type": doc.get("suffix") or doc.get("type") or "",
+            "size": doc.get("size") or 0,
+            "pages": doc.get("page_num") or 0,
+            "tree_status": status,
+            "nodes": node_count,
+            "chunk_count": tree.get("chunk_count") if tree else 0,
+            "updated": doc.get("update_date") or doc.get("create_date") or "",
+            "parse_progress": doc.get("progress"),
+        })
+
+    total = len(items)
+    return True, {
+        "stats": {
+            "total": total,
+            "completed": completed,
+            "building": building,
+            "pending": pending,
+            "failed": failed,
+            "build_rate": round(completed / total * 100, 1) if total else 0,
+        },
+        "documents": items,
+        "trace": trace if trace_ok and isinstance(trace, dict) else {},
+    }
+
+
+def get_pageindex_document_tree(dataset_id: str, doc_id: str, tenant_id: str) -> tuple[bool, dict[str, Any] | str]:
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+    doc = DocumentService.query(id=doc_id, kb_id=dataset_id)
+    if not doc:
+        return False, "Document not found"
+    tree = load_pageindex_tree(dataset_id, doc_id)
+    if not tree:
+        return False, "PageIndex tree not built yet"
+    return True, tree
+
+
+def list_wiki_hub_entries(dataset_id: str, tenant_id: str) -> tuple[bool, dict[str, Any] | str]:
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+    entries = load_wiki_entries(dataset_id)
+    trace_ok, trace = trace_index(dataset_id, tenant_id, "wiki")
+    documents, _ = DocumentService.get_by_kb_id(
+        kb_id=dataset_id,
+        page_number=0,
+        items_per_page=0,
+        orderby="create_time",
+        desc=True,
+        keywords="",
+        run_status=[],
+        types=[],
+        suffix=[],
+    )
+    source_docs = []
+    for doc in documents:
+        related = [e for e in entries if e.get("doc_id") == doc["id"]]
+        source_docs.append({
+            "id": doc["id"],
+            "name": doc.get("name") or doc["id"],
+            "file_type": doc.get("suffix") or "",
+            "size": doc.get("size") or 0,
+            "ingest_status": "compiled" if related else "pending",
+            "wiki_page_count": len(related),
+            "last_ingest": doc.get("update_date") or "",
+        })
+    return True, {
+        "entries": entries,
+        "source_documents": source_docs,
+        "stats": {
+            "total_entries": len(entries),
+            "total_docs": len(documents),
+            "compiled_docs": sum(1 for s in source_docs if s["ingest_status"] == "compiled"),
+        },
+        "trace": trace if trace_ok and isinstance(trace, dict) else {},
+    }
+
+
+def search_pageindex_library(kb_id: str, query: str, top_k: int = 10) -> list[dict[str, Any]]:
+    hits = search_pageindex_hits(kb_id, query, top_k=top_k)
+    return [
+        {
+            "doc_id": h["doc_id"],
+            "doc_name": h["doc_name"],
+            "node_id": h["metadata"].get("node_id", h["chunk_id"]),
+            "node_title": h["snippet"][:40] or h["doc_name"],
+            "page_range": h["metadata"].get("page", ""),
+            "confidence": h["score"],
+            "excerpt": h["snippet"],
+        }
+        for h in hits
+    ]
+
+
+def search_wiki_library(kb_id: str, query: str, top_k: int = 10) -> list[dict[str, Any]]:
+    hits = search_wiki_hits(kb_id, query, top_k=top_k)
+    return [
+        {
+            "id": h["chunk_id"],
+            "title": h["doc_name"],
+            "content": h["snippet"],
+            "doc_id": h["doc_id"],
+            "score": h["score"],
+        }
+        for h in hits
+    ]
+
+
 def search_wiki_hits(kb_id: str, query: str, top_k: int = 10) -> list[dict[str, Any]]:
     q = (query or "").lower()
     entries = load_wiki_entries(kb_id)

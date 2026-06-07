@@ -5,9 +5,10 @@ import {
   ExternalLink, Filter, GitCommit, AlertCircle, Pause, SkipForward,
   Folder, FolderOpen, FileCode, ScrollText,
 } from 'lucide-react';
+import { HubKBLayout } from '../../components/HubKBLayout';
 import { HubPageShell } from '../../components/HubPageShell';
 import { HubBadge, HubStatCard, hubCard, hubInput, hubSelect, BtnPrimary, BtnSecondary } from '../../components/hubUi';
-import { mockKBs } from '../../mockData';
+import { useWikiHubData } from '../../hooks/useEnhancementHubData';
 import {
   WIKI_PAGES, WIKI_TREE, WIKI_SOURCE_DOCS, WIKI_COMPILE_QUEUE, WIKI_COMMITS, WIKI_STATS, WIKI_LAYER_FILTERS,
   filterWikiTree, getWikiPage,
@@ -62,17 +63,24 @@ function renderMarkdown(text: string) {
 }
 
 export default function WikiHubPage({ kbId, onNavigate }: WikiHubPageProps) {
-  const kb = mockKBs.find(k => k.kb_id === (kbId || 'kb-001')) || mockKBs[0];
+  const wiki = useWikiHubData(kbId || 'kb-001');
+  const kb = wiki.kb;
   const [activeTab, setActiveTab] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
-  const [pages, setPages] = useState(WIKI_PAGES);
+  const [pages, setPages] = useState(wiki.pages);
   const [queue, setQueue] = useState(WIKI_COMPILE_QUEUE);
   const [browserFocus, setBrowserFocus] = useState<{ slug: string; rawPath?: string } | null>(null);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
   const reviewingCount = queue.filter(q => q.status === 'reviewing').length;
   const compilingCount = queue.filter(q => q.status === 'compiling').length;
-  const ingestedCount = WIKI_SOURCE_DOCS.filter(d => d.ingestStatus === 'compiled').length;
+  const sourceDocs = wiki.isApiMode ? wiki.sourceDocs : WIKI_SOURCE_DOCS;
+  const wikiStats = wiki.isApiMode ? wiki.stats : WIKI_STATS;
+  const ingestedCount = sourceDocs.filter(d => d.ingestStatus === 'compiled').length;
+
+  useEffect(() => {
+    if (wiki.isApiMode) setPages(wiki.pages);
+  }, [wiki.pages, wiki.isApiMode]);
 
   const tabs = [
     '文档列表',
@@ -83,11 +91,11 @@ export default function WikiHubPage({ kbId, onNavigate }: WikiHubPageProps) {
   ];
 
   return (
-    <>
+    <HubKBLayout kbId={kbId || kb.kb_id} activeKey="wiki-hub" onNavigate={onNavigate}>
       {toast && <div className="fixed top-4 right-4 z-50 px-4 py-2 bg-gray-900 text-white text-sm rounded-lg shadow-lg">{toast}</div>}
       <HubPageShell
         title="LLM Wiki 知识库"
-        subtitle={`${kb.name} · raw/ 原始资料 → wiki/ 编译知识库 · ${ingestedCount}/${WIKI_SOURCE_DOCS.length} 文档已 Ingest · ${WIKI_STATS.published}/${WIKI_STATS.total} Wiki 页`}
+        subtitle={`${kb.name} · raw/ 原始资料 → wiki/ 编译知识库 · ${ingestedCount}/${sourceDocs.length} 文档已 Ingest · ${wikiStats.published}/${wikiStats.total} Wiki 页${wiki.isApiMode ? ' · API' : ''}`}
         icon={<BookOpen size={16} className="text-violet-500" />}
         badge={compilingCount > 0 ? { label: `${compilingCount} 编译中`, variant: 'indexing' } : undefined}
         onBack={() => onNavigate('kb-detail', { selectedKBId: kbId || kb.kb_id })}
@@ -120,7 +128,7 @@ export default function WikiHubPage({ kbId, onNavigate }: WikiHubPageProps) {
         {activeTab === 3 && <CompileSettingsTab showToast={showToast} />}
         {activeTab === 4 && <StatsTab />}
       </HubPageShell>
-    </>
+    </HubKBLayout>
   );
 }
 

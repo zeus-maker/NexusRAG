@@ -3,13 +3,12 @@ import { ChevronRight, Download, FileText } from 'lucide-react';
 import type { Chunk, Document } from '../../types';
 import { useChunks, setKbChunkAvailability } from '../../hooks/useKbData';
 import { kbApi } from '../../services/kbApi';
-import { buildChunkHighlightRects, isPdfFileName } from '../../utils/documentUtil';
+import { buildChunkHighlightRects, getDocumentPreviewKind } from '../../utils/documentUtil';
+import { DocumentMultiFormatPreview } from './DocumentMultiFormatPreview';
 import { ChunkContentView } from './ChunkContentView';
 import { ChunkListCard } from './ChunkListCard';
 import { ImageLightbox } from './ImageLightbox';
-import { DocumentIframePreview } from './DocumentIframePreview';
 import { DocumentScrollFrame } from './DocumentScrollFrame';
-import { PdfPreviewWithHighlights } from './PdfPreviewWithHighlights';
 
 export interface ChunkWorkspaceActions {
   onSplit?: (chunk: Chunk) => void;
@@ -53,7 +52,12 @@ export function KnowledgeChunkWorkspace({
     keywords: keywords?.trim() || undefined,
   });
 
-  const isPdf = isPdfFileName(doc.original_name);
+  const previewKind = getDocumentPreviewKind(doc.original_name, doc.file_type);
+  const previewHint = previewKind === 'pdf'
+    ? '点击分块，左侧 PDF 同步高亮定位'
+    : previewKind === 'excel' || previewKind === 'csv'
+      ? '表格预览 · 点击分块查看对应解析块'
+      : '文档预览 · 点击分块查看解析内容';
 
   useEffect(() => {
     setSelectedChunkId(null);
@@ -175,22 +179,17 @@ export function KnowledgeChunkWorkspace({
         </div>
       </header>
       <div className="flex-1 h-0 min-h-0 p-3 overflow-hidden flex flex-col">
-        {!previewUrl ? (
-          <p className="text-xs text-gray-500 p-4">无法加载原始文件预览</p>
-        ) : (
-          <DocumentScrollFrame>
-            {isPdf ? (
-              <PdfPreviewWithHighlights
-                key={`${doc.doc_id}:${previewUrl}`}
-                url={previewUrl}
-                highlights={highlights}
-                className="flex-1 h-0 min-h-0"
-              />
-            ) : (
-              <DocumentIframePreview url={previewUrl} title={doc.original_name} />
-            )}
-          </DocumentScrollFrame>
-        )}
+        <DocumentScrollFrame>
+          <DocumentMultiFormatPreview
+            key={`${doc.doc_id}:${previewUrl ?? 'none'}`}
+            fileName={doc.original_name}
+            fileType={doc.file_type}
+            url={previewUrl}
+            highlights={highlights}
+            selectedChunk={selectedChunk}
+            className="flex-1 h-0 min-h-0"
+          />
+        </DocumentScrollFrame>
       </div>
     </article>
   );
@@ -201,7 +200,7 @@ export function KnowledgeChunkWorkspace({
       <header className="flex-shrink-0 px-4 py-3 border-b border-gray-200 dark:border-gray-700">
         <h2 className="text-sm font-bold text-gray-900 dark:text-gray-100">分块结果</h2>
         <p className="text-[10px] text-gray-500 mt-0.5">
-          共 {chunkTotal} 块 · 点击分块，左侧 PDF 同步高亮定位
+          共 {chunkTotal} 块 · {previewHint}
         </p>
       </header>
 

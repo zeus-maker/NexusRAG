@@ -1561,3 +1561,37 @@ PDF 已能渲染，但左栏预览区不出现滚动条，多页内容随容器�
 - `frontend/rag3-web/src/hooks/useParseQueuePolling.ts`
 - `frontend/rag3-web/src/components/kb/DocumentParseQueuePanel.tsx`
 - `frontend/rag3-web/src/pages/KnowledgeBase.tsx`
+
+---
+
+## 53. 多格式文档预览 + Hub 保留 KB 菜单 + PageIndex/图谱/Wiki 真实 API
+
+### 背景与目标
+
+分块工作区仅 PDF 有高亮预览，Excel 等只能 iframe 空白；进入 PageIndex/知识图谱/Wiki Hub 后左侧知识库子菜单消失；三个 Hub 仍用 mock 数据，与已实现的 RAG3 index / RAGFlow graph API 脱节。
+
+### 改动摘要
+
+- **多格式预览**：`DocumentMultiFormatPreview` 按扩展名分流 PDF / 图片 / Excel（xlsx 库解析表格）/ CSV / 文本 / Markdown；Office 回退分块 HTML 表格；`KnowledgeChunkWorkspace` 统一接入。
+- **Hub 布局**：`HubKBLayout` 外包 `KBDetailLayout`，PageIndex/Graph/Wiki Hub 保留 `KBSubNav`；解析预览跳转改为 `kb-documents?doc=`。
+- **后端 Hub API**：`GET pageindex/documents`、`GET .../tree`、`POST pageindex/search`；`GET wiki/entries`、`POST wiki/search`（基于 `rag3/index_service` Redis 产物）。
+- **前端 Hub 数据层**：`hubApi` + `useEnhancementHubData`（PageIndex/Graph/Wiki）；API 模式下文档列表、树结构、图谱节点、Wiki 条目来自真实接口；Graph 接 `GET /datasets/:id/graph` 与 `use_kg` 检索。
+
+### 验证与风险
+
+- `npm run build` 通过；`python -c "from rag3.index_service import list_pageindex_documents"` 通过。
+- 分块页上传 xlsx → 左侧应显示表格预览；KB 内点 PageIndex 左侧菜单仍在；副标题带「· API」表示真实数据。
+- 风险：PageIndex 树仍为分块启发式建树（非外部 PageIndex 包）；Graph 可视化节点坐标为 API 数据简单排布；需重启后端加载新路由。
+
+### 反思与沉淀
+
+- Hub 与 KB 子导航应同屏：增强索引是 KB 能力延伸，不应独立全屏壳。
+- 预览能力与 RAGFlow 对齐可逐步引入 `@js-preview/excel`、mammoth；当前 xlsx 表格预览已覆盖主路径。
+
+### 涉及文件
+
+- `frontend/rag3-web/src/components/kb/DocumentMultiFormatPreview.tsx`（新建）
+- `frontend/rag3-web/src/components/HubKBLayout.tsx`（新建）
+- `frontend/rag3-web/src/services/hubApi.ts`、`hooks/useEnhancementHubData.ts`（新建）
+- `frontend/rag3-web/src/pages/Hub/*.tsx`
+- `backend/ragflow_rag30/rag3/index_service.py`、`api/apps/rag3_app.py`

@@ -15,8 +15,15 @@ from api.utils.api_utils import (
     server_error_response,
     validate_request,
 )
-from rag3.index_service import run_index as rag3_run_index
-from rag3.index_service import trace_index as rag3_trace_index
+from rag3.index_service import (
+    get_pageindex_document_tree,
+    list_pageindex_documents,
+    list_wiki_hub_entries,
+    run_index as rag3_run_index,
+    search_pageindex_library,
+    search_wiki_library,
+    trace_index as rag3_trace_index,
+)
 from fusion import reciprocal_rank_fusion, rerank
 from pipelines import run_pipelines
 from router import RouterEngine
@@ -143,3 +150,55 @@ def rag3_trace_dataset_index(tenant_id, dataset_id):
     if success:
         return get_result(data=result)
     return get_error_data_result(message=result)
+
+
+@manager.route("/datasets/<dataset_id>/pageindex/documents", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+def rag3_list_pageindex_documents(tenant_id, dataset_id):
+    success, result = list_pageindex_documents(dataset_id, tenant_id)
+    if success:
+        return get_result(data=result)
+    return get_error_data_result(message=result)
+
+
+@manager.route("/datasets/<dataset_id>/pageindex/documents/<doc_id>/tree", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+def rag3_get_pageindex_tree(tenant_id, dataset_id, doc_id):
+    success, result = get_pageindex_document_tree(dataset_id, doc_id, tenant_id)
+    if success:
+        return get_result(data=result)
+    return get_error_data_result(message=result)
+
+
+@manager.route("/datasets/<dataset_id>/pageindex/search", methods=["POST"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def rag3_pageindex_search(tenant_id, dataset_id):
+    body = await request.get_json(silent=True) or {}
+    query = body.get("query", "")
+    top_k = int(body.get("top_k", 10))
+    hits = search_pageindex_library(dataset_id, query, top_k=top_k)
+    return get_json_result(data={"query": query, "hits": hits, "total": len(hits)})
+
+
+@manager.route("/datasets/<dataset_id>/wiki/entries", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+def rag3_list_wiki_entries(tenant_id, dataset_id):
+    success, result = list_wiki_hub_entries(dataset_id, tenant_id)
+    if success:
+        return get_result(data=result)
+    return get_error_data_result(message=result)
+
+
+@manager.route("/datasets/<dataset_id>/wiki/search", methods=["POST"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def rag3_wiki_search(tenant_id, dataset_id):
+    body = await request.get_json(silent=True) or {}
+    query = body.get("query", "")
+    top_k = int(body.get("top_k", 10))
+    hits = search_wiki_library(dataset_id, query, top_k=top_k)
+    return get_json_result(data={"query": query, "hits": hits, "total": len(hits)})

@@ -5,9 +5,11 @@ import {
   SkipForward, Zap, Target, Layers, ArrowLeft, MessageSquare, Box, Pause,
   BarChart2, Clock, TrendingUp,
 } from 'lucide-react';
+import { HubKBLayout } from '../../components/HubKBLayout';
 import { HubPageShell } from '../../components/HubPageShell';
 import { HubBadge, HubStatCard, hubCard, hubInput, hubSelect, BtnPrimary, BtnSecondary } from '../../components/hubUi';
-import { mockKBs } from '../../mockData';
+import { usePageIndexHubData } from '../../hooks/useEnhancementHubData';
+import { PageIndexHubContext, usePageIndexHubContext } from './pageIndexHubContext';
 import {
   PAGEINDEX_STATS, PAGEINDEX_DOCUMENTS, PAGEINDEX_TREE_V5, PAGEINDEX_DEFAULT_SETTINGS,
   PAGEINDEX_BUILD_QUEUE, PAGEINDEX_PIPELINE_STEPS, PAGEINDEX_ANALYTICS, BUILD_STAGE_LABEL,
@@ -41,7 +43,8 @@ const SEARCH_MODE_LABEL: Record<PageIndexSearchMode, string> = {
 };
 
 export default function PageIndexHubPage({ kbId, onNavigate }: PageIndexHubPageProps) {
-  const kb = mockKBs.find(k => k.kb_id === (kbId || 'kb-001')) || mockKBs[0];
+  const hub = usePageIndexHubData(kbId || 'kb-001');
+  const kb = hub.kb;
   const [activeTab, setActiveTab] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
@@ -67,36 +70,40 @@ export default function PageIndexHubPage({ kbId, onNavigate }: PageIndexHubPageP
   };
 
   if (selectedDocId) {
-    const doc = getPageIndexDoc(selectedDocId);
+    const doc = hub.getDoc(selectedDocId);
     if (!doc) {
       setSelectedDocId(null);
       return null;
     }
     return (
-      <>
-        {toast && <div className="fixed top-4 right-4 z-50 px-4 py-2 bg-gray-900 text-white text-sm rounded-lg shadow-lg">{toast}</div>}
-        <DocDetailView
-          doc={doc}
-          autoFocusDebug={debugDocId === selectedDocId}
-          onBack={() => { setSelectedDocId(null); setDebugDocId(null); }}
-          showToast={showToast}
-          onNavigate={onNavigate}
-        />
-      </>
+      <HubKBLayout kbId={kbId || kb.kb_id} activeKey="pageindex-hub" onNavigate={onNavigate}>
+        <PageIndexHubContext.Provider value={hub}>
+          {toast && <div className="fixed top-4 right-4 z-50 px-4 py-2 bg-gray-900 text-white text-sm rounded-lg shadow-lg">{toast}</div>}
+          <DocDetailView
+            doc={doc}
+            kbId={kbId || kb.kb_id}
+            autoFocusDebug={debugDocId === selectedDocId}
+            onBack={() => { setSelectedDocId(null); setDebugDocId(null); }}
+            showToast={showToast}
+            onNavigate={onNavigate}
+          />
+        </PageIndexHubContext.Provider>
+      </HubKBLayout>
     );
   }
 
   return (
-    <>
+    <HubKBLayout kbId={kbId || kb.kb_id} activeKey="pageindex-hub" onNavigate={onNavigate}>
+      <PageIndexHubContext.Provider value={hub}>
       {toast && <div className="fixed top-4 right-4 z-50 px-4 py-2 bg-gray-900 text-white text-sm rounded-lg shadow-lg">{toast}</div>}
       <HubPageShell
         title="PageIndex 管理"
-        subtitle={`${kb.name} · 无向量推理式检索 · 树索引 Ingest → In-Context 树搜索 · ${PAGEINDEX_STATS.completed}/${PAGEINDEX_STATS.total} 已建树`}
+        subtitle={`${kb.name} · 无向量推理式检索 · 树索引 Ingest → In-Context 树搜索 · ${hub.stats.completed}/${hub.stats.total} 已建树${hub.isApiMode ? ' · API' : ''}`}
         icon={<GitBranch size={16} className="text-cyan-600" />}
-        badge={buildingCount > 0 ? { label: `${buildingCount} 建树中`, variant: 'indexing' } : { label: `${PAGEINDEX_STATS.buildRate}% 建树率`, variant: 'active' }}
+        badge={buildingCount > 0 ? { label: `${buildingCount} 建树中`, variant: 'indexing' } : { label: `${hub.stats.buildRate}% 建树率`, variant: 'active' }}
         onBack={() => onNavigate('kb-detail', { selectedKBId: kbId || kb.kb_id })}
-        secondaryAction={{ label: '重建失败项', icon: <RefreshCw size={14} />, onClick: () => showToast('失败文档重建任务已提交（mock）') }}
-        primaryAction={{ label: '批量重建', icon: <Layers size={14} />, onClick: () => showToast('批量重建已加入队列（mock）') }}
+        secondaryAction={{ label: '重建失败项', icon: <RefreshCw size={14} />, onClick: () => void hub.runBuild().then(() => showToast(hub.isApiMode ? '已提交 PageIndex 重建' : '失败文档重建任务已提交（mock）')) }}
+        primaryAction={{ label: '批量重建', icon: <Layers size={14} />, onClick: () => void hub.runBuild(hub.documents.map(d => d.id)).then(() => showToast(hub.isApiMode ? '批量建树已提交' : '批量重建已加入队列（mock）')) }}
         tabs={tabs}
         activeTab={activeTab}
         onTabChange={setActiveTab}
@@ -119,21 +126,24 @@ export default function PageIndexHubPage({ kbId, onNavigate }: PageIndexHubPageP
         {activeTab === 4 && <SettingsTab showToast={showToast} />}
         {activeTab === 5 && <StatsTab />}
       </HubPageShell>
-    </>
+      </PageIndexHubContext.Provider>
+    </HubKBLayout>
   );
 }
 
 function OverviewTab({ onViewDoc, onRetry }: { onViewDoc: (id: string) => void; onRetry: () => void }) {
-  const maxWeekly = Math.max(...PAGEINDEX_STATS.weeklyBuilds);
+  const hub = usePageIndexHubContext();
+  const stats = hub.stats;
+  const maxWeekly = Math.max(...stats.weeklyBuilds);
   const activeJobs = getPageIndexActiveBuildJobs().filter(j => j.stage !== 'queued');
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <HubStatCard label="已建树" value={`${PAGEINDEX_STATS.completed}/${PAGEINDEX_STATS.total}`} icon={<CheckCircle size={18} className="text-green-500" />} />
-        <HubStatCard label="建树率" value={`${PAGEINDEX_STATS.buildRate}%`} icon={<GitBranch size={18} className="text-cyan-600" />} />
-        <HubStatCard label="平均深度" value={`${PAGEINDEX_STATS.avgDepth} 层`} icon={<Layers size={18} className="text-blue-500" />} />
-        <HubStatCard label="失败文档" value={String(PAGEINDEX_STATS.failed)} icon={<AlertCircle size={18} className="text-red-500" />} />
+        <HubStatCard label="已建树" value={`${stats.completed}/${stats.total}`} icon={<CheckCircle size={18} className="text-green-500" />} />
+        <HubStatCard label="建树率" value={`${stats.buildRate}%`} icon={<GitBranch size={18} className="text-cyan-600" />} />
+        <HubStatCard label="平均深度" value={`${stats.avgDepth} 层`} icon={<Layers size={18} className="text-blue-500" />} />
+        <HubStatCard label="失败文档" value={String(stats.failed)} icon={<AlertCircle size={18} className="text-red-500" />} />
       </div>
 
       <div className={`${hubCard} p-4`}>
@@ -245,7 +255,8 @@ function DocumentsTab({
   const [statusFilter, setStatusFilter] = useState<PageIndexDocStatus | 'all'>('all');
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  const filtered = useMemo(() => PAGEINDEX_DOCUMENTS.filter(d => {
+  const hub = usePageIndexHubContext();
+  const filtered = useMemo(() => hub.documents.filter(d => {
     if (statusFilter !== 'all' && d.treeStatus !== statusFilter) return false;
     if (search && !d.name.includes(search)) return false;
     return true;
@@ -450,16 +461,16 @@ function LibrarySearchTab({
   const [searchMode, setSearchMode] = useState<PageIndexSearchMode>('mcts_hybrid');
   const [result, setResult] = useState<PageIndexLibrarySearchResult | null>(null);
   const [searching, setSearching] = useState(false);
-  const completedDocs = PAGEINDEX_DOCUMENTS.filter(d => d.treeStatus === 'completed');
+  const hub = usePageIndexHubContext();
+  const completedDocs = hub.documents.filter(d => d.treeStatus === 'completed');
 
   const handleSearch = () => {
     setSearching(true);
     setResult(null);
-    setTimeout(() => {
-      const r = runMockLibrarySearch(testQuery);
+    void hub.runLibrarySearch(testQuery).then(r => {
       setResult({ ...r, mode: searchMode });
       setSearching(false);
-    }, 800);
+    });
   };
 
   return (
@@ -815,15 +826,17 @@ function PdfBboxPreview({
 /* ── 单文档树预览 + 树搜索调试（§11.2.3） ── */
 
 function DocDetailView({
-  doc, autoFocusDebug, onBack, showToast, onNavigate,
+  doc, kbId, autoFocusDebug, onBack, showToast, onNavigate,
 }: {
   doc: PageIndexDocument;
+  kbId: string;
   autoFocusDebug?: boolean;
   onBack: () => void;
   showToast: (m: string) => void;
   onNavigate: (page: string, extra?: Record<string, unknown>) => void;
 }) {
-  const tree = getPageIndexTree(doc.id) ?? PAGEINDEX_TREE_V5;
+  const hub = usePageIndexHubContext();
+  const [tree, setTree] = useState<PageIndexTreeNode>(PAGEINDEX_TREE_V5);
   const [selectedNodeId, setSelectedNodeId] = useState('ch5-1-1');
   const [testQuery, setTestQuery] = useState('违约金如何计算');
   const [searchResult, setSearchResult] = useState<PageIndexSearchResult | null>(null);
@@ -834,13 +847,22 @@ function DocDetailView({
   const { page: previewPage, bbox: previewBbox } = getNodePreviewBbox(selectedNode);
 
   const openParsePreview = () => {
-    onNavigate('kb-parse', {
-      selectedKBId: 'kb-001',
-      pageIndexDocId: doc.id,
-      highlightPage: previewPage,
-      highlightNodeId: selectedNodeId,
+    onNavigate('kb-documents', {
+      selectedKBId: kbId,
+      selectedDocId: doc.id,
     });
   };
+
+  useEffect(() => {
+    let cancelled = false;
+    void hub.getTree(doc.id).then(t => {
+      if (!cancelled && t) {
+        setTree(t);
+        setSelectedNodeId(t.id);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [doc.id, hub]);
 
   useEffect(() => {
     if (autoFocusDebug) setDebugExpanded(true);
@@ -849,12 +871,13 @@ function DocDetailView({
   const handleSearch = () => {
     setSearching(true);
     setSearchResult(null);
-    setTimeout(() => {
-      const result = runMockTreeSearch(testQuery);
-      setSearchResult(result);
-      setSelectedNodeId(result.targetNodeId);
+    void hub.runTreeSearch(testQuery, doc.id).then(result => {
+      if (result) {
+        setSearchResult(result);
+        setSelectedNodeId(result.targetNodeId);
+      }
       setSearching(false);
-    }, 900);
+    });
   };
 
   return (

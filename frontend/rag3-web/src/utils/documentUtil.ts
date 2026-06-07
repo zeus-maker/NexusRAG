@@ -30,9 +30,49 @@ export function buildChunkHighlightRects(
   }).filter(r => r.x2 > r.x1 && r.y2 > r.y1);
 }
 
+export type DocumentPreviewKind =
+  | 'pdf'
+  | 'image'
+  | 'text'
+  | 'markdown'
+  | 'html'
+  | 'csv'
+  | 'excel'
+  | 'office'
+  | 'unknown';
+
+const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'ico', 'tif', 'tiff']);
+const TEXT_EXTS = new Set(['txt', 'log', 'json', 'xml']);
+const MD_EXTS = new Set(['md', 'mdx']);
+const HTML_EXTS = new Set(['html', 'htm']);
+const CSV_EXTS = new Set(['csv']);
+const EXCEL_EXTS = new Set(['xlsx', 'xls']);
+const OFFICE_EXTS = new Set(['doc', 'docx', 'ppt', 'pptx']);
+
+export function fileExtension(name: string): string {
+  return name.split('.').pop()?.toLowerCase() ?? '';
+}
+
 export function isPdfFileName(name: string): boolean {
-  const ext = name.split('.').pop()?.toLowerCase() ?? '';
-  return ext === 'pdf';
+  return fileExtension(name) === 'pdf';
+}
+
+export function getDocumentPreviewKind(name: string, fileType?: string): DocumentPreviewKind {
+  const ext = fileExtension(name);
+  if (ext === 'pdf') return 'pdf';
+  if (IMAGE_EXTS.has(ext)) return 'image';
+  if (CSV_EXTS.has(ext)) return 'csv';
+  if (EXCEL_EXTS.has(ext)) return 'excel';
+  if (MD_EXTS.has(ext)) return 'markdown';
+  if (HTML_EXTS.has(ext)) return 'html';
+  if (TEXT_EXTS.has(ext)) return 'text';
+  if (OFFICE_EXTS.has(ext)) return 'office';
+  const ft = (fileType || '').toLowerCase();
+  if (ft.includes('spreadsheet') || ft.includes('excel')) return 'excel';
+  if (ft.includes('csv')) return 'csv';
+  if (ft.includes('image')) return 'image';
+  if (ft.includes('pdf')) return 'pdf';
+  return 'unknown';
 }
 
 /** 解析日志行高亮（对齐 RAGFlow ProcessLogModal.replaceText） */
