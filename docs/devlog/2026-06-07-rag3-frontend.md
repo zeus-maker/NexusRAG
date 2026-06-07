@@ -1289,3 +1289,26 @@ PDF 已能渲染，但左栏预览区不出现滚动条，多页内容随容器�
 - `frontend/rag3-web/src/components/kb/DocumentScrollFrame.tsx`
 - `frontend/rag3-web/src/components/kb/DocumentParsePreviewPanel.tsx`
 - `frontend/rag3-web/src/pages/KnowledgeBase.tsx`
+
+---
+
+## 44. 分块预览页同步 PDF 固定高度滚动布局
+
+### 背景与目标
+
+文档列表「解析预览」左栏 PDF 滚动已修复，但 `kb-chunks` 分块预览页仍用平铺 `p-6 gap-4` 布局，未贯通 `flex-1 h-0 min-h-0` 高度链，PDF 与分块列表无法各自滚动。
+
+### 改动摘要
+
+- `ChunkPreviewPage`：根 `h-full min-h-0 overflow-hidden`；工具栏 `flex-shrink-0`；工作区双层 `flex-1 h-0` 包裹 `KnowledgeChunkWorkspace`。
+- `KnowledgeChunkWorkspace` 右栏：`flex-1 h-0 overflow-y-auto`；stack 布局右栏同步约束。
+
+### 验证与风险
+
+- `npm run build` 通过。
+- 文档 → 分块：左 PDF 框内滚动、右列表独立滚动，与解析预览一致。
+
+### 涉及文件
+
+- `frontend/rag3-web/src/pages/KnowledgeBase.tsx`
+- `frontend/rag3-web/src/components/kb/KnowledgeChunkWorkspace.tsx`

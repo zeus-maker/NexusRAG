@@ -1482,7 +1482,8 @@ export function ChunkPreviewPage({ kbId, docId, onNavigate }: ChunkPreviewPagePr
     {toast && (
       <div className="fixed top-4 right-4 z-50 px-4 py-2 bg-gray-900 text-white text-sm rounded-lg shadow-lg">{toast}</div>
     )}
-    <div className="p-6 flex flex-col gap-4">
+    <div className="flex flex-col h-full min-h-0 overflow-hidden">
+      <div className="flex-shrink-0 p-6 pb-0 flex flex-col gap-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <button
@@ -1568,28 +1569,31 @@ export function ChunkPreviewPage({ kbId, docId, onNavigate }: ChunkPreviewPagePr
       {chunksError && useRealApi && (
         <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{chunksError}</div>
       )}
+      </div>
 
       {useRealApi && doc && (
-        <div className="flex-1 h-0 min-h-[min(720px,calc(100vh-11rem))] bg-white rounded-xl border border-gray-200 overflow-hidden flex flex-col">
-          <KnowledgeChunkWorkspace
-            key={doc.doc_id}
-            doc={doc}
-            kbId={kbId}
-            pageSize={CHUNK_PAGE_SIZE}
-            keywords={chunkSearch.trim() || undefined}
-            showChunkActions
-            actions={{
-              onSplit: chunk => setSplitTarget(chunk),
-              onMergeNext: (chunk, index) => void handleMergeWithNext(chunk, index),
-              onToggleExclude: chunk => void handleToggleExclude(chunk),
-              chunkActionId,
-            }}
-          />
+        <div className="flex-1 h-0 min-h-0 px-6 pb-6 pt-4 overflow-hidden flex flex-col">
+          <div className="flex-1 h-0 min-h-0 bg-white rounded-xl border border-gray-200 overflow-hidden flex flex-col">
+            <KnowledgeChunkWorkspace
+              key={doc.doc_id}
+              doc={doc}
+              kbId={kbId}
+              pageSize={CHUNK_PAGE_SIZE}
+              keywords={chunkSearch.trim() || undefined}
+              showChunkActions
+              actions={{
+                onSplit: chunk => setSplitTarget(chunk),
+                onMergeNext: (chunk, index) => void handleMergeWithNext(chunk, index),
+                onToggleExclude: chunk => void handleToggleExclude(chunk),
+                chunkActionId,
+              }}
+            />
+          </div>
         </div>
       )}
 
       {!useRealApi && (
-      <div className="space-y-3">
+      <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-6 space-y-3">
         {chunks.map((chunk, index) => {
           const tc = contentTypeConfig[chunk.content_type];
           const q = qualityMap[chunk.chunk_id];

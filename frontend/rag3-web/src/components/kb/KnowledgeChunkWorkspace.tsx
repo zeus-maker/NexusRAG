@@ -154,7 +154,7 @@ export function KnowledgeChunkWorkspace({
 
   /** 左侧：文档预览（对齐 RAGFlow w-2/5） */
   const documentPreviewPane = (
-    <article className="flex flex-col min-w-0 min-h-0 overflow-hidden flex-[2] lg:flex-[2] border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-700 bg-gray-50/30 dark:bg-gray-900/20">
+    <article className="flex flex-col min-w-0 min-h-0 self-stretch overflow-hidden flex-[2] lg:flex-[2] border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-700 bg-gray-50/30 dark:bg-gray-900/20">
       <header className="flex-shrink-0 px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
@@ -197,7 +197,7 @@ export function KnowledgeChunkWorkspace({
 
   /** 右侧：分块结果列表（对齐 RAGFlow w-3/5） */
   const chunkResultPane = (
-    <article className="flex flex-col min-h-0 flex-[3] lg:flex-[3] bg-white dark:bg-gray-900">
+    <article className="flex flex-col min-h-0 flex-[3] lg:flex-[3] overflow-hidden bg-white dark:bg-gray-900">
       <header className="flex-shrink-0 px-4 py-3 border-b border-gray-200 dark:border-gray-700">
         <h2 className="text-sm font-bold text-gray-900 dark:text-gray-100">分块结果</h2>
         <p className="text-[10px] text-gray-500 mt-0.5">
@@ -205,7 +205,7 @@ export function KnowledgeChunkWorkspace({
         </p>
       </header>
 
-      <div className="flex-1 overflow-y-auto p-3 min-h-0 space-y-3">
+      <div className="flex-1 h-0 min-h-0 overflow-y-auto p-3 space-y-3">
         {loading && <p className="text-xs text-gray-500 p-2">加载中…</p>}
         {!loading && chunkItems.length === 0 && (
           <p className="text-xs text-gray-500 p-2">暂无分块</p>
@@ -283,7 +283,7 @@ export function KnowledgeChunkWorkspace({
     return (
       <div className="flex flex-col flex-1 h-0 min-h-0 overflow-hidden">
         <div className="h-[42vh] flex-shrink-0 min-h-0 overflow-hidden flex flex-col">{documentPreviewPane}</div>
-        <div className="flex-1 min-h-0">{chunkResultPane}</div>
+        <div className="flex-1 h-0 min-h-0 overflow-hidden flex flex-col">{chunkResultPane}</div>
         {lightboxModal}
       </div>
     );
