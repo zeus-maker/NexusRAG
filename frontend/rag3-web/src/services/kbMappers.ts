@@ -220,18 +220,20 @@ export const PARSE_STATUS_UI: Record<ParseStatus, { label: string; color: string
   failed: { label: '失败', color: 'bg-red-100 text-red-700' },
 };
 
-export function mapChunkToUI(chunk: RagflowChunk, index: number): Chunk {
+export function mapChunkToUI(chunk: RagflowChunk, index: number, pageOffset = 0): Chunk {
   const content = chunk.content || '';
   const page = chunk.positions?.[0]?.[0] ?? 1;
+  const keywords = chunk.important_keywords?.filter(Boolean) ?? [];
+  const sectionTitle = keywords[0] || chunk.docnm_kwd || `Chunk ${pageOffset + index + 1}`;
   return {
     chunk_id: chunk.id,
-    chunk_index: index + 1,
-    content_preview: content.length > 300 ? `${content.slice(0, 300)}…` : content,
+    chunk_index: pageOffset + index + 1,
+    content_preview: content,
     content_type: inferContentType(content),
     chunk_strategy: '通用分块',
     token_count: Math.max(1, Math.round(content.length / 2)),
     page_number: page,
-    section_title: chunk.docnm_kwd || `Chunk ${index + 1}`,
+    section_title: sectionTitle,
     acl_level: chunk.available === false ? 'restricted' : 'internal',
   };
 }

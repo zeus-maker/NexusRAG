@@ -97,10 +97,14 @@ export function useKnowledgeBase(kbId: string) {
   );
 }
 
+const EMPTY_CHUNKS = { items: [] as Chunk[], total: 0 };
+
 export function useDocuments(kbId: string, search = '') {
-  const fallback = mockDocuments.filter(
-    d => d.kb_id === kbId && d.original_name.toLowerCase().includes(search.toLowerCase()),
-  );
+  const fallback = useRealApi
+    ? []
+    : mockDocuments.filter(
+        d => d.kb_id === kbId && d.original_name.toLowerCase().includes(search.toLowerCase()),
+      );
 
   return useAsyncData(
     async () => {
@@ -136,15 +140,28 @@ export function useDocumentListResult(kbId: string, search = '') {
   );
 }
 
-export function useChunks(kbId: string, docId: string) {
-  const fallback = mockChunks;
+export function useChunks(
+  kbId: string,
+  docId: string,
+  opts?: { page?: number; page_size?: number; keywords?: string },
+) {
+  const page = opts?.page ?? 1;
+  const pageSize = opts?.page_size ?? 100;
+  const fallback = useRealApi
+    ? EMPTY_CHUNKS
+    : { items: mockChunks, total: mockChunks.length };
+
   return useAsyncData(
     async () => {
-      const res = await kbApi.listChunks(kbId, docId, { page: 1, page_size: 100 });
-      return res;
+      if (!docId) return EMPTY_CHUNKS;
+      return kbApi.listChunks(kbId, docId, {
+        page,
+        page_size: pageSize,
+        keywords: opts?.keywords,
+      });
     },
-    { items: fallback, total: fallback.length },
-    [kbId, docId],
+    fallback,
+    [kbId, docId, page, pageSize, opts?.keywords],
   );
 }
 

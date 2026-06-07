@@ -195,8 +195,9 @@ export const kbApi = {
       `/datasets/${datasetId}/documents/${documentId}/chunks${query ? `?${query}` : ''}`,
     );
     const chunks = data?.chunks ?? [];
+    const pageOffset = ((params.page ?? 1) - 1) * (params.page_size ?? 100);
     return {
-      items: chunks.map((c, i) => mapChunkToUI(c, i)),
+      items: chunks.map((c, i) => mapChunkToUI(c, i, pageOffset)),
       total: data?.total ?? chunks.length,
     };
   },

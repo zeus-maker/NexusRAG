@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import {
   Plus, Search, MoreHorizontal, Database, FileText,
   Cpu, Clock, TrendingUp, ArrowRight, RefreshCw, Trash2,
@@ -8,6 +8,8 @@ import {
   ChevronLeft, AlertCircle as AlertIcon, Eye, Columns3,
 } from 'lucide-react';
 import { DocumentParsePreviewPanel } from '../components/kb/DocumentParsePreviewPanel';
+import { DocumentActionMenu, parseStatusFilterLabel } from '../components/kb/DocumentActionMenu';
+import type { ParseStatus } from '../types';
 import { getPageIndexDocIdForKbDoc } from '../data/pageIndexMock';
 import { mockKBs, mockDocuments, mockChunks, mockIndexStatuses } from '../mockData';
 import type { KnowledgeBase } from '../types';
@@ -752,6 +754,7 @@ interface DocumentPageProps {
 
 export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<ParseStatus | 'all'>('all');
   const [isDragging, setIsDragging] = useState(false);
   const [selectedDocs, setSelectedDocs] = useState<string[]>([]);
   const [previewDocId, setPreviewDocId] = useState<string | null>(null);
@@ -762,8 +765,10 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
   const [showUrlImport, setShowUrlImport] = useState(false);
   const [urlName, setUrlName] = useState('');
   const [urlValue, setUrlValue] = useState('');
-  const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const [menuDocId, setMenuDocId] = useState<string | null>(null);
+  const [menuAnchor, setMenuAnchor] = useState<DOMRect | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const menuBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   const { data: documents, loading: docsLoading, error: docsError, refresh: refreshDocs } = useDocuments(kbId, search);
   const governedMap = useRealApi ? {} : Object.fromEntries(getGovernedDocuments(kbId).map(g => [g.doc_id, g]));
@@ -776,12 +781,29 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
       }))
     : getUploadQueue();
 
-  const filtered = useRealApi
-    ? documents
-    : mockDocuments.filter(d => d.kb_id === kbId && d.original_name.includes(search));
+  const filtered = useMemo(() => {
+    const base = useRealApi
+      ? documents
+      : mockDocuments.filter(d => d.kb_id === kbId && d.original_name.includes(search));
+    const byStatus = statusFilter === 'all' ? base : base.filter(d => d.parse_status === statusFilter);
+    return byStatus;
+  }, [documents, statusFilter, kbId, search]);
+
   const previewDoc = previewDocId ? filtered.find(d => d.doc_id === previewDocId) : filtered[0] ?? null;
 
+  useEffect(() => {
+    if (!useRealApi) return;
+    const hasParsing = documents.some(d => d.parse_status === 'parsing' || d.parse_status === 'pending');
+    if (!hasParsing) return;
+    const timer = window.setInterval(() => refreshDocs(), 4000);
+    return () => window.clearInterval(timer);
+  }, [documents, refreshDocs]);
+
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2800); };
+
+  const toggleSelectAll = (checked: boolean) => {
+    setSelectedDocs(checked ? filtered.map(d => d.doc_id) : []);
+  };
 
   const handleFiles = async (files: FileList | File[]) => {
     const list = Array.from(files);
@@ -826,20 +848,34 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
     }
   };
 
-  const handleDocAction = async (docId: string, action: 'parse' | 'stop' | 'delete' | 'download') => {
-    setOpenMenu(null);
+  const handleDocAction = async (
+    docId: string,
+    action: 'parse' | 'reparse' | 'stop' | 'delete' | 'download' | 'preview' | 'chunks',
+  ) => {
+    setMenuDocId(null);
+    setMenuAnchor(null);
+    if (action === 'preview') {
+      setPreviewDocId(docId);
+      setShowPreview(true);
+      return;
+    }
+    if (action === 'chunks') {
+      onNavigate('kb-chunks', { selectedKBId: kbId, selectedDocId: docId });
+      return;
+    }
     if (!useRealApi) { showToast('演示模式'); return; }
     setActionLoading(true);
     try {
-      if (action === 'parse') {
+      if (action === 'parse' || action === 'reparse') {
         await parseKbDocuments(kbId, [docId]);
-        showToast('已提交解析');
+        showToast(action === 'reparse' ? '已提交重新解析' : '已提交解析');
       } else if (action === 'stop') {
         await stopKbDocuments(kbId, [docId]);
         showToast('已停止解析');
       } else if (action === 'delete') {
         if (!confirm('确定删除该文档？')) return;
         await deleteKbDocuments(kbId, [docId]);
+        if (previewDocId === docId) setPreviewDocId(null);
         showToast('已删除');
       } else if (action === 'download') {
         const blob = await kbApi.fetchDocumentPreview(docId);
@@ -856,6 +892,32 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
     } finally {
       setActionLoading(false);
     }
+  };
+
+  const handleBatchParse = async (ids: string[]) => {
+    if (!ids.length || !useRealApi) return;
+    setActionLoading(true);
+    try {
+      await parseKbDocuments(kbId, ids);
+      refreshDocs();
+      showToast(`已提交 ${ids.length} 个文档解析`);
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : '解析失败');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const openDocMenu = (docId: string) => {
+    const btn = menuBtnRefs.current[docId];
+    if (!btn) return;
+    if (menuDocId === docId) {
+      setMenuDocId(null);
+      setMenuAnchor(null);
+      return;
+    }
+    setMenuDocId(docId);
+    setMenuAnchor(btn.getBoundingClientRect());
   };
 
   const handleUrlImport = async () => {
@@ -898,6 +960,7 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
       accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.csv,.txt,.md,.html"
       onChange={e => { if (e.target.files) void handleFiles(e.target.files); e.target.value = ''; }}
     />
+    <div className={`flex flex-col flex-1 min-h-0 ${showPreview && previewDoc && canPreview ? '' : ''}`}>
     <div className="p-6 flex flex-col gap-4 flex-shrink-0">
       {docsError && (
         <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{docsError}</div>
@@ -919,10 +982,11 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
           </button>
           <button
             type="button"
-            onClick={() => onNavigate('kb-export', { selectedKBId: kbId })}
+            onClick={() => refreshDocs()}
             className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700"
+            title="刷新文档列表"
           >
-            <Download size={14} /> 导出
+            <RefreshCw size={14} /> 刷新
           </button>
           <button
             type="button"
@@ -990,43 +1054,73 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
           <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="搜索文档名称..." className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
         </div>
+        {useRealApi && (
+          <div className="flex gap-1 flex-wrap">
+            {(['all', 'pending', 'parsing', 'parsed', 'failed'] as const).map(s => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setStatusFilter(s)}
+                className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${
+                  statusFilter === s
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                {parseStatusFilterLabel(s)}
+              </button>
+            ))}
+          </div>
+        )}
         {selectedDocs.length > 0 && (
-          <button
-            type="button"
-            disabled={actionLoading}
-            onClick={() => void handleDeleteSelected()}
-            className="px-3 py-1.5 text-xs border border-red-200 text-red-600 rounded-lg hover:bg-red-50 flex items-center gap-1 disabled:opacity-50"
-          >
-            <Trash2 size={12} /> 删除选中 ({selectedDocs.length})
-          </button>
+          <>
+            <button
+              type="button"
+              disabled={actionLoading}
+              onClick={() => void handleDeleteSelected()}
+              className="px-3 py-1.5 text-xs border border-red-200 text-red-600 rounded-lg hover:bg-red-50 flex items-center gap-1 disabled:opacity-50"
+            >
+              <Trash2 size={12} /> 删除 ({selectedDocs.length})
+            </button>
+            {useRealApi && (
+              <button
+                type="button"
+                disabled={actionLoading}
+                onClick={() => void handleBatchParse(selectedDocs)}
+                className="px-3 py-1.5 text-xs border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 flex items-center gap-1 disabled:opacity-50"
+              >
+                <RefreshCw size={12} /> 解析选中
+              </button>
+            )}
+          </>
         )}
         {useRealApi && filtered.some(d => d.parse_status === 'pending' || d.parse_status === 'failed') && (
           <button
             type="button"
             disabled={actionLoading}
-            onClick={async () => {
-              const ids = filtered.filter(d => d.parse_status === 'pending' || d.parse_status === 'failed').map(d => d.doc_id);
-              try {
-                await parseKbDocuments(kbId, ids);
-                refreshDocs();
-                showToast(`已提交 ${ids.length} 个文档解析`);
-              } catch (e) {
-                showToast(e instanceof Error ? e.message : '解析失败');
-              }
-            }}
-            className="px-3 py-1.5 text-xs border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 flex items-center gap-1"
+            onClick={() => void handleBatchParse(
+              filtered.filter(d => d.parse_status === 'pending' || d.parse_status === 'failed').map(d => d.doc_id),
+            )}
+            className="px-3 py-1.5 text-xs border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 flex items-center gap-1 disabled:opacity-50"
           >
-            <RefreshCw size={12} /> 批量解析
+            <RefreshCw size={12} /> 批量解析待处理
           </button>
         )}
       </div>
 
       {/* Document table */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className={`bg-white rounded-xl border border-gray-200 ${showPreview && canPreview ? 'max-h-[42vh] overflow-y-auto' : ''}`}>
         <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b border-gray-200">
+          <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
             <tr>
-              <th className="w-8 px-4 py-3"><input type="checkbox" className="rounded" /></th>
+              <th className="w-8 px-4 py-3">
+                <input
+                  type="checkbox"
+                  className="rounded"
+                  checked={filtered.length > 0 && selectedDocs.length === filtered.length}
+                  onChange={e => toggleSelectAll(e.target.checked)}
+                />
+              </th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">文件名</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 hidden sm:table-cell">类型</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 hidden md:table-cell">大小</th>
@@ -1038,6 +1132,13 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
             </tr>
           </thead>
           <tbody>
+            {filtered.length === 0 && (
+              <tr>
+                <td colSpan={9} className="px-4 py-12 text-center text-sm text-gray-500">
+                  {docsLoading ? '加载中…' : '暂无文档，请上传或调整筛选条件'}
+                </td>
+              </tr>
+            )}
             {filtered.map((doc, i) => {
               const gov = governedMap[doc.doc_id];
               const stage = gov ? PIPELINE_STAGE_LABELS[gov.pipeline_stage] : PIPELINE_STAGE_LABELS.indexed;
@@ -1049,7 +1150,7 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
                   onClick={() => { setPreviewDocId(doc.doc_id); setShowPreview(true); }}
                   className={`border-b border-gray-50 hover:bg-gray-50/70 transition-colors cursor-pointer ${previewDocId === doc.doc_id ? 'bg-cyan-50/60' : i % 2 === 0 ? '' : 'bg-gray-50/30'}`}
                 >
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                     <input
                       type="checkbox"
                       checked={selectedDocs.includes(doc.doc_id)}
@@ -1058,14 +1159,14 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
                     />
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
                       <FileText size={14} className="text-gray-400 flex-shrink-0" />
-                      <span className="text-sm text-gray-800 font-medium">{doc.original_name}</span>
-                      {getPageIndexDocIdForKbDoc(doc.doc_id) && doc.parse_status === 'parsed' && (
+                      <span className="text-sm text-gray-800 font-medium truncate">{doc.original_name}</span>
+                      {doc.parse_status === 'parsed' && (
                         <button
                           type="button"
                           onClick={e => { e.stopPropagation(); setPreviewDocId(doc.doc_id); setShowPreview(true); }}
-                          className="p-0.5 text-cyan-600 hover:bg-cyan-50 rounded"
+                          className="p-0.5 text-cyan-600 hover:bg-cyan-50 rounded flex-shrink-0"
                           title="解析预览"
                         >
                           <Eye size={12} />
@@ -1110,35 +1211,25 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
                   </td>
                   <td className="px-4 py-3 text-xs text-gray-500 hidden xl:table-cell">{formatTime(doc.uploaded_at)}</td>
                   <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => onNavigate('kb-chunks', { selectedKBId: kbId, selectedDocId: doc.doc_id })}
-                        className="text-[10px] px-1.5 py-0.5 border border-gray-200 rounded hover:bg-gray-50 text-gray-600"
-                      >
-                        分块
-                      </button>
-                      <div className="relative">
+                    <div className="flex items-center gap-1 justify-end">
+                      {doc.parse_status === 'parsed' && (
                         <button
                           type="button"
-                          onClick={() => setOpenMenu(openMenu === doc.doc_id ? null : doc.doc_id)}
-                          className="p-1 rounded hover:bg-gray-100 text-gray-400"
+                          onClick={() => onNavigate('kb-chunks', { selectedKBId: kbId, selectedDocId: doc.doc_id })}
+                          className="text-[10px] px-1.5 py-0.5 border border-gray-200 rounded hover:bg-gray-50 text-gray-600 whitespace-nowrap"
                         >
-                          <MoreHorizontal size={14} />
+                          分块
                         </button>
-                        {openMenu === doc.doc_id && (
-                          <div className="absolute right-0 top-6 z-20 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[120px]">
-                            {(doc.parse_status === 'pending' || doc.parse_status === 'failed') && (
-                              <button type="button" onClick={() => void handleDocAction(doc.doc_id, 'parse')} className="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50">解析</button>
-                            )}
-                            {doc.parse_status === 'parsing' && (
-                              <button type="button" onClick={() => void handleDocAction(doc.doc_id, 'stop')} className="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50">停止</button>
-                            )}
-                            <button type="button" onClick={() => void handleDocAction(doc.doc_id, 'download')} className="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50">下载</button>
-                            <button type="button" onClick={() => void handleDocAction(doc.doc_id, 'delete')} className="w-full text-left px-3 py-1.5 text-xs text-red-600 hover:bg-red-50">删除</button>
-                          </div>
-                        )}
-                      </div>
+                      )}
+                      <button
+                        type="button"
+                        ref={el => { menuBtnRefs.current[doc.doc_id] = el; }}
+                        onClick={() => openDocMenu(doc.doc_id)}
+                        className="p-1.5 rounded hover:bg-gray-100 text-gray-500"
+                        aria-label="更多操作"
+                      >
+                        <MoreHorizontal size={14} />
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -1149,19 +1240,48 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
       </div>
     </div>
 
+    {menuDocId && menuAnchor && (() => {
+      const menuDoc = filtered.find(d => d.doc_id === menuDocId);
+      if (!menuDoc) return null;
+      return (
+        <DocumentActionMenu
+          doc={menuDoc}
+          anchorRect={menuAnchor}
+          onClose={() => { setMenuDocId(null); setMenuAnchor(null); }}
+          onAction={action => void handleDocAction(menuDoc.doc_id, action)}
+        />
+      );
+    })()}
+
     {showPreview && previewDoc && canPreview && (
-      <DocumentParsePreviewPanel
-        doc={previewDoc}
-        kbId={kbId}
-        governed={governedMap[previewDoc.doc_id]}
-        onNavigate={onNavigate}
-      />
-    )}
-    {showPreview && previewDoc && !canPreview && (
-      <div className="flex-1 flex items-center justify-center border-t border-gray-200 dark:border-gray-700 text-sm text-gray-500 p-6">
-        {useRealApi ? '文档尚未解析完成，无法预览' : '选中文档暂不支持解析预览（需已解析且已建树）'}
+      <div className="flex-1 min-h-[240px] flex flex-col border-t border-gray-200 dark:border-gray-700 overflow-hidden">
+        <DocumentParsePreviewPanel
+          doc={previewDoc}
+          kbId={kbId}
+          governed={governedMap[previewDoc.doc_id]}
+          onNavigate={onNavigate}
+        />
       </div>
     )}
+    {showPreview && previewDoc && !canPreview && (
+      <div className="flex-1 min-h-[120px] flex items-center justify-center border-t border-gray-200 dark:border-gray-700 text-sm text-gray-500 p-6">
+        {useRealApi ? (
+          <div className="text-center space-y-2">
+            <p>文档尚未解析完成，无法预览分块</p>
+            {(previewDoc.parse_status === 'pending' || previewDoc.parse_status === 'failed') && (
+              <button
+                type="button"
+                onClick={() => void handleDocAction(previewDoc.doc_id, 'parse')}
+                className="text-xs px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                立即解析
+              </button>
+            )}
+          </div>
+        ) : '选中文档暂不支持解析预览（需已解析且已建树）'}
+      </div>
+    )}
+    </div>
 
     {showUrlImport && (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -1191,17 +1311,28 @@ interface ChunkPreviewPageProps {
 }
 
 export function ChunkPreviewPage({ kbId, docId, onNavigate }: ChunkPreviewPageProps) {
-  const { data: docList } = useDocuments(kbId);
-  const doc = (useRealApi ? docList : mockDocuments).find(d => d.doc_id === docId)
-    || (useRealApi ? docList[0] : mockDocuments[0]);
-  const { data: chunkResult, loading: chunksLoading, error: chunksError, refresh: refreshChunks } = useChunks(kbId, doc?.doc_id || docId);
+  const { data: docList, loading: docsLoading } = useDocuments(kbId);
+  const doc = useRealApi
+    ? docList.find(d => d.doc_id === docId)
+    : (mockDocuments.find(d => d.doc_id === docId) || mockDocuments[0]);
+  const effectiveDocId = doc?.doc_id || docId;
+  const [chunkPage, setChunkPage] = useState(1);
+  const [chunkSearch, setChunkSearch] = useState('');
+  const CHUNK_PAGE_SIZE = 30;
+  const { data: chunkResult, loading: chunksLoading, error: chunksError, refresh: refreshChunks } = useChunks(
+    kbId,
+    effectiveDocId,
+    { page: chunkPage, page_size: CHUNK_PAGE_SIZE, keywords: chunkSearch.trim() || undefined },
+  );
   const chunks = useRealApi ? chunkResult.items : mockChunks;
   const [strategy, setStrategy] = useState('通用分块');
   const [chunkSize, setChunkSize] = useState('512');
   const [toast, setToast] = useState<string | null>(null);
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
   const qualityMap = useRealApi ? {} : Object.fromEntries(getAllChunkQuality().map(q => [q.chunk_id, q]));
+  const totalPages = Math.max(1, Math.ceil(chunkResult.total / CHUNK_PAGE_SIZE));
 
   const contentTypeConfig = {
     text: { label: '文本', color: 'bg-gray-100 text-gray-600', icon: '📄' },
@@ -1218,6 +1349,19 @@ export function ChunkPreviewPage({ kbId, docId, onNavigate }: ChunkPreviewPagePr
     restricted: 'bg-purple-100 text-purple-700',
   };
 
+  if (useRealApi && !docsLoading && !doc) {
+    return (
+      <KBDetailLayout kbId={kbId} activeKey="kb-documents" onNavigate={onNavigate}>
+        <div className="p-6 text-center text-sm text-gray-500 space-y-3">
+          <p>未找到文档（ID: {docId}）</p>
+          <button type="button" onClick={() => onNavigate('kb-documents', { selectedKBId: kbId })} className="text-xs text-blue-600 hover:underline">
+            返回文档列表
+          </button>
+        </div>
+      </KBDetailLayout>
+    );
+  }
+
   return (
     <KBDetailLayout kbId={kbId} activeKey="kb-documents" onNavigate={onNavigate}>
     {toast && (
@@ -1226,10 +1370,21 @@ export function ChunkPreviewPage({ kbId, docId, onNavigate }: ChunkPreviewPagePr
     <div className="p-6 flex flex-col gap-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
+          <button
+            type="button"
+            onClick={() => onNavigate('kb-documents', { selectedKBId: kbId, selectedDocId: effectiveDocId })}
+            className="text-xs text-gray-500 hover:text-gray-700 mb-1 flex items-center gap-1"
+          >
+            <ChevronLeft size={12} /> 返回文档列表
+          </button>
           <h1 className="text-base font-bold text-gray-900 dark:text-gray-100 truncate max-w-md">{doc?.original_name ?? '—'} · 分块预览{chunksLoading && useRealApi ? '（加载中）' : ''}</h1>
-          <p className="text-xs text-gray-500 mt-0.5">{useRealApi ? `共 ${chunkResult.total} 块 · RAGFlow chunks API` : '主题纯度 / 跨节 / 重叠 · 排除块不参与检索（US-1.14）'}</p>
+          <p className="text-xs text-gray-500 mt-0.5">
+            {useRealApi
+              ? `共 ${chunkResult.total} 块 · 第 ${chunkPage}/${totalPages} 页`
+              : '主题纯度 / 跨节 / 重叠 · 排除块不参与检索（US-1.14）'}
+          </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             type="button"
             onClick={() => onNavigate('kb-retrieval-test', { selectedKBId: kbId })}
@@ -1252,43 +1407,57 @@ export function ChunkPreviewPage({ kbId, docId, onNavigate }: ChunkPreviewPagePr
             }}
             className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-1.5 text-gray-700"
           >
-            <RefreshCw size={13} /> 重新分块
+            <RefreshCw size={13} /> 重新解析
           </button>
         </div>
       </div>
 
       {/* Config row */}
       <div className="bg-white rounded-xl border border-gray-200 p-3 flex items-center gap-4 flex-wrap">
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-600">分块策略</span>
-          <select value={strategy} onChange={e => setStrategy(e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2 py-1 focus:outline-none">
-            <option>通用分块</option>
-            <option>模板分块</option>
-            <option>表格优先</option>
-            <option>代码感知</option>
-          </select>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-600">Chunk大小</span>
-          <select value={chunkSize} onChange={e => setChunkSize(e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2 py-1 focus:outline-none">
-            <option>256</option><option>512</option><option>1024</option>
-          </select>
-        </div>
-        <div className="h-4 w-px bg-gray-200 hidden sm:block"></div>
-        <div className="flex items-center gap-3 text-xs text-gray-500 flex-wrap">
-          <span><strong className="text-gray-800">{chunks.length}</strong> 块</span>
-          {chunks.length > 0 && (
-            <>
-              <span>平均 <strong className="text-gray-800">{Math.round(chunks.reduce((s, c) => s + c.token_count, 0) / chunks.length)}</strong> Token</span>
-              <span>最大 <strong className="text-gray-800">{Math.max(...chunks.map(c => c.token_count))}</strong></span>
-              <span>最小 <strong className="text-gray-800">{Math.min(...chunks.map(c => c.token_count))}</strong></span>
-            </>
-          )}
-        </div>
+        {useRealApi ? (
+          <>
+            <div className="relative flex-1 min-w-[200px]">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                value={chunkSearch}
+                onChange={e => { setChunkSearch(e.target.value); setChunkPage(1); }}
+                placeholder="搜索分块内容…"
+                className="w-full pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div className="flex items-center gap-3 text-xs text-gray-500">
+              <span>本页 <strong className="text-gray-800">{chunks.length}</strong> 块</span>
+              {chunks.length > 0 && (
+                <span>约 <strong className="text-gray-800">{Math.round(chunks.reduce((s, c) => s + c.token_count, 0) / chunks.length)}</strong> 字/块</span>
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-600">分块策略</span>
+              <select value={strategy} onChange={e => setStrategy(e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2 py-1 focus:outline-none">
+                <option>通用分块</option><option>模板分块</option><option>表格优先</option><option>代码感知</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-600">Chunk大小</span>
+              <select value={chunkSize} onChange={e => setChunkSize(e.target.value)} className="text-xs border border-gray-200 rounded-lg px-2 py-1 focus:outline-none">
+                <option>256</option><option>512</option><option>1024</option>
+              </select>
+            </div>
+          </>
+        )}
       </div>
 
       {chunksError && useRealApi && (
         <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{chunksError}</div>
+      )}
+
+      {useRealApi && !chunksLoading && chunkResult.total === 0 && (
+        <div className="text-center py-12 text-sm text-gray-500 bg-white rounded-xl border border-gray-200">
+          {doc?.parse_status === 'parsed' ? '暂无分块数据' : '文档尚未解析完成'}
+        </div>
       )}
 
       {/* Chunks list */}
@@ -1297,73 +1466,73 @@ export function ChunkPreviewPage({ kbId, docId, onNavigate }: ChunkPreviewPagePr
           const tc = contentTypeConfig[chunk.content_type];
           const q = qualityMap[chunk.chunk_id];
           const isExcluded = excluded.has(chunk.chunk_id) || q?.excluded_from_retrieval;
+          const isExpanded = expandedId === chunk.chunk_id;
+          const preview = chunk.content_preview;
+          const displayText = isExpanded || preview.length <= 320 ? preview : `${preview.slice(0, 320)}…`;
           return (
             <div key={chunk.chunk_id} className={`bg-white dark:bg-gray-900 rounded-xl border transition-colors overflow-hidden ${isExcluded ? 'border-red-200 opacity-60' : 'border-gray-200 hover:border-gray-300'}`}>
               <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/50">
-                <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-2 flex-wrap min-w-0">
                   <span className="text-xs font-bold text-gray-600 dark:text-gray-400">#{chunk.chunk_index}</span>
-                  <span className="text-xs font-medium text-gray-800 dark:text-gray-200">{chunk.section_title}</span>
+                  <span className="text-xs font-medium text-gray-800 dark:text-gray-200 truncate max-w-[200px]">{chunk.section_title}</span>
                   <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${tc.color}`}>{tc.icon} {tc.label}</span>
-                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${aclConfig[chunk.acl_level] || 'bg-gray-100 text-gray-600'}`}>🔒 {chunk.acl_level}</span>
+                  {useRealApi && chunk.acl_level === 'restricted' && (
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${aclConfig.restricted}`}>不可用</span>
+                  )}
+                  {!useRealApi && (
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${aclConfig[chunk.acl_level] || 'bg-gray-100 text-gray-600'}`}>🔒 {chunk.acl_level}</span>
+                  )}
                   {q && (
                     <>
                       <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${q.topical_purity >= 0.9 ? 'bg-green-100 text-green-700' : q.topical_purity >= 0.8 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
                         纯度 {(q.topical_purity * 100).toFixed(0)}%
                       </span>
                       {q.crosses_section && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700">跨节</span>}
-                      {(q.overlap_prev > 0 || q.overlap_next > 0) && (
-                        <span className="text-[10px] text-gray-500">重叠 {q.overlap_prev}/{q.overlap_next} tok</span>
-                      )}
                     </>
                   )}
-                  {isExcluded && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-700">已排除检索</span>}
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{chunk.token_count} Token</span>
-                  <span className="text-[10px] text-gray-500">P{chunk.page_number}</span>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <span className="text-[10px] text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">~{chunk.token_count} 字</span>
+                  {chunk.page_number > 0 && <span className="text-[10px] text-gray-500">P{chunk.page_number}</span>}
                 </div>
               </div>
               <div className="px-4 py-3">
-                {chunk.content_type === 'table' ? (
-                  <div className="overflow-x-auto">
-                    <table className="text-xs border-collapse w-full">
-                      <thead>
-                        <tr className="bg-gray-100">
-                          {['类型', '计算标准', '上限'].map(h => (
-                            <th key={h} className="border border-gray-200 px-3 py-1.5 text-left font-semibold text-gray-700">{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {[['交货延迟', '日 0.5%', '20%'], ['质量不合规', '实际损失赔偿', '30%'], ['提前解约', '合同金额15%', '15%']].map((row, i) => (
-                          <tr key={i} className="hover:bg-gray-50">
-                            {row.map((cell, j) => (
-                              <td key={j} className="border border-gray-200 px-3 py-1.5 text-gray-700">{cell}</td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <p className="text-xs text-gray-700 leading-relaxed line-clamp-3">{chunk.content_preview}</p>
+                <pre className="text-xs text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap font-sans break-words">{displayText}</pre>
+                {preview.length > 320 && (
+                  <button
+                    type="button"
+                    onClick={() => setExpandedId(isExpanded ? null : chunk.chunk_id)}
+                    className="text-[10px] text-blue-600 hover:underline mt-2"
+                  >
+                    {isExpanded ? '收起' : '展开全文'}
+                  </button>
                 )}
               </div>
-              <div className="flex items-center justify-end gap-2 px-4 py-2 border-t border-gray-100 dark:border-gray-800">
-                <button type="button" onClick={() => showToast(`Chunk #${chunk.chunk_index} 已拆分（原型）`)} className="text-[10px] px-2 py-1 border border-gray-200 rounded hover:bg-gray-50 text-gray-600">拆分</button>
-                <button type="button" onClick={() => showToast(`Chunk #${chunk.chunk_index} 已与下一块合并（原型）`)} className="text-[10px] px-2 py-1 border border-gray-200 rounded hover:bg-gray-50 text-gray-600">合并↓</button>
-                <button
-                  type="button"
-                  onClick={() => { setExcluded(prev => new Set(prev).add(chunk.chunk_id)); showToast(`Chunk #${chunk.chunk_index} 已排除，不参与检索`); }}
-                  className="text-[10px] px-2 py-1 border border-red-100 rounded hover:bg-red-50 text-red-600"
-                >
-                  排除
-                </button>
-              </div>
+              {!useRealApi && (
+                <div className="flex items-center justify-end gap-2 px-4 py-2 border-t border-gray-100 dark:border-gray-800">
+                  <button type="button" onClick={() => showToast(`Chunk #${chunk.chunk_index} 已拆分（原型）`)} className="text-[10px] px-2 py-1 border border-gray-200 rounded hover:bg-gray-50 text-gray-600">拆分</button>
+                  <button type="button" onClick={() => showToast(`Chunk #${chunk.chunk_index} 已与下一块合并（原型）`)} className="text-[10px] px-2 py-1 border border-gray-200 rounded hover:bg-gray-50 text-gray-600">合并↓</button>
+                  <button
+                    type="button"
+                    onClick={() => { setExcluded(prev => new Set(prev).add(chunk.chunk_id)); showToast(`Chunk #${chunk.chunk_index} 已排除`); }}
+                    className="text-[10px] px-2 py-1 border border-red-100 rounded hover:bg-red-50 text-red-600"
+                  >
+                    排除
+                  </button>
+                </div>
+              )}
             </div>
           );
         })}
       </div>
+
+      {useRealApi && chunkResult.total > CHUNK_PAGE_SIZE && (
+        <div className="flex items-center justify-center gap-2 pt-2">
+          <button type="button" disabled={chunkPage <= 1} onClick={() => setChunkPage(p => p - 1)} className="p-1.5 rounded border border-gray-200 disabled:opacity-40"><ChevronLeft size={14} /></button>
+          <span className="text-xs text-gray-500">{chunkPage} / {totalPages}</span>
+          <button type="button" disabled={chunkPage >= totalPages} onClick={() => setChunkPage(p => p + 1)} className="p-1.5 rounded border border-gray-200 disabled:opacity-40"><ChevronRight size={14} /></button>
+        </div>
+      )}
     </div>
     </KBDetailLayout>
   );

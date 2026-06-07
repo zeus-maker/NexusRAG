@@ -953,3 +953,32 @@ P0 最后一项：检索测试页需从单通道混合结果升级为 PRD §10.5
 - `frontend/rag3-web/src/components/llm/ModelProviderPanel.tsx`、`LlmModelSelect.tsx`
 - `frontend/rag3-web/src/pages/KBExtra.tsx`、`components/KBCreateDialog.tsx`
 - `frontend/rag3-web/src/store.ts` — `KBSettingsTab` 增加 `models`
+
+---
+
+## 32. 文档管理与分块预览体验优化
+
+### 背景与目标
+
+文档解析已跑通后，文件管理页仍有操作菜单被表格 `overflow-hidden` 裁切、复选框与行点击冲突、预览入口依赖 PageIndex mock 等问题；分块页在 API 模式下短暂展示 mockChunks、表格块硬编码合同违约金数据。目标：API 模式下文档操作可点、布局不挡按钮、分块数据全走 RAGFlow chunks API。
+
+### 改动摘要
+
+- **`useChunks` / `useDocuments`**：API 模式空回退（不再闪 mock）；支持分页与 keywords 搜索；`mapChunkToUI` 保留全文、用 important_keywords 作标题。
+- **`DocumentActionMenu`**：Portal + fixed 定位下拉，含预览/分块/解析/重解析/停止/下载/删除；点击外部或 Esc 关闭。
+- **`DocumentPage`**：解析状态筛选、全选/批量解析、解析中队列 4s 轮询；表格区限高 + sticky 表头；已解析文档显示预览眼图标；预览区分栏；未解析文档可一键解析。
+- **`ChunkPreviewPage`**：按 docId 精确加载、去除 mock 表格与质量条；真实内容展开/收起、分页与内容搜索；API 模式隐藏拆分/合并原型按钮。
+- **`DocumentParsePreviewPanel`**：可选中分块、展示全文；下载改 blob + Authorization。
+
+### 验证与风险
+
+- `npm run build` 通过。
+- 路径：知识库 → 文件 → 行末「⋯」菜单应完整可见；已解析文档点眼图标或菜单「解析预览」；分块页应显示真实 chunk 文本而非合同 mock。
+- 分块编辑（拆分/合并/排除）仍仅 mock 模式；导出按钮已改为列表刷新。
+
+### 涉及文件
+
+- `frontend/rag3-web/src/hooks/useKbData.ts`、`services/kbMappers.ts`、`services/kbApi.ts`
+- `frontend/rag3-web/src/components/kb/DocumentActionMenu.tsx`、`DocumentParsePreviewPanel.tsx`
+- `frontend/rag3-web/src/pages/KnowledgeBase.tsx`
+- `frontend/rag3-web/src/components/KBDetailLayout.tsx`
