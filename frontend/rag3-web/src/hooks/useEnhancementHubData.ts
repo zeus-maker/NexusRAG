@@ -112,7 +112,7 @@ function mapAnalytics(raw: Record<string, unknown> | undefined): PageIndexAnalyt
     searchLatencyP95: Number(raw.search_latency_p95) || 0,
     avgHops: Number(raw.avg_hops) || 1,
     weeklySearches: (raw.weekly_searches as number[] | undefined) ?? MOCK_PI_ANALYTICS.weeklySearches,
-    weeklyBuilds: (raw.weekly_builds as number[] | undefined) ?? MOCK_PI_ANALYTICS.weeklyBuilds,
+    weeklyBuilds: (raw.weekly_builds as number[] | undefined) ?? MOCK_PI_ANALYTICS.weeklyBuilds ?? MOCK_PI_STATS.weeklyBuilds,
     docTypeDist: docTypes.map(d => ({
       type: String(d.label ?? d.type ?? ''),
       count: Number(d.count) || 0,
@@ -128,10 +128,13 @@ function mapAnalytics(raw: Record<string, unknown> | undefined): PageIndexAnalyt
       searches: Number(d.searches) || 0,
       avgMs: Number(d.avg_ms) || 0,
     })),
-    failDist: ((raw.fail_dist as Array<Record<string, unknown>> | undefined) ?? []).map(d => ({
-      reason: String(d.reason ?? ''),
-      count: Number(d.count) || 0,
-    })),
+    failDist: (() => {
+      const items = ((raw.fail_dist as Array<Record<string, unknown>> | undefined) ?? []).map(d => ({
+        reason: String(d.reason ?? ''),
+        count: Number(d.count) || 0,
+      }));
+      return items.length ? items : MOCK_PI_ANALYTICS.failDist ?? MOCK_PI_STATS.failDist;
+    })(),
     vectorCompare: {
       financeBench: String((raw.vector_compare as Record<string, unknown> | undefined)?.finance_bench ?? 'FinanceBench'),
       pageindexRecall: Number((raw.vector_compare as Record<string, unknown> | undefined)?.pageindex_recall) || 98.7,
@@ -232,8 +235,8 @@ export function usePageIndexHubData(kbId: string) {
           buildRate: Number(s.build_rate) || 0,
           totalNodes,
           avgNodes: total ? Math.round(totalNodes / Math.max(completed, 1)) : 0,
-          weeklyBuilds: analyticsView.weeklyBuilds,
-          failDist: analyticsView.failDist.length ? analyticsView.failDist : MOCK_PI_STATS.failDist,
+          weeklyBuilds: analyticsView.weeklyBuilds ?? MOCK_PI_STATS.weeklyBuilds,
+          failDist: analyticsView.failDist?.length ? analyticsView.failDist : MOCK_PI_STATS.failDist,
         });
         setAnalytics(analyticsView);
         setDocuments(docs);

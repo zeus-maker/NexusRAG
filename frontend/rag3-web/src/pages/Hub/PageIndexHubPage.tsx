@@ -162,7 +162,9 @@ export default function PageIndexHubPage({ kbId, onNavigate }: PageIndexHubPageP
 function OverviewTab({ onViewDoc, onRetry }: { onViewDoc: (id: string) => void; onRetry: () => void }) {
   const hub = usePageIndexHubContext();
   const stats = hub.stats;
-  const maxWeekly = Math.max(...(stats.weeklyBuilds.length ? stats.weeklyBuilds : [1]));
+  const weeklyBuilds = stats.weeklyBuilds ?? hub.analytics?.weeklyBuilds ?? PAGEINDEX_STATS.weeklyBuilds;
+  const failDist = hub.analytics?.failDist ?? PAGEINDEX_STATS.failDist;
+  const maxWeekly = Math.max(...(weeklyBuilds.length ? weeklyBuilds : [1]));
   const activeJobs = hub.isApiMode
     ? hub.documents.filter(d => d.treeStatus === 'building').map(d => ({
         docId: d.id,
@@ -262,7 +264,7 @@ function OverviewTab({ onViewDoc, onRetry }: { onViewDoc: (id: string) => void; 
             失败原因分布
           </h3>
           <div className="space-y-2">
-            {(hub.analytics.failDist.length ? hub.analytics.failDist : PAGEINDEX_STATS.failDist).map(item => (
+            {failDist.map(item => (
               <div key={item.reason} className="flex items-center gap-3">
                 <span className="flex-1 text-xs text-gray-600 dark:text-gray-400">{item.reason}</span>
                 <span className="text-xs text-gray-500 w-4 text-right">{item.count}</span>
@@ -286,7 +288,7 @@ function OverviewTab({ onViewDoc, onRetry }: { onViewDoc: (id: string) => void; 
           <div className={`${hubCard} px-4 py-3 flex-shrink-0`}>
             <p className="text-[10px] text-gray-400">近 7 天建树</p>
             <div className="flex items-end gap-1 h-12 mt-1">
-              {(hub.analytics.weeklyBuilds.length ? hub.analytics.weeklyBuilds : PAGEINDEX_STATS.weeklyBuilds).map((v, i) => (
+              {weeklyBuilds.map((v, i) => (
                 <div key={i} className="w-4 bg-cyan-500 rounded-t-sm opacity-80" style={{ height: `${(v / maxWeekly) * 100}%`, minHeight: 4 }} />
               ))}
             </div>
@@ -660,9 +662,13 @@ function LibrarySearchTab({
 
 function StatsTab() {
   const hub = usePageIndexHubContext();
-  const analytics = hub.analytics;
-  const maxWeekly = Math.max(...(analytics.weeklySearches.length ? analytics.weeklySearches : [1]));
-  const maxType = Math.max(...(analytics.docTypeDist.map(d => d.count).length ? analytics.docTypeDist.map(d => d.count) : [1]));
+  const analytics = hub.analytics ?? PAGEINDEX_ANALYTICS;
+  const weeklySearches = analytics.weeklySearches ?? PAGEINDEX_ANALYTICS.weeklySearches;
+  const docTypeDist = analytics.docTypeDist ?? PAGEINDEX_ANALYTICS.docTypeDist;
+  const depthDist = analytics.depthDist ?? PAGEINDEX_ANALYTICS.depthDist;
+  const topDocs = analytics.topDocs?.length ? analytics.topDocs : PAGEINDEX_ANALYTICS.topDocs;
+  const maxWeekly = Math.max(...(weeklySearches.length ? weeklySearches : [1]));
+  const maxType = Math.max(...(docTypeDist.map(d => d.count).length ? docTypeDist.map(d => d.count) : [1]));
 
   return (
     <div className="space-y-4">
@@ -677,7 +683,7 @@ function StatsTab() {
         <div className={`${hubCard} p-4`}>
           <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-3">文档类型分布</h3>
           <div className="space-y-2">
-            {analytics.docTypeDist.map(item => (
+            {docTypeDist.map(item => (
               <div key={item.type} className="flex items-center gap-3">
                 <span className="flex-1 text-xs text-gray-600 dark:text-gray-400">{item.type}</span>
                 <span className="text-xs text-gray-500 w-8 text-right">{item.count}</span>
@@ -693,7 +699,7 @@ function StatsTab() {
         <div className={`${hubCard} p-4`}>
           <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-3">树深度分布（已建树）</h3>
           <div className="space-y-2">
-            {analytics.depthDist.map(item => (
+            {depthDist.map(item => (
               <div key={item.depth} className="flex items-center justify-between text-xs py-2 border-b border-gray-50 dark:border-gray-800 last:border-0">
                 <span className="text-gray-600 dark:text-gray-400">{item.depth}</span>
                 <span className="font-medium text-gray-900 dark:text-gray-100">{item.count} 文档</span>
@@ -714,7 +720,7 @@ function StatsTab() {
             </tr>
           </thead>
           <tbody>
-            {(analytics.topDocs.length ? analytics.topDocs : PAGEINDEX_ANALYTICS.topDocs).map((d, i) => (
+            {topDocs.map((d, i) => (
               <tr key={d.docId} className="border-b border-gray-50 dark:border-gray-800/50">
                 <td className="py-2 text-xs text-gray-800 dark:text-gray-200">
                   <span className="text-gray-400 mr-2">{i + 1}</span>{d.name}
@@ -730,7 +736,7 @@ function StatsTab() {
       <div className={`${hubCard} p-4`}>
         <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-2">近 7 天库级树搜索量</h3>
         <div className="flex items-end gap-1 h-16">
-          {analytics.weeklySearches.map((v, i) => (
+          {weeklySearches.map((v, i) => (
             <div key={i} className="flex-1 flex flex-col items-center gap-1">
               <div className="w-full bg-cyan-500 rounded-t-sm opacity-80" style={{ height: `${(v / maxWeekly) * 100}%`, minHeight: 4 }} />
               <span className="text-[9px] text-gray-400">{v}</span>

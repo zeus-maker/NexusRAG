@@ -316,6 +316,8 @@ export const PAGEINDEX_ANALYTICS = {
   searchLatencyP95: 920,
   avgHops: 3.2,
   weeklySearches: [42, 58, 35, 71, 64, 89, 76],
+  weeklyBuilds: PAGEINDEX_STATS.weeklyBuilds,
+  failDist: PAGEINDEX_STATS.failDist,
   docTypeDist: [
     { type: '合同', count: 68, pct: 43.6 },
     { type: '财报', count: 24, pct: 15.4 },

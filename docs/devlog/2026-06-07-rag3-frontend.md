@@ -1735,3 +1735,28 @@ RAG3 PageIndex 建树此前为按页码分组 chunk 的启发式 mock，与 Vect
 - `frontend/rag3-web/src/pages/Hub/PageIndexHubPage.tsx` — Stats/Settings/PDF 预览
 - `frontend/rag3-web/src/pages/Chat.tsx` — 真 RAG 查询
 - `frontend/rag3-web/src/utils/pageIndexChatPrefill.ts` — pipelineIds
+
+---
+
+## 58. 修复 PageIndex Hub OverviewTab analytics 空字段崩溃
+
+### 背景与目标
+
+Hub 概览 Tab 白屏，控制台 `OverviewTab` 报 `Cannot read properties of undefined (reading 'length')`。根因是 `PAGEINDEX_ANALYTICS` mock 缺少 `weeklyBuilds`、`failDist`，API 返回空 analytics 时 `hub.analytics.weeklyBuilds.length` 访问 undefined。
+
+### 改动摘要
+
+- `PAGEINDEX_ANALYTICS` 补齐 `weeklyBuilds`、`failDist`（复用 `PAGEINDEX_STATS`）。
+- `mapAnalytics` 对 `weeklyBuilds`/`failDist` 增加 `PAGEINDEX_STATS` 回退。
+- `OverviewTab`/`StatsTab` 对 analytics 字段做可选链与本地 fallback 变量，避免 `.length` 踩空。
+
+### 验证与风险
+
+- `npm run build` 通过；刷新 PageIndex Hub 概览/统计 Tab 应正常渲染。
+- 风险：后端 analytics 部分字段缺失时仍显示 mock 回退值，需与真实 metrics 区分。
+
+### 涉及文件
+
+- `frontend/rag3-web/src/data/pageIndexMock.ts`
+- `frontend/rag3-web/src/hooks/useEnhancementHubData.ts`
+- `frontend/rag3-web/src/pages/Hub/PageIndexHubPage.tsx`
