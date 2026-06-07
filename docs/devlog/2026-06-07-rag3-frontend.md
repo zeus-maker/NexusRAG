@@ -1312,3 +1312,31 @@ PDF 已能渲染，但左栏预览区不出现滚动条，多页内容随容器�
 
 - `frontend/rag3-web/src/pages/KnowledgeBase.tsx`
 - `frontend/rag3-web/src/components/kb/KnowledgeChunkWorkspace.tsx`
+
+---
+
+## 45. 检索测试 Phase 1：RAGFlow 真实 API 可用化
+
+### 背景与目标
+
+检索测试在 API 模式下仅调用 `POST /datasets/:id/search` 却伪造五通道 WRRF，与 §10.5 架构及 RAGFlow 契约不符。Phase 1 目标：在现有 RAGFlow search 上做到参数真实、分路诚实、精排可对比，不可用通道明确降级。
+
+### 改动摘要
+
+- 新增 `retrievalTestApi.ts`：`buildRealRetrievalResult` 从 `vector_similarity` / `term_similarity` 派生向量/BM25 分路；`use_kg` 对应 GraphRAG 分路；混合列表作「混合检索」Tab。
+- `kbApi.searchDataset` 扩展 `use_kg`、`rerank_id`；`keyword` 默认 false（与 RAGFlow 一致）。
+- `RetrievalTestPage` API 模式：向量权重滑条、关键词增强、知识图谱开关；Rerank 读租户 `rerank_id`；精排前后双请求对比；PageIndex/Wiki 置灰提示；Chunk 跳转 `kb-chunks`。
+- `mapSearchHitToFusion` 补充 `doc_id`、分项相似度；命中卡片 API 模式显示 Similarity 而非 WRRF。
+
+### 验证与风险
+
+- `npm run build` 通过。
+- `VITE_USE_REAL_API=true` → 检索测试 → 执行混合检索：分路见向量/BM25 不同排序；开 Rerank 后精排前后应不同；查看 Chunk 跳转分块页。
+- 风险：GraphRAG 分路依赖 `knowledge_graph_kwd` 字段，无 KG 块时展示混合 Top 子集；WRRF/PageIndex/Wiki 仍待 Phase 2 RAG3 API。
+
+### 涉及文件
+
+- `frontend/rag3-web/src/pages/RetrievalTestPage.tsx`
+- `frontend/rag3-web/src/utils/retrievalTestApi.ts`
+- `frontend/rag3-web/src/services/kbApi.ts`、`kbMappers.ts`
+- `frontend/rag3-web/src/data/retrievalTestMock.ts`

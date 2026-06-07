@@ -10,6 +10,7 @@ export interface ChannelHit {
   score: number;
   snippet: string;
   chunkId: string;
+  docId?: string;
 }
 
 export interface ChannelResult {
@@ -30,6 +31,7 @@ export interface FusionHit {
   rerankScore?: number;
   snippet: string;
   chunkId: string;
+  docId?: string;
   sources: RetrievalChannel[];
   evalLabel?: EvalLabel;
 }
@@ -41,6 +43,9 @@ export interface FullRetrievalResult {
   fusionReranked: FusionHit[];
   totalLatencyMs: number;
   rrfK: number;
+  /** API 模式：RAGFlow 混合检索，非 WRRF */
+  isRealApi?: boolean;
+  vectorWeight?: number;
 }
 
 export const CHANNEL_META: Record<RetrievalChannel, { label: string; color: string }> = {

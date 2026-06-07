@@ -211,6 +211,7 @@ export interface RagflowChunk {
 export interface RagflowSearchChunk {
   chunk_id?: string;
   id?: string;
+  doc_id?: string;
   content_with_weight?: string;
   content?: string;
   docnm_kwd?: string;
@@ -218,6 +219,9 @@ export interface RagflowSearchChunk {
   similarity?: number;
   vector_similarity?: number;
   term_similarity?: number;
+  positions?: number[][];
+  knowledge_graph_kwd?: string;
+  doc_type_kwd?: string;
 }
 
 export interface RagflowIngestionLog {
@@ -304,12 +308,17 @@ function inferContentType(content: string): ContentType {
 
 export function mapSearchHitToFusion(chunk: RagflowSearchChunk, rank: number) {
   const score = chunk.similarity ?? chunk.vector_similarity ?? 0;
+  const html = chunk.content_with_weight || chunk.content || '';
+  const snippet = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
   return {
     rank,
     chunk_id: chunk.chunk_id || chunk.id || '',
+    doc_id: chunk.doc_id,
     doc_name: chunk.docnm_kwd || chunk.document_name || '—',
     score,
-    snippet: (chunk.content_with_weight || chunk.content || '').slice(0, 200),
+    vector_similarity: chunk.vector_similarity,
+    term_similarity: chunk.term_similarity,
+    snippet,
     channel: 'vector' as const,
   };
 }

@@ -60,6 +60,8 @@ export interface SearchParams {
   similarity_threshold?: number;
   vector_similarity_weight?: number;
   keyword?: boolean;
+  use_kg?: boolean;
+  rerank_id?: string;
   page?: number;
   size?: number;
 }
@@ -213,7 +215,9 @@ export const kbApi = {
           top_k: params.top_k ?? 10,
           similarity_threshold: params.similarity_threshold ?? 0.2,
           vector_similarity_weight: params.vector_similarity_weight ?? 0.3,
-          keyword: params.keyword ?? true,
+          keyword: params.keyword ?? false,
+          use_kg: params.use_kg ?? false,
+          ...(params.rerank_id ? { rerank_id: params.rerank_id } : {}),
           page: params.page ?? 1,
           size: params.size ?? 10,
         }),

@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Search, RefreshCw, Plus, Download, GitCompare, BookmarkPlus,
-  ExternalLink, Layers,
+  ExternalLink, Layers, Info,
 } from 'lucide-react';
 import { KBDetailLayout } from '../components/KBDetailLayout';
 import { RERANK_MODEL_OPTIONS } from '../data/fusionMock';
@@ -16,21 +16,38 @@ import {
 } from '../data/retrievalTestMock';
 import { useRealApi } from '../services/http';
 import { searchKb } from '../hooks/useKbData';
+import { useLlmModels, useTenantModels } from '../hooks/useLlmData';
+import {
+  API_AVAILABLE_CHANNELS,
+  API_UNAVAILABLE_CHANNELS,
+  API_UNAVAILABLE_HINT,
+  buildRealRetrievalResult,
+  type RealApiChannel,
+} from '../utils/retrievalTestApi';
 
 interface RetrievalTestPageProps {
   kbId: string;
   onNavigate: (page: string, extra?: Record<string, unknown>) => void;
 }
 
-const ALL_CHANNELS: RetrievalChannel[] = ['vector', 'bm25', 'pageindex', 'graphrag', 'wiki'];
+const ALL_MOCK_CHANNELS: RetrievalChannel[] = ['vector', 'bm25', 'pageindex', 'graphrag', 'wiki'];
 
-const RESULT_TABS = ['分路', '融合对比', '精排前后'] as const;
-type ResultTab = (typeof RESULT_TABS)[number];
+const MOCK_RESULT_TABS = ['分路', '融合对比', '精排前后'] as const;
+const API_RESULT_TABS = ['分路', '混合检索', '精排前后'] as const;
+type ResultTab = (typeof MOCK_RESULT_TABS)[number] | (typeof API_RESULT_TABS)[number];
+
+const DEFAULT_API_CHANNELS: RealApiChannel[] = ['vector', 'bm25'];
 
 export function RetrievalTestPage({ kbId, onNavigate }: RetrievalTestPageProps) {
   const [query, setQuery] = useState('违约金如何计算');
   const [threshold, setThreshold] = useState(0.2);
-  const [enabledChannels, setEnabledChannels] = useState<Set<RetrievalChannel>>(new Set(ALL_CHANNELS));
+  const [vectorWeight, setVectorWeight] = useState(0.3);
+  const [enabledChannels, setEnabledChannels] = useState<Set<RetrievalChannel>>(
+    new Set(ALL_MOCK_CHANNELS),
+  );
+  const [apiChannels, setApiChannels] = useState<Set<RealApiChannel>>(new Set(DEFAULT_API_CHANNELS));
+  const [useKg, setUseKg] = useState(false);
+  const [keywordEnhance, setKeywordEnhance] = useState(false);
   const [useRerank, setUseRerank] = useState(true);
   const [rerankModel, setRerankModel] = useState(RERANK_MODEL_OPTIONS[0]);
   const [loading, setLoading] = useState(false);
@@ -38,9 +55,27 @@ export function RetrievalTestPage({ kbId, onNavigate }: RetrievalTestPageProps) 
   const [resultTab, setResultTab] = useState<ResultTab>('分路');
   const [channelTab, setChannelTab] = useState<RetrievalChannel>('vector');
   const [toast, setToast] = useState<string | null>(null);
+
+  const { options: rerankOptions } = useLlmModels('rerank');
+  const { data: tenantModels } = useTenantModels();
+
+  const effectiveRerankId = useMemo(() => {
+    if (!useRealApi) return undefined;
+    if (rerankModel.includes('@')) return rerankModel;
+    return tenantModels.rerank_id || rerankOptions.find(o => !o.disabled)?.value || undefined;
+  }, [rerankModel, tenantModels.rerank_id, rerankOptions]);
+
+  useEffect(() => {
+    if (useRealApi && tenantModels.rerank_id) {
+      setRerankModel(tenantModels.rerank_id);
+    }
+  }, [tenantModels.rerank_id]);
+
+  const resultTabs = useRealApi ? API_RESULT_TABS : MOCK_RESULT_TABS;
+
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
 
-  const toggleChannel = (ch: RetrievalChannel) => {
+  const toggleMockChannel = (ch: RetrievalChannel) => {
     setEnabledChannels(prev => {
       const next = new Set(prev);
       if (next.has(ch)) {
@@ -52,46 +87,62 @@ export function RetrievalTestPage({ kbId, onNavigate }: RetrievalTestPageProps) 
     });
   };
 
+  const toggleApiChannel = (ch: RealApiChannel) => {
+    setApiChannels(prev => {
+      const next = new Set(prev);
+      if (next.has(ch)) {
+        if (next.size > 1) next.delete(ch);
+      } else {
+        next.add(ch);
+      }
+      return next;
+    });
+  };
+
+  const canRunTest = useRealApi
+    ? apiChannels.size > 0
+    : enabledChannels.size > 0;
+
+  const handleViewChunk = (hit: { chunkId: string; docId?: string }) => {
+    if (!hit.docId) {
+      showToast('该结果缺少 doc_id，无法跳转分块页');
+      return;
+    }
+    onNavigate('kb-chunks', { selectedKBId: kbId, selectedDocId: hit.docId });
+  };
+
   const handleTest = async () => {
-    if (!query.trim() || enabledChannels.size === 0) return;
+    if (!query.trim() || !canRunTest) return;
     setLoading(true);
     setResult(null);
     try {
       if (useRealApi) {
-        const apiRes = await searchKb(kbId, query.trim(), {
+        const baseParams = {
           similarity_threshold: threshold,
-          top_k: 10,
-        });
-        const hits: FusionHit[] = apiRes.hits.map(h => ({
-          rank: h.rank,
-          doc: h.doc_name,
-          wrrfScore: h.score,
-          snippet: h.snippet,
-          chunkId: h.chunk_id,
-          sources: ['vector'],
-        }));
-        const channel: ChannelResult = {
-          channel: 'vector',
-          label: '向量',
-          latencyMs: 0,
-          hits: hits.map(h => ({
-            rank: h.rank,
-            doc: h.doc,
-            score: h.wrrfScore,
-            snippet: h.snippet,
-            chunkId: h.chunkId,
-          })),
+          vector_similarity_weight: vectorWeight,
+          top_k: 64,
+          size: 10,
+          keyword: keywordEnhance,
+          use_kg: useKg,
         };
-        const res: FullRetrievalResult = {
+        const t0 = performance.now();
+        const pre = await searchKb(kbId, query.trim(), baseParams);
+        const post = useRerank && effectiveRerankId
+          ? await searchKb(kbId, query.trim(), { ...baseParams, rerank_id: effectiveRerankId })
+          : null;
+        const latencyMs = Math.round(performance.now() - t0);
+
+        const res = buildRealRetrievalResult({
           query: query.trim(),
-          channels: [channel],
-          fusion: hits,
-          fusionReranked: useRerank ? hits : [],
-          totalLatencyMs: 0,
-          rrfK: 60,
-        };
+          pre,
+          post,
+          vectorWeight,
+          enabledChannels: apiChannels,
+          useKg,
+          latencyMs,
+        });
         setResult(res);
-        setChannelTab('vector');
+        setChannelTab(res.channels[0]?.channel ?? 'vector');
       } else {
         await new Promise(r => setTimeout(r, 1100));
         const res = runMockFullChannelRetrieval(query.trim(), {
@@ -120,11 +171,15 @@ export function RetrievalTestPage({ kbId, onNavigate }: RetrievalTestPageProps) 
         <div className="px-6 py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 flex items-center justify-between flex-shrink-0">
           <div>
             <h2 className="text-base font-bold text-gray-900 dark:text-gray-100">检索测试</h2>
-            <p className="text-xs text-gray-500 dark:text-gray-400">{useRealApi ? 'RAGFlow POST /datasets/:id/search' : '五通道分路 + Weighted RRF 融合对比（§10.5）'}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {useRealApi
+                ? 'RAGFlow 混合检索 · 向量/BM25 分路由 similarity 字段派生 · GraphRAG 对应 use_kg'
+                : '五通道分路 + Weighted RRF 融合对比（§10.5 mock）'}
+            </p>
           </div>
           <button
             type="button"
-            onClick={() => showToast('已保存为评测样本（mock）')}
+            onClick={() => showToast(useRealApi ? '评测样本 API 待 Phase 2 接入' : '已保存为评测样本（mock）')}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300"
           >
             <BookmarkPlus size={13} /> 保存为评测样本
@@ -132,7 +187,6 @@ export function RetrievalTestPage({ kbId, onNavigate }: RetrievalTestPageProps) 
         </div>
 
         <div className="flex flex-1 min-h-0">
-          {/* 左侧配置 */}
           <div className="w-72 flex-shrink-0 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 flex flex-col overflow-y-auto">
             <div className="p-4 space-y-4">
               <div>
@@ -160,19 +214,53 @@ export function RetrievalTestPage({ kbId, onNavigate }: RetrievalTestPageProps) 
               <div>
                 <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2">通道启用</label>
                 <div className="space-y-1.5">
-                  {ALL_CHANNELS.map(ch => (
-                    <label key={ch} className="flex items-center gap-2 cursor-pointer text-xs text-gray-700 dark:text-gray-300">
-                      <input
-                        type="checkbox"
-                        checked={enabledChannels.has(ch)}
-                        onChange={() => toggleChannel(ch)}
-                        className="rounded text-blue-600"
-                      />
-                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${CHANNEL_META[ch].color}`}>
-                        {CHANNEL_META[ch].label}
-                      </span>
-                    </label>
-                  ))}
+                  {useRealApi ? (
+                    <>
+                      {API_AVAILABLE_CHANNELS.map(ch => (
+                        <label key={ch} className="flex items-center gap-2 cursor-pointer text-xs text-gray-700 dark:text-gray-300">
+                          <input
+                            type="checkbox"
+                            checked={apiChannels.has(ch)}
+                            onChange={() => toggleApiChannel(ch)}
+                            className="rounded text-blue-600"
+                          />
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${CHANNEL_META[ch].color}`}>
+                            {CHANNEL_META[ch].label}
+                          </span>
+                          {ch === 'graphrag' && (
+                            <span className="text-[9px] text-gray-400">需开启知识图谱</span>
+                          )}
+                        </label>
+                      ))}
+                      {API_UNAVAILABLE_CHANNELS.map(ch => (
+                        <label
+                          key={ch}
+                          className="flex items-center gap-2 text-xs text-gray-400 cursor-not-allowed"
+                          title={API_UNAVAILABLE_HINT}
+                        >
+                          <input type="checkbox" disabled checked={false} className="rounded opacity-40" />
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium opacity-50 ${CHANNEL_META[ch].color}`}>
+                            {CHANNEL_META[ch].label}
+                          </span>
+                          <Info size={10} className="opacity-60" />
+                        </label>
+                      ))}
+                    </>
+                  ) : (
+                    ALL_MOCK_CHANNELS.map(ch => (
+                      <label key={ch} className="flex items-center gap-2 cursor-pointer text-xs text-gray-700 dark:text-gray-300">
+                        <input
+                          type="checkbox"
+                          checked={enabledChannels.has(ch)}
+                          onChange={() => toggleMockChannel(ch)}
+                          className="rounded text-blue-600"
+                        />
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${CHANNEL_META[ch].color}`}>
+                          {CHANNEL_META[ch].label}
+                        </span>
+                      </label>
+                    ))
+                  )}
                 </div>
               </div>
 
@@ -182,6 +270,30 @@ export function RetrievalTestPage({ kbId, onNavigate }: RetrievalTestPageProps) 
                 </label>
                 <input type="range" min={0} max={1} step={0.05} value={threshold} onChange={e => setThreshold(Number(e.target.value))} className="w-full" />
               </div>
+
+              {useRealApi && (
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                    向量权重 <span className="text-blue-600">{vectorWeight}</span>
+                    <span className="text-[10px] text-gray-400 font-normal ml-1">（关键词 { (1 - vectorWeight).toFixed(2) }）</span>
+                  </label>
+                  <input type="range" min={0} max={1} step={0.05} value={vectorWeight} onChange={e => setVectorWeight(Number(e.target.value))} className="w-full" />
+                </div>
+              )}
+
+              {useRealApi && (
+                <label className="flex items-center justify-between cursor-pointer">
+                  <span className="text-xs text-gray-700 dark:text-gray-300">关键词增强（keyword）</span>
+                  <input type="checkbox" checked={keywordEnhance} onChange={e => setKeywordEnhance(e.target.checked)} className="rounded text-blue-600" />
+                </label>
+              )}
+
+              {useRealApi && (
+                <label className="flex items-center justify-between cursor-pointer">
+                  <span className="text-xs text-gray-700 dark:text-gray-300">知识图谱（use_kg）</span>
+                  <input type="checkbox" checked={useKg} onChange={e => setUseKg(e.target.checked)} className="rounded text-blue-600" />
+                </label>
+              )}
 
               <label className="flex items-center justify-between cursor-pointer">
                 <span className="text-xs text-gray-700 dark:text-gray-300">Rerank 精排</span>
@@ -196,15 +308,26 @@ export function RetrievalTestPage({ kbId, onNavigate }: RetrievalTestPageProps) 
                     onChange={e => setRerankModel(e.target.value)}
                     className="w-full px-2 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800"
                   >
-                    {RERANK_MODEL_OPTIONS.map(m => <option key={m} value={m}>{m}</option>)}
+                    {useRealApi && rerankOptions.length > 0
+                      ? rerankOptions.map(m => (
+                        <option key={m.value} value={m.value} disabled={m.disabled}>{m.label}</option>
+                      ))
+                      : RERANK_MODEL_OPTIONS.map(m => <option key={m} value={m}>{m}</option>)}
                   </select>
+                  {useRealApi && useRerank && !effectiveRerankId && (
+                    <p className="text-[10px] text-amber-600 mt-1">未配置租户 Rerank 模型，精排前后将相同</p>
+                  )}
                 </div>
               )}
 
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-[10px] text-gray-500">元数据过滤</label>
-                  <button type="button" className="text-[10px] text-blue-600 hover:underline flex items-center gap-0.5">
+                  <button
+                    type="button"
+                    onClick={() => showToast(useRealApi ? '元数据过滤 UI 待后续迭代' : 'mock 模式暂无')}
+                    className="text-[10px] text-blue-600 hover:underline flex items-center gap-0.5"
+                  >
                     <Plus size={10} /> 添加
                   </button>
                 </div>
@@ -214,10 +337,12 @@ export function RetrievalTestPage({ kbId, onNavigate }: RetrievalTestPageProps) 
               <button
                 type="button"
                 onClick={handleTest}
-                disabled={!query.trim() || loading || enabledChannels.size === 0}
+                disabled={!query.trim() || loading || !canRunTest}
                 className="w-full py-2.5 bg-blue-600 text-white text-sm rounded-lg font-medium hover:bg-blue-700 disabled:opacity-40 flex items-center justify-center gap-2"
               >
-                {loading ? <><RefreshCw size={14} className="animate-spin" /> 全通道检索中...</> : <><Search size={14} /> 执行全通道检索</>}
+                {loading
+                  ? <><RefreshCw size={14} className="animate-spin" /> 检索中…</>
+                  : <><Search size={14} /> {useRealApi ? '执行混合检索' : '执行全通道检索'}</>}
               </button>
 
               <button
@@ -231,10 +356,9 @@ export function RetrievalTestPage({ kbId, onNavigate }: RetrievalTestPageProps) 
             </div>
           </div>
 
-          {/* 右侧结果 */}
           <div className="flex-1 flex flex-col min-w-0 min-h-0 bg-gray-50 dark:bg-gray-950">
             <div className="flex items-center gap-1 px-4 pt-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
-              {RESULT_TABS.map(tab => (
+              {resultTabs.map(tab => (
                 <button
                   key={tab}
                   type="button"
@@ -250,7 +374,9 @@ export function RetrievalTestPage({ kbId, onNavigate }: RetrievalTestPageProps) 
               ))}
               {result && (
                 <span className="ml-auto text-[10px] text-gray-400 pb-2">
-                  总延迟 {result.totalLatencyMs}ms · RRF k={result.rrfK}
+                  {result.isRealApi
+                    ? `延迟 ${result.totalLatencyMs}ms · 向量权重 ${result.vectorWeight ?? vectorWeight}`
+                    : `总延迟 ${result.totalLatencyMs}ms · RRF k=${result.rrfK}`}
                 </span>
               )}
             </div>
@@ -259,13 +385,16 @@ export function RetrievalTestPage({ kbId, onNavigate }: RetrievalTestPageProps) 
               {!result && !loading && (
                 <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-3">
                   <Search size={40} className="opacity-30" />
-                  <p className="text-sm">配置通道后点击「执行全通道检索」</p>
+                  <p className="text-sm">{useRealApi ? '配置参数后点击「执行混合检索」' : '配置通道后点击「执行全通道检索」'}</p>
                 </div>
               )}
               {loading && (
                 <div className="flex flex-col items-center justify-center h-full gap-3 text-blue-600">
                   <RefreshCw size={32} className="animate-spin opacity-60" />
-                  <p className="text-sm">向量 · BM25 · PageIndex · GraphRAG · Wiki 并行召回…</p>
+                  <p className="text-sm">
+                    {useRealApi ? 'RAGFlow 混合检索' : '向量 · BM25 · PageIndex · GraphRAG · Wiki 并行召回…'}
+                    {useRealApi && useRerank && effectiveRerankId ? ' + Rerank 对比' : ''}
+                  </p>
                 </div>
               )}
 
@@ -287,27 +416,43 @@ export function RetrievalTestPage({ kbId, onNavigate }: RetrievalTestPageProps) 
                       </button>
                     ))}
                   </div>
-                  {activeChannel && <ChannelPanel channel={activeChannel} />}
+                  {activeChannel && (
+                    <ChannelPanel channel={activeChannel} onViewChunk={handleViewChunk} />
+                  )}
                 </div>
               )}
 
-              {result && resultTab === '融合对比' && (
+              {result && (resultTab === '融合对比' || resultTab === '混合检索') && (
                 <div className="space-y-3">
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">
-                      融合后（Weighted RRF k={result.rrfK}）Top-{result.fusion.length}
+                      {result.isRealApi
+                        ? `混合检索 Top-${result.fusion.length}（similarity 降序）`
+                        : `融合后（Weighted RRF k=${result.rrfK}）Top-${result.fusion.length}`}
                     </p>
                     <div className="flex gap-2">
-                      <button type="button" onClick={() => showToast('JSON 已导出（mock）')} className="flex items-center gap-1 text-xs px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-white dark:hover:bg-gray-800">
+                      <button
+                        type="button"
+                        onClick={() => showToast(useRealApi ? '导出 JSON 待接入' : 'JSON 已导出（mock）')}
+                        className="flex items-center gap-1 text-xs px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-white dark:hover:bg-gray-800"
+                      >
                         <Download size={12} /> 导出 JSON
                       </button>
-                      <button type="button" onClick={() => showToast('与线上一致性：98.2%（mock）')} className="flex items-center gap-1 text-xs px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-white dark:hover:bg-gray-800">
-                        <GitCompare size={12} /> 与线上一致性对比
-                      </button>
+                      {!result.isRealApi && (
+                        <button type="button" onClick={() => showToast('与线上一致性：98.2%（mock）')} className="flex items-center gap-1 text-xs px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-white dark:hover:bg-gray-800">
+                          <GitCompare size={12} /> 与线上一致性对比
+                        </button>
+                      )}
                     </div>
                   </div>
                   {result.fusion.map(hit => (
-                    <FusionHitCard key={hit.chunkId} hit={hit} showRerank={false} />
+                    <FusionHitCard
+                      key={hit.chunkId}
+                      hit={hit}
+                      showRerank={false}
+                      isRealApi={result.isRealApi}
+                      onViewChunk={() => handleViewChunk(hit)}
+                    />
                   ))}
                 </div>
               )}
@@ -315,26 +460,51 @@ export function RetrievalTestPage({ kbId, onNavigate }: RetrievalTestPageProps) 
               {result && resultTab === '精排前后' && (
                 <div className="space-y-4">
                   <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">
-                    Cross-Encoder 精排对比 · {rerankModel}
+                    {result.isRealApi
+                      ? `Rerank 精排对比 · ${effectiveRerankId || rerankModel || '未配置'}`
+                      : `Cross-Encoder 精排对比 · ${rerankModel}`}
                   </p>
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    <div>
-                      <h4 className="text-xs font-semibold text-gray-500 mb-2">精排前（WRRF）</h4>
-                      <div className="space-y-2">
-                        {result.fusion.map(hit => (
-                          <FusionHitCard key={`pre-${hit.chunkId}`} hit={hit} showRerank={false} compact />
-                        ))}
+                  {!result.isRealApi || result.fusionReranked.length > 0 ? (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      <div>
+                        <h4 className="text-xs font-semibold text-gray-500 mb-2">
+                          {result.isRealApi ? '精排前（混合 similarity）' : '精排前（WRRF）'}
+                        </h4>
+                        <div className="space-y-2">
+                          {result.fusion.map(hit => (
+                            <FusionHitCard
+                              key={`pre-${hit.chunkId}`}
+                              hit={hit}
+                              showRerank={false}
+                              compact
+                              isRealApi={result.isRealApi}
+                              onViewChunk={() => handleViewChunk(hit)}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-semibold text-gray-500 mb-2">精排后</h4>
+                        <div className="space-y-2">
+                          {(useRerank && result.fusionReranked.length > 0
+                            ? result.fusionReranked
+                            : result.fusion
+                          ).map(hit => (
+                            <FusionHitCard
+                              key={`post-${hit.chunkId}`}
+                              hit={hit}
+                              showRerank={useRerank && result.fusionReranked.length > 0}
+                              compact
+                              isRealApi={result.isRealApi}
+                              onViewChunk={() => handleViewChunk(hit)}
+                            />
+                          ))}
+                        </div>
                       </div>
                     </div>
-                    <div>
-                      <h4 className="text-xs font-semibold text-gray-500 mb-2">精排后</h4>
-                      <div className="space-y-2">
-                        {(useRerank ? result.fusionReranked : result.fusion).map(hit => (
-                          <FusionHitCard key={`post-${hit.chunkId}`} hit={hit} showRerank compact />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
+                  ) : (
+                    <p className="text-xs text-gray-500">请开启 Rerank 并配置租户 Rerank 模型以对比精排前后</p>
+                  )}
                 </div>
               )}
             </div>
@@ -345,7 +515,13 @@ export function RetrievalTestPage({ kbId, onNavigate }: RetrievalTestPageProps) 
   );
 }
 
-function ChannelPanel({ channel }: { channel: ChannelResult }) {
+function ChannelPanel({
+  channel,
+  onViewChunk,
+}: {
+  channel: ChannelResult;
+  onViewChunk: (hit: ChannelHit) => void;
+}) {
   return (
     <div>
       <div className="flex items-center gap-2 mb-3">
@@ -367,7 +543,13 @@ function ChannelPanel({ channel }: { channel: ChannelResult }) {
             </div>
             {hit.section && <p className="text-[10px] text-gray-500 italic mb-1">{hit.section}</p>}
             <p className="text-xs text-gray-700 dark:text-gray-300 line-clamp-2">{hit.snippet}</p>
-            <button type="button" className="text-[10px] text-blue-600 hover:underline mt-1.5">查看 Chunk</button>
+            <button
+              type="button"
+              onClick={() => onViewChunk(hit)}
+              className="text-[10px] text-blue-600 hover:underline mt-1.5"
+            >
+              查看 Chunk
+            </button>
           </div>
         ))}
         {channel.hits.length === 0 && (
@@ -378,9 +560,25 @@ function ChannelPanel({ channel }: { channel: ChannelResult }) {
   );
 }
 
-function FusionHitCard({ hit, showRerank, compact }: { hit: FusionHit; showRerank: boolean; compact?: boolean }) {
+function FusionHitCard({
+  hit,
+  showRerank,
+  compact,
+  isRealApi,
+  onViewChunk,
+}: {
+  hit: FusionHit;
+  showRerank: boolean;
+  compact?: boolean;
+  isRealApi?: boolean;
+  onViewChunk?: () => void;
+}) {
   const score = showRerank && hit.rerankScore != null ? hit.rerankScore : hit.wrrfScore;
-  const scoreLabel = showRerank && hit.rerankScore != null ? 'Rerank' : 'WRRF';
+  const scoreLabel = showRerank && hit.rerankScore != null
+    ? 'Rerank'
+    : isRealApi
+      ? 'Similarity'
+      : 'WRRF';
 
   return (
     <div className={`bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 ${compact ? 'p-2.5' : 'p-4'}`}>
@@ -407,7 +605,11 @@ function FusionHitCard({ hit, showRerank, compact }: { hit: FusionHit; showReran
         <>
           {hit.section && <p className="text-[10px] text-gray-500 italic mt-1">{hit.section}</p>}
           <p className="text-xs text-gray-700 dark:text-gray-300 mt-1 line-clamp-2">{hit.snippet}</p>
-          <button type="button" className="text-[10px] text-blue-600 hover:underline mt-1.5">查看 Chunk</button>
+          {onViewChunk && (
+            <button type="button" onClick={onViewChunk} className="text-[10px] text-blue-600 hover:underline mt-1.5">
+              查看 Chunk
+            </button>
+          )}
         </>
       )}
     </div>
