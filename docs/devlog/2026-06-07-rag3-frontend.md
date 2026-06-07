@@ -1455,3 +1455,34 @@ PDF 已能渲染，但左栏预览区不出现滚动条，多页内容随容器�
 
 - `frontend/rag3-web/src/navigationUrl.ts`（新建）
 - `frontend/rag3-web/src/store.ts`
+
+---
+
+## 50. 文档上传配置：分块策略与增强索引（对齐 RAGFlow + RAG3 扩展）
+
+### 背景与目标
+
+文档上传后直接解析，无法选择分块策略（chunk_method）、GraphRAG、PageIndex、Wiki 等；与 RAGFlow 上传对话框及知识库设置页能力脱节。
+
+### 改动摘要
+
+- 新增 `DocumentUploadConfigDialog` / `DocumentUploadConfigPanel`：选文件后弹出配置（分块策略、token/分隔符、GraphRAG 模式、PageIndex/Wiki/RAPTOR、是否立即解析）。
+- 默认配置从知识库 `parser_config` / `chunk_method` 预填；上传流程：`FormData parser_config + chunk_method` → `PATCH` 文档 → 可选 `parse`。
+- 后端 `FileService.upload_document` 支持 `parser_config_override` 与 `chunk_method_override`（deep_merge）。
+- URL 导入复用同一配置面板。
+
+### 验证与风险
+
+- `npm run build` 通过。
+- 文档管理：拖拽/选择文件 → 弹出配置 → 确认后上传并解析；`parser_config.ext` 写入 `use_pageindex` / `use_wiki` / `rag3_pipelines`。
+- PageIndex/Wiki 流水线触发仍依赖 RAG3 后端任务接入；当前先持久化配置契约。
+
+### 涉及文件
+
+- `frontend/rag3-web/src/data/documentUploadConfig.ts`（新建）
+- `frontend/rag3-web/src/components/kb/DocumentUploadConfigDialog.tsx`（新建）
+- `frontend/rag3-web/src/components/kb/DocumentUploadConfigPanel.tsx`（新建）
+- `frontend/rag3-web/src/pages/KnowledgeBase.tsx`
+- `frontend/rag3-web/src/services/kbApi.ts`、`hooks/useKbData.ts`
+- `backend/ragflow_rag30/api/apps/restful_apis/document_api.py`
+- `backend/ragflow_rag30/api/db/services/file_service.py`

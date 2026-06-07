@@ -23,7 +23,7 @@ export interface RagflowDataset {
   update_time?: number;
   create_date?: string;
   update_date?: string;
-  parser_config?: { llm_id?: string };
+  parser_config?: Record<string, unknown>;
 }
 
 export interface RagflowDocument {
@@ -116,7 +116,7 @@ export function mapDatasetToKB(ds: RagflowDataset): KnowledgeBase {
     embedding_model: ds.embedding_model || ds.embd_id || '—',
     chunk_strategy: CHUNK_METHOD_LABELS[method] || method,
     reranker_model: '—',
-    llm_model: ds.parser_config?.llm_id || '—',
+    llm_model: (typeof ds.parser_config?.llm_id === 'string' ? ds.parser_config.llm_id : undefined) || '—',
     language: ds.language === 'English' ? '英文' : '中文',
     status: inferKbStatus(ds),
     doc_count: ds.document_count ?? ds.doc_num ?? 0,

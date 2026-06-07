@@ -138,15 +138,42 @@ export const kbApi = {
     };
   },
 
-  async uploadDocuments(datasetId: string, files: File[]): Promise<Document[]> {
+  async getDatasetRaw(datasetId: string): Promise<RagflowDataset> {
+    const { data } = await apiRequest<RagflowDataset>(`/datasets/${datasetId}`);
+    return data;
+  },
+
+  async uploadDocuments(
+    datasetId: string,
+    files: File[],
+    options?: { chunkMethod?: string; parserConfig?: Record<string, unknown> },
+  ): Promise<Document[]> {
     const form = new FormData();
     files.forEach(f => form.append('file', f));
+    if (options?.parserConfig) {
+      form.append('parser_config', JSON.stringify(options.parserConfig));
+    }
+    if (options?.chunkMethod) {
+      form.append('chunk_method', options.chunkMethod);
+    }
     const data = await apiUpload<RagflowDocument[] | RagflowDocument>(
       `/datasets/${datasetId}/documents`,
       form,
     );
     const list = Array.isArray(data) ? data : [data];
     return list.map(d => mapDocumentToUI(d, datasetId));
+  },
+
+  async updateDocument(
+    datasetId: string,
+    documentId: string,
+    body: { chunk_method?: string; parser_config?: Record<string, unknown> },
+  ): Promise<Document> {
+    const { data } = await apiRequest<RagflowDocument>(
+      `/datasets/${datasetId}/documents/${documentId}`,
+      { method: 'PATCH', body: JSON.stringify(body) },
+    );
+    return mapDocumentToUI(data, datasetId);
   },
 
   async uploadFromUrl(datasetId: string, name: string, url: string): Promise<Document> {

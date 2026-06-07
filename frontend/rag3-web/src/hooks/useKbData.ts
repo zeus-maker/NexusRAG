@@ -1,4 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
+import {
+  buildDocumentUploadRequest,
+  buildParserConfigPayload,
+  type DocumentUploadConfig,
+} from '../data/documentUploadConfig';
 import { mockKBs, mockDocuments, mockChunks } from '../mockData';
 import { kbApi } from '../services/kbApi';
 import { useRealApi } from '../services/http';
@@ -202,9 +207,55 @@ export async function deleteKnowledgeBase(ids: string[]): Promise<void> {
   await kbApi.delete(ids);
 }
 
-export async function uploadKbDocuments(kbId: string, files: File[]): Promise<Document[]> {
+export async function uploadKbDocuments(
+  kbId: string,
+  files: File[],
+  options?: { chunkMethod?: string; parserConfig?: Record<string, unknown> },
+): Promise<Document[]> {
   if (!useRealApi) throw new Error('mock 模式下不支持上传');
-  return kbApi.uploadDocuments(kbId, files);
+  return kbApi.uploadDocuments(kbId, files, options);
+}
+
+export async function fetchKbParserDefaults(kbId: string) {
+  if (!useRealApi) return null;
+  const raw = await kbApi.getDatasetRaw(kbId);
+  return {
+    chunkMethod: raw.chunk_method || raw.parser_id,
+    parserConfig: raw.parser_config,
+  };
+}
+
+export async function applyKbDocumentUploadConfig(
+  kbId: string,
+  documentIds: string[],
+  config: DocumentUploadConfig,
+) {
+  if (!useRealApi) throw new Error('mock 模式下不支持');
+  const body = buildDocumentUploadRequest(config);
+  for (const docId of documentIds) {
+    await kbApi.updateDocument(kbId, docId, body);
+  }
+}
+
+export async function uploadKbDocumentsWithConfig(
+  kbId: string,
+  files: File[],
+  config: DocumentUploadConfig,
+): Promise<Document[]> {
+  if (!useRealApi) throw new Error('mock 模式下不支持上传');
+  const req = buildDocumentUploadRequest(config);
+  const uploaded = await kbApi.uploadDocuments(kbId, files, {
+    chunkMethod: req.chunk_method as string,
+    parserConfig: buildParserConfigPayload(config),
+  });
+  const ids = uploaded.map(d => d.doc_id);
+  if (ids.length) {
+    await applyKbDocumentUploadConfig(kbId, ids, config);
+  }
+  if (config.autoParse && ids.length) {
+    await kbApi.parseDocuments(kbId, ids);
+  }
+  return uploaded;
 }
 
 export async function uploadKbFromUrl(kbId: string, name: string, url: string): Promise<Document> {

@@ -584,9 +584,26 @@ async def _upload_local_documents(kb, tenant_id):
             logging.error(msg)
             return get_error_data_result(message=msg, code=RetCode.ARGUMENT_ERROR)
 
+    parser_config_override = None
+    raw_parser_config = form.get("parser_config")
+    if raw_parser_config:
+        try:
+            parsed = json.loads(raw_parser_config)
+            if isinstance(parsed, dict):
+                parser_config_override = parsed
+        except (json.JSONDecodeError, TypeError):
+            parser_config_override = None
+
+    chunk_method_override = (form.get("chunk_method") or "").strip() or None
+
     err, files = await thread_pool_exec(
-        FileService.upload_document, kb, file_objs, tenant_id,
-        parent_path=form.get("parent_path")
+        FileService.upload_document,
+        kb,
+        file_objs,
+        tenant_id,
+        parent_path=form.get("parent_path"),
+        parser_config_override=parser_config_override,
+        chunk_method_override=chunk_method_override,
     )
     if err:
         msg = "\n".join(err)

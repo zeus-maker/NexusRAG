@@ -8,7 +8,15 @@ import {
   ChevronLeft, AlertCircle as AlertIcon, Eye, Columns3,
 } from 'lucide-react';
 import { DocumentParsePreviewPanel } from '../components/kb/DocumentParsePreviewPanel';
+import { DocumentUploadConfigDialog } from '../components/kb/DocumentUploadConfigDialog';
+import { DocumentUploadConfigPanel } from '../components/kb/DocumentUploadConfigPanel';
 import { DocumentActionMenu, parseStatusFilterLabel } from '../components/kb/DocumentActionMenu';
+import {
+  configFromDatasetDefaults,
+  chunkMethodFromKbStrategy,
+  DEFAULT_UPLOAD_CONFIG,
+  type DocumentUploadConfig,
+} from '../data/documentUploadConfig';
 import { ChunkSplitDialog } from '../components/kb/ChunkSplitDialog';
 import { ParseProgressLogModal } from '../components/kb/ParseProgressLogModal';
 import { KnowledgeChunkWorkspace } from '../components/kb/KnowledgeChunkWorkspace';
@@ -27,7 +35,9 @@ import {
   useIngestionLogs,
   createKnowledgeBase,
   deleteKnowledgeBase,
-  uploadKbDocuments,
+  uploadKbDocumentsWithConfig,
+  fetchKbParserDefaults,
+  applyKbDocumentUploadConfig,
   uploadKbFromUrl,
   deleteKbDocuments,
   parseKbDocuments,
@@ -770,10 +780,39 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
   const [menuDocId, setMenuDocId] = useState<string | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<DOMRect | null>(null);
   const [logModalDoc, setLogModalDoc] = useState<Document | null>(null);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [showUploadConfig, setShowUploadConfig] = useState(false);
+  const [uploadConfig, setUploadConfig] = useState<DocumentUploadConfig>(DEFAULT_UPLOAD_CONFIG);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const menuBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
+  const { data: kb } = useKnowledgeBase(kbId);
   const { data: documents, loading: docsLoading, error: docsError, refresh: refreshDocs } = useDocuments(kbId, search);
+
+  useEffect(() => {
+    if (!useRealApi) {
+      setUploadConfig(prev => ({ ...prev, chunkMethod: chunkMethodFromKbStrategy(kb?.chunk_strategy) }));
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const defaults = await fetchKbParserDefaults(kbId);
+        if (!cancelled) {
+          setUploadConfig(configFromDatasetDefaults(defaults ?? {
+            chunkMethod: chunkMethodFromKbStrategy(kb?.chunk_strategy),
+          }));
+        }
+      } catch {
+        if (!cancelled) {
+          setUploadConfig(configFromDatasetDefaults({
+            chunkMethod: chunkMethodFromKbStrategy(kb?.chunk_strategy),
+          }));
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [kbId, kb?.chunk_strategy]);
   const governedMap = useRealApi ? {} : Object.fromEntries(getGovernedDocuments(kbId).map(g => [g.doc_id, g]));
   const uploadQueue = useRealApi
     ? documents.filter(d => d.parse_status === 'parsing' || d.parse_status === 'pending').map(d => ({
@@ -809,25 +848,40 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
     setSelectedDocs(checked ? filtered.map(d => d.doc_id) : []);
   };
 
-  const handleFiles = async (files: FileList | File[]) => {
+  const queueFilesForUpload = (files: FileList | File[]) => {
     const list = Array.from(files);
     if (!list.length) return;
     if (!useRealApi) {
-      showToast('演示模式：上传已模拟');
+      setPendingFiles(list);
+      setShowUploadConfig(true);
+      return;
+    }
+    setPendingFiles(list);
+    setShowUploadConfig(true);
+  };
+
+  const handleConfirmUpload = async (config: DocumentUploadConfig) => {
+    if (!pendingFiles.length) return;
+    if (!useRealApi) {
+      setShowUploadConfig(false);
+      setPendingFiles([]);
+      showToast(`演示模式：已模拟上传 ${pendingFiles.length} 个文件（${config.chunkMethod}）`);
       return;
     }
     setUploading(true);
     try {
-      const uploaded = await uploadKbDocuments(kbId, list);
+      const uploaded = await uploadKbDocumentsWithConfig(kbId, pendingFiles, config);
       refreshDocs();
-      showToast(`已上传 ${list.length} 个文件`);
+      showToast(
+        config.autoParse
+          ? `已上传 ${pendingFiles.length} 个文件并提交解析`
+          : `已上传 ${pendingFiles.length} 个文件（未自动解析）`,
+      );
       if (uploaded.length && !previewDocId) setPreviewDocId(uploaded[0].doc_id);
-      const ids = uploaded.map(d => d.doc_id);
-      if (ids.length) {
-        await parseKbDocuments(kbId, ids);
-        showToast('已提交解析任务');
-        refreshDocs();
-      }
+      setShowUploadConfig(false);
+      setPendingFiles([]);
+      setUploadConfig(config);
+      refreshDocs();
     } catch (e) {
       showToast(e instanceof Error ? e.message : '上传失败');
     } finally {
@@ -929,13 +983,18 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
     setUploading(true);
     try {
       const doc = await uploadKbFromUrl(kbId, urlName.trim(), urlValue.trim());
+      if (useRealApi) {
+        await applyKbDocumentUploadConfig(kbId, [doc.doc_id], uploadConfig);
+        if (uploadConfig.autoParse) {
+          await parseKbDocuments(kbId, [doc.doc_id]);
+        }
+      }
       setShowUrlImport(false);
       setUrlName('');
       setUrlValue('');
       refreshDocs();
       setPreviewDocId(doc.doc_id);
-      await parseKbDocuments(kbId, [doc.doc_id]);
-      showToast('URL 导入成功，已提交解析');
+      showToast(uploadConfig.autoParse ? 'URL 导入成功，已提交解析' : 'URL 导入成功');
       refreshDocs();
     } catch (e) {
       showToast(e instanceof Error ? e.message : 'URL 导入失败');
@@ -962,7 +1021,7 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
       multiple
       className="hidden"
       accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.csv,.txt,.md,.html"
-      onChange={e => { if (e.target.files) void handleFiles(e.target.files); e.target.value = ''; }}
+      onChange={e => { if (e.target.files) queueFilesForUpload(e.target.files); e.target.value = ''; }}
     />
     <div className={`flex flex-col flex-1 min-h-0 ${showPreview && previewDoc && canPreview ? '' : ''}`}>
     <div className="p-6 flex flex-col gap-4 flex-shrink-0">
@@ -1016,7 +1075,7 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
       <div
         onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
         onDragLeave={() => setIsDragging(false)}
-        onDrop={e => { e.preventDefault(); setIsDragging(false); if (e.dataTransfer.files.length) void handleFiles(e.dataTransfer.files); }}
+        onDrop={e => { e.preventDefault(); setIsDragging(false); if (e.dataTransfer.files.length) queueFilesForUpload(e.dataTransfer.files); }}
         onClick={() => fileInputRef.current?.click()}
         className={`border-2 border-dashed rounded-xl p-6 text-center transition-colors cursor-pointer ${isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'}`}
       >
@@ -1334,17 +1393,35 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
     )}
     </div>
 
+    <DocumentUploadConfigDialog
+      open={showUploadConfig}
+      fileCount={pendingFiles.length}
+      initialConfig={uploadConfig}
+      submitting={uploading}
+      onClose={() => { if (!uploading) { setShowUploadConfig(false); setPendingFiles([]); } }}
+      onConfirm={config => void handleConfirmUpload(config)}
+    />
+
     {showUrlImport && (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-        <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl w-full max-w-md p-5 space-y-4">
-          <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">URL 导入</h3>
-          <p className="text-xs text-gray-500">将网页转为 PDF 并入库（RAGFlow web 上传）</p>
-          <input value={urlName} onChange={e => setUrlName(e.target.value)} placeholder="文档名称" className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg dark:bg-gray-800" />
-          <input value={urlValue} onChange={e => setUrlValue(e.target.value)} placeholder="https://..." className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg dark:bg-gray-800" />
-          <div className="flex justify-end gap-2">
+        <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col">
+          <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+            <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">URL 导入</h3>
+            <p className="text-xs text-gray-500 mt-1">将网页转为 PDF 并入库，解析配置与文件上传一致</p>
+          </div>
+          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+            <input value={urlName} onChange={e => setUrlName(e.target.value)} placeholder="文档名称" className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg dark:bg-gray-800" />
+            <input value={urlValue} onChange={e => setUrlValue(e.target.value)} placeholder="https://..." className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg dark:bg-gray-800" />
+            <DocumentUploadConfigPanel
+              config={uploadConfig}
+              onChange={patch => setUploadConfig(prev => ({ ...prev, ...patch }))}
+              compact
+            />
+          </div>
+          <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-200 dark:border-gray-700">
             <button type="button" onClick={() => setShowUrlImport(false)} className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg">取消</button>
             <button type="button" disabled={uploading} onClick={() => void handleUrlImport()} className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg disabled:opacity-50">
-              {uploading ? '导入中…' : '导入'}
+              {uploading ? '导入中…' : '导入并解析'}
             </button>
           </div>
         </div>
