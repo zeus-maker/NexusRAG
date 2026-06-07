@@ -8,6 +8,8 @@ import { ChatPage } from './pages/Chat';
 import { SearchPage } from './pages/Search';
 import { AgentPage } from './pages/Agent';
 import { EvalDashboardPage, EvalTasksPage, ABTestPage } from './pages/Evaluation';
+import { EvalDatasetPage } from './pages/EvalDataset';
+import { EvalSatisfactionPage } from './pages/EvalSatisfaction';
 import { CostCenterPage, ReplayPage } from './pages/EvalExtra';
 import { UserManagePage, RoleManagePage, PipelineConfigPage, AuditLogPage, MonitorPage } from './pages/System';
 import { ClassifierPage, SecurityPage, ModelsPage, TracesPage } from './pages/SystemExtra';
@@ -75,10 +77,14 @@ export default function App() {
         return <EvalTasksPage onNavigate={navigate} />;
       case 'eval-ab-test':
         return <ABTestPage onNavigate={navigate} />;
+      case 'eval-datasets':
+        return <EvalDatasetPage onNavigate={navigate} />;
+      case 'eval-satisfaction':
+        return <EvalSatisfactionPage onNavigate={navigate} />;
       case 'eval-cost':
-        return <CostCenterPage />;
+        return <CostCenterPage onNavigate={navigate} />;
       case 'eval-replay':
-        return <ReplayPage />;
+        return <ReplayPage onNavigate={navigate} />;
       case 'sys-users':
         return <UserManagePage />;
       case 'sys-roles':

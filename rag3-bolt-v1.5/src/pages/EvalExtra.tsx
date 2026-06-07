@@ -5,6 +5,7 @@ import {
   ChevronDown, ChevronRight, Database, Zap, Users, FileText,
   Activity, Plus, ArrowRight, MessageSquare
 } from 'lucide-react';
+import { EvalSubNav } from '../components/EvalSubNav';
 
 // ─── Cost Center ───────────────────────────────────────────────────────────────
 
@@ -35,7 +36,11 @@ const COST_BY_MODEL = [
 
 const DAILY_COST = [4.2, 3.8, 5.1, 4.9, 6.2, 5.8, 7.1, 6.4, 5.9, 7.8, 8.2, 7.4, 6.8, 9.1];
 
-export function CostCenterPage() {
+interface EvalExtraPageProps {
+  onNavigate: (page: string) => void;
+}
+
+export function CostCenterPage({ onNavigate }: EvalExtraPageProps) {
   const [tab, setTab] = useState<'kb' | 'user' | 'model' | 'trend'>('kb');
 
   const totalTokens = COST_BY_KB.reduce((s, k) => s + k.tokens, 0);
@@ -50,11 +55,15 @@ export function CostCenterPage() {
   ] as const;
 
   return (
-    <div className="p-6 h-full overflow-y-auto flex flex-col gap-5">
+    <div className="p-6 h-full overflow-y-auto flex flex-col gap-5 bg-gray-50 dark:bg-gray-950">
+      <div>
+        <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">评测中心</h1>
+        <EvalSubNav currentPage="eval-cost" onNavigate={onNavigate} />
+      </div>
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-bold text-gray-900">成本中心</h2>
-          <p className="text-sm text-gray-500 mt-0.5">Token消耗与费用分析 — 2026年6月</p>
+          <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">成本中心</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Token消耗与费用分析 — 2026年6月</p>
         </div>
         <div className="flex items-center gap-2">
           <select className="text-xs border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none">
@@ -248,7 +257,7 @@ const REPLAY_RESULTS = [
   { id: 'q6', query: '员工绩效考核标准...', v1_f: 0.82, v2_f: 0.90, v1_lat: 750, v2_lat: 710, delta: +0.08, win: 'v2' },
 ];
 
-export function ReplayPage() {
+export function ReplayPage({ onNavigate }: EvalExtraPageProps) {
   const [step, setStep] = useState<'sample' | 'config' | 'running' | 'result'>('sample');
   const [selected, setSelected] = useState(new Set(PROD_QUERIES.filter(q => q.selected).map(q => q.id)));
   const [progress, setProgress] = useState(0);
@@ -277,11 +286,15 @@ export function ReplayPage() {
   const avgDelta = REPLAY_RESULTS.reduce((s, r) => s + r.delta, 0) / REPLAY_RESULTS.length;
 
   return (
-    <div className="p-6 h-full overflow-y-auto flex flex-col gap-5">
+    <div className="p-6 h-full overflow-y-auto flex flex-col gap-5 bg-gray-50 dark:bg-gray-950">
+      <div>
+        <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">评测中心</h1>
+        <EvalSubNav currentPage="eval-replay" onNavigate={onNavigate} />
+      </div>
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-bold text-gray-900">回放评测</h2>
-          <p className="text-sm text-gray-500 mt-0.5">从生产查询中抽样，离线回放对比两个版本</p>
+          <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">回放评测</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">从生产查询中抽样，离线回放对比两个版本</p>
         </div>
         {step === 'result' && (
           <button onClick={() => setStep('sample')} className="text-xs px-3 py-1.5 border border-gray-200 rounded-lg hover:bg-gray-50">

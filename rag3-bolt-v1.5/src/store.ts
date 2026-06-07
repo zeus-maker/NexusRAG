@@ -23,6 +23,8 @@ type Page =
   | 'eval-dashboard'
   | 'eval-tasks'
   | 'eval-ab-test'
+  | 'eval-datasets'
+  | 'eval-satisfaction'
   | 'eval-cost'
   | 'eval-replay'
   | 'sys-users'

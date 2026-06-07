@@ -269,3 +269,40 @@
 - `rag3-bolt-v1.5/src/data/agentMock.ts` — Agent mock 数据
 - `rag3-bolt-v1.5/src/App.tsx` — import 路径调整
 - 删除 `rag3-bolt-v1.5/src/pages/SearchAgent.tsx`
+
+---
+
+## 9. 评测中心功能增强（§5.1–§5.5）
+
+### 背景与目标
+
+评测中心已有基础仪表盘与任务列表，但缺 PRD §5.4 评测数据集、§5.5 用户满意度子页，各页无统一子导航，任务缺结果详情弹窗、A/B 测试变量选择与停止操作。目标补齐评测域完整 Tab 导航与 US-4.9/4.10。
+
+**用户可见变化**：全评测页顶栏 `EvalSubNav`（7 Tab）；仪表盘加时间/知识库筛选；任务页 [详情] 弹窗含 Top10 失败案例；A/B 测试可选对比变量、调流量、停止/全量切换；新增评测数据集管理（列表+样本编辑）与用户满意度（好评率/NPS/差评分布/低满意对话）。
+
+### 改动摘要
+
+- 新增 `EvalSubNav` 横向 Tab 导航组件。
+- 新增 `data/evalMock.ts`：数据集、样本、失败案例、满意度、A/B 变量组。
+- 新增 `EvalDataset.tsx`、`EvalSatisfaction.tsx`；`store`/`App`/`Layout` 注册路由。
+- 增强 `Evaluation.tsx`：仪表盘筛选、任务详情 Modal、A/B 状态管理；`EvalExtra` 成本/回放接入 SubNav。
+
+### 验证与风险
+
+- 验证：`npm run build` 通过；评测中心 → 切换 7 Tab；任务 [详情] → 见失败案例；数据集删样本角标减；满意度「查看」跳转 chat。
+- 风险：筛选为前端 mock 过滤，未接 API；数据集/满意度刷新重置。
+
+### 反思与沉淀
+
+- EvalSubNav 比侧栏展开子菜单更轻量，适合评测 7 个子页高频切换；与 Chat/Search 的「列表+详情」模式形成互补。
+- `evalMock.ts` 集中失败案例供仪表盘/任务详情复用，接 API 时替换 `evalService`。
+
+### 涉及文件
+
+- `rag3-bolt-v1.5/src/components/EvalSubNav.tsx`
+- `rag3-bolt-v1.5/src/data/evalMock.ts`
+- `rag3-bolt-v1.5/src/pages/EvalDataset.tsx`
+- `rag3-bolt-v1.5/src/pages/EvalSatisfaction.tsx`
+- `rag3-bolt-v1.5/src/pages/Evaluation.tsx`
+- `rag3-bolt-v1.5/src/pages/EvalExtra.tsx`
+- `rag3-bolt-v1.5/src/store.ts` / `App.tsx` / `Layout.tsx`
