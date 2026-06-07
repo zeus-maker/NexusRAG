@@ -93,7 +93,7 @@ export default function App() {
       case 'sys-roles':
         return <RoleManagePage />;
       case 'sys-pipeline':
-        return <PipelineConfigPage />;
+        return <PipelineConfigPage onNavigate={navigate} />;
       case 'sys-classifier':
         return <ClassifierPage />;
       case 'sys-security':

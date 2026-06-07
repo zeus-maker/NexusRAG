@@ -267,3 +267,30 @@
 - `rag3-bolt-v1.5/src/pages/Home.tsx`
 - `rag3-bolt-v1.5/src/pages/KnowledgeBase.tsx`
 - `rag3-bolt-v1.5/src/components/KBDetailLayout.tsx`
+
+---
+
+## 11. 系统管理「流水线配置」深化（对齐 §6.2）
+
+### 背景与目标
+
+原 `PipelineConfigPage` 仅有五大流水线简单开关、静态模型下拉与 4 条路由卡片，未体现 PRD §6.2 的健康度、路由可视化编辑器、融合策略与灰度发布。目标重构为可演示的五 Tab 管理页，并与各 Hub（PageIndex/Wiki/GraphRAG）打通跳转。
+
+**用户可见变化**：系统管理 → 流水线配置 升级为五 Tab（概览 / 五大流水线 / 路由规则 / 模型与融合 / 全局设置）；流水线卡片含健康条、阶段链、延迟/成本指标与三态开关；路由规则表支持 Tier×文档类型×意图×安全 → 主辅通道 + 融合策略；路由效果预览可 mock 测试查询；全局设置含软路由置信差、Redis 缓存与灰度流量比例。
+
+### 改动摘要
+
+- 新增 `data/pipelineMock.ts`：流水线定义、路由规则、模型配置、全局设置、路由预览 preset。
+- 新增 `pages/PipelineConfigPage.tsx` 独立页面；`System.tsx` 改为 re-export；`App.tsx` 传入 `onNavigate` 支持跳转 Hub。
+
+### 验证与风险
+
+- 验证：`npm run build` 通过；sys-pipeline 五 Tab 可交互；P2/P3/P4「进入 Hub」可跳转。
+- 风险：规则编辑/灰度发布仍为 mock；与 `ClassifierPage` 路由矩阵数据独立未合并。
+
+### 涉及文件
+
+- `rag3-bolt-v1.5/src/data/pipelineMock.ts`
+- `rag3-bolt-v1.5/src/pages/PipelineConfigPage.tsx`
+- `rag3-bolt-v1.5/src/pages/System.tsx`
+- `rag3-bolt-v1.5/src/App.tsx`
