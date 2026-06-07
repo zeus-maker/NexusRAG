@@ -1,0 +1,24 @@
+---
+description: 代码或配置变更收尾时必须写 Devlog 并提交
+alwaysApply: true
+---
+
+# 开发变更必须写 Devlog 并提交
+
+任务收尾且**修改了代码或项目配置**时，按技能 **devlog**（`.cursor/skills/devlog/SKILL.md`）执行。
+
+## 质量
+
+- Devlog 信息量与对话收尾说明**同档**；禁止仅文件列表或「修复/优化」空话。
+- 开篇写清动机与用户可见变化；摘要写**行为与契约**；验证须可复现；复杂改动**反思与沉淀**必选。
+
+## 流程
+
+1. `docs/devlog/YYYY-MM-DD-修改点.md`（同日追加、跨日新建；`## N.` 递增）。
+2. `git add`（含 devlog）+ `git commit`（中文 subject + 分条 body）。
+
+用户明确禁止写 devlog 或禁止提交时，遵从用户指令。
+
+## Commit
+
+subject 概括意图；body 写动机、要点、影响、已知限制。避免「更新代码」「若干修改」。
