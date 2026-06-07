@@ -1425,3 +1425,33 @@ PDF 已能渲染，但左栏预览区不出现滚动条，多页内容随容器�
 - `frontend/rag3-web/src/pages/RetrievalTestPage.tsx`
 - `frontend/rag3-web/src/utils/retrievalTestApi.ts`
 - `frontend/rag3-web/src/data/retrievalTestMock.ts`
+
+---
+
+## 49. 刷新页面保留导航位置（Hash 路由）
+
+### 背景与目标
+
+刷新后总回到首页：导航仅存于 `store` 内存态，`buildInitialState()` 对已登录用户固定 `page: 'home'`，URL 无页面信息，F5 即丢失知识库/检索测试等上下文。
+
+### 改动摘要
+
+- 新增 `navigationUrl.ts`：`#/page?kb=&doc=&conv=&kbTab=&monitorTab=` 序列化/解析。
+- `navigate` 时 `history.pushState` 写入 hash；启动与登录时从 hash 恢复；`popstate`/`hashchange` 支持浏览器后退。
+- 未登录时保留 hash 参数，登录后跳回目标页而非强制首页。
+
+### 验证与风险
+
+- `npm run build` 通过。
+- 进入「检索测试」后地址栏应出现 `#/kb-retrieval-test?kb=<id>`，刷新仍停留该页。
+- 风险：页面内 Tab/表单状态（如检索结果）仍不持久化，仅恢复路由级位置。
+
+### 反思与沉淀
+
+- 原型期可用 hash 路由零依赖落地；后续可迁 React Router + pathname。
+- 需与 `localStorage` 鉴权并存：有 token 时 hash 优先，无 token 时 hash 待登录后恢复。
+
+### 涉及文件
+
+- `frontend/rag3-web/src/navigationUrl.ts`（新建）
+- `frontend/rag3-web/src/store.ts`
