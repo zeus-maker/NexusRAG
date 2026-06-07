@@ -13,6 +13,9 @@ type Page =
   | 'kb-pageindex-tree'
   | 'kb-wiki-manage'
   | 'kb-pageindex-manage'
+  | 'wiki-hub'
+  | 'pageindex-hub'
+  | 'graphrag-hub'
   | 'chat'
   | 'search'
   | 'agent'
@@ -33,11 +36,14 @@ type Page =
   | 'sys-traces'
   | 'login';
 
+export type KBSettingsTab = 'basic' | 'parsing' | 'index' | 'datasource' | 'tags';
+
 interface AppState {
   page: Page;
   selectedKBId: string | null;
   selectedDocId: string | null;
   selectedConvId: string | null;
+  kbSettingsTab: KBSettingsTab | null;
   sidebarCollapsed: boolean;
   theme: 'light' | 'dark';
   currentUser: { name: string; role: string; email: string } | null;
@@ -48,8 +54,9 @@ const initialState: AppState = {
   selectedKBId: null,
   selectedDocId: null,
   selectedConvId: null,
+  kbSettingsTab: null,
   sidebarCollapsed: false,
-  theme: 'light',
+  theme: (typeof localStorage !== 'undefined' && localStorage.getItem('rag3-theme') === 'dark') ? 'dark' : 'light',
   currentUser: null,
 };
 
@@ -76,6 +83,10 @@ export function useAppState() {
   }, []);
   const logout = useCallback(() => setState(initialState), []);
   const toggleSidebar = useCallback(() => setState({ sidebarCollapsed: !globalState.sidebarCollapsed }), []);
-  const toggleTheme = useCallback(() => setState({ theme: globalState.theme === 'light' ? 'dark' : 'light' }), []);
+  const toggleTheme = useCallback(() => {
+    const theme = globalState.theme === 'light' ? 'dark' : 'light';
+    try { localStorage.setItem('rag3-theme', theme); } catch { /* ignore */ }
+    setState({ theme });
+  }, []);
   return { state, navigate, login, logout, toggleSidebar, toggleTheme };
 }

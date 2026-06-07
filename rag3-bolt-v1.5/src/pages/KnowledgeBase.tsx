@@ -2,7 +2,8 @@ import { useState } from 'react';
 import {
   Plus, Search, MoreHorizontal, Database, FileText,
   Cpu, Clock, TrendingUp, ArrowRight, RefreshCw, Trash2,
-  CheckCircle, AlertCircle, Loader
+  CheckCircle, AlertCircle, Loader, BookOpen, Network,
+  ChevronRight, GitBranch, Edit
 } from 'lucide-react';
 import { mockKBs, mockDocuments, mockChunks, mockIndexStatuses } from '../mockData';
 
@@ -136,7 +137,7 @@ export function KBListPage({ onNavigate }: KBListPageProps) {
                   {openMenu === kb.kb_id && (
                     <div className="absolute right-0 top-6 w-36 bg-white border border-gray-200 rounded-lg shadow-xl z-20 overflow-hidden">
                       {[
-                        { icon: <Edit size={13} />, label: '编辑设置', action: () => {} },
+                        { icon: <Edit size={13} />, label: '编辑设置', action: () => onNavigate('kb-settings', { selectedKBId: kb.kb_id }) },
                         { icon: <ArrowRight size={13} />, label: '查看文档', action: () => onNavigate('kb-documents', { selectedKBId: kb.kb_id }) },
                         { icon: <RefreshCw size={13} />, label: '重建索引', action: () => {} },
                         { icon: <Trash2 size={13} />, label: '删除', action: () => {}, danger: true },
@@ -317,15 +318,20 @@ export function KBDetailPage({ kbId, onNavigate }: KBDetailPageProps) {
         {tabs.map(t => (
           <button
             key={t.key}
-            onClick={() => { if (t.key === 'documents') onNavigate('kb-documents', { selectedKBId: kb.kb_id }); else if (t.key === 'index') onNavigate('kb-index-status', { selectedKBId: kb.kb_id }); else setTab(t.key as any); }}
-            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${tab === t.key && t.key !== 'documents' && t.key !== 'index' ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-800'}`}
+            onClick={() => {
+              if (t.key === 'documents') onNavigate('kb-documents', { selectedKBId: kb.kb_id });
+              else if (t.key === 'index') onNavigate('kb-index-status', { selectedKBId: kb.kb_id });
+              else if (t.key === 'settings') onNavigate('kb-settings', { selectedKBId: kb.kb_id });
+              else setTab(t.key as 'overview');
+            }}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${tab === t.key ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-800'}`}
           >
             {t.label}
           </button>
         ))}
       </div>
 
-      {/* Overview */}
+      {tab === 'overview' && <>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
           { label: '文档总数', value: kb.doc_count, icon: '📄', color: 'bg-blue-50 text-blue-700' },
@@ -339,6 +345,37 @@ export function KBDetailPage({ kbId, onNavigate }: KBDetailPageProps) {
             <div className="text-xs opacity-70 mt-0.5">{s.label}</div>
           </div>
         ))}
+      </div>
+
+      {/* RAG 3.0 Hub 入口 */}
+      <div>
+        <h3 className="text-sm font-semibold text-gray-800 mb-3">RAG 3.0 增强层</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {([
+            { id: 'pageindex-hub', label: 'PageIndex 树索引', desc: '85/156 建树率 54.5%', detail: '失败: 12 个文档', icon: GitBranch, accent: 'text-cyan-600', border: 'hover:border-cyan-300' },
+            { id: 'wiki-hub', label: 'LLM Wiki 知识库', desc: '12/42 页面已发布', detail: '待审核: 3 个, 编译中: 2 个', icon: BookOpen, accent: 'text-violet-600', border: 'hover:border-violet-300' },
+            { id: 'graphrag-hub', label: 'GraphRAG 图谱', desc: '社区: 24 个, 实体: 1.2K', detail: '实体复核: 86 待确认', icon: Network, accent: 'text-amber-600', border: 'hover:border-amber-300' },
+          ] as const).map(hub => {
+            const Icon = hub.icon;
+            return (
+              <button
+                key={hub.id}
+                onClick={() => onNavigate(hub.id, { selectedKBId: kb.kb_id })}
+                className={`bg-white rounded-xl border border-gray-200 p-5 text-left transition-all group hover:shadow-md ${hub.border}`}
+              >
+                <div className="flex items-center gap-3 mb-3">
+                  <Icon size={20} className={`${hub.accent} opacity-70`} />
+                  <h4 className="text-sm font-semibold text-gray-900 group-hover:text-blue-700 transition-colors">{hub.label}</h4>
+                </div>
+                <p className="text-xs text-gray-600 mb-1">{hub.desc}</p>
+                <p className="text-xs text-gray-400 mb-3">{hub.detail}</p>
+                <span className="text-xs text-blue-600 flex items-center gap-1">
+                  进入 <ChevronRight size={14} />
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Charts area */}
@@ -426,6 +463,7 @@ export function KBDetailPage({ kbId, onNavigate }: KBDetailPageProps) {
           </div>
         </div>
       </div>
+      </>}
     </div>
   );
 }

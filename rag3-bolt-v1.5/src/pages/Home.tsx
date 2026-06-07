@@ -2,7 +2,7 @@ import { useState } from 'react';
 import {
   Plus, MessageSquare, Search, GitBranch, BarChart2,
   FileText, TrendingUp, Clock, ArrowRight, Zap, Database,
-  Users, DollarSign, Activity, CheckCircle, Loader
+  Activity, CheckCircle, Loader, BookOpen, Network
 } from 'lucide-react';
 import { mockKBs, mockConversations } from '../mockData';
 
@@ -212,6 +212,31 @@ export function HomePage({ onNavigate, currentUser }: HomePageProps) {
               查看完整报告 →
             </button>
           </div>
+        </div>
+      </div>
+
+      {/* RAG 3.0 Hub 快捷入口 */}
+      <div>
+        <h3 className="text-sm font-semibold text-gray-800 mb-3">RAG 3.0 增强层</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {([
+            { id: 'wiki-hub', label: 'Wiki Hub', desc: 'LLM Wiki 知识库管理', icon: BookOpen, color: 'text-violet-500', hover: 'hover:border-violet-300' },
+            { id: 'pageindex-hub', label: 'PageIndex Hub', desc: '文档树索引管理', icon: Network, color: 'text-cyan-600', hover: 'hover:border-cyan-300' },
+            { id: 'graphrag-hub', label: 'GraphRAG Hub', desc: '知识图谱可视化', icon: BarChart2, color: 'text-amber-600', hover: 'hover:border-amber-300' },
+          ] as const).map(hub => {
+            const Icon = hub.icon;
+            return (
+              <button
+                key={hub.id}
+                onClick={() => onNavigate(hub.id)}
+                className={`bg-white rounded-xl border border-gray-200 p-5 text-left transition-all group hover:shadow-md ${hub.hover}`}
+              >
+                <Icon size={22} className={`${hub.color} mb-3 opacity-80`} />
+                <div className="text-sm font-semibold text-gray-900 group-hover:text-blue-700 transition-colors">{hub.label}</div>
+                <div className="text-xs text-gray-500 mt-1">{hub.desc}</div>
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>

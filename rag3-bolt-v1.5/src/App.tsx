@@ -10,6 +10,9 @@ import { CostCenterPage, ReplayPage } from './pages/EvalExtra';
 import { UserManagePage, RoleManagePage, PipelineConfigPage, AuditLogPage, MonitorPage } from './pages/System';
 import { ClassifierPage, SecurityPage, ModelsPage, TracesPage } from './pages/SystemExtra';
 import { HomePage } from './pages/Home';
+import WikiHubPage from './pages/Hub/WikiHubPage';
+import PageIndexHubPage from './pages/Hub/PageIndexHubPage';
+import GraphRAGHubPage from './pages/Hub/GraphRAGHubPage';
 
 export default function App() {
   const { state, navigate, login, logout, toggleSidebar, toggleTheme } = useAppState();
@@ -22,7 +25,6 @@ export default function App() {
     switch (state.page) {
       case 'home':
         return <HomePage onNavigate={navigate} currentUser={state.currentUser} />;
-      // KB
       case 'kb-list':
         return <KBListPage onNavigate={navigate} />;
       case 'kb-detail':
@@ -34,7 +36,13 @@ export default function App() {
       case 'kb-index-status':
         return <IndexStatusPage kbId={state.selectedKBId || 'kb-001'} onNavigate={navigate} />;
       case 'kb-settings':
-        return <KBSettingsPage kbId={state.selectedKBId || 'kb-001'} onNavigate={navigate} />;
+        return (
+          <KBSettingsPage
+            kbId={state.selectedKBId || 'kb-001'}
+            onNavigate={navigate}
+            initialTab={state.kbSettingsTab || 'parsing'}
+          />
+        );
       case 'kb-retrieval-test':
         return <RetrievalTestPage kbId={state.selectedKBId || 'kb-001'} />;
       case 'kb-wiki':
@@ -45,14 +53,18 @@ export default function App() {
         return <WikiManagePage onNavigate={navigate} />;
       case 'kb-pageindex-manage':
         return <PageIndexManagePage onNavigate={navigate} />;
-      // Apps
+      case 'wiki-hub':
+        return <WikiHubPage kbId={state.selectedKBId || 'kb-001'} onNavigate={navigate} />;
+      case 'pageindex-hub':
+        return <PageIndexHubPage kbId={state.selectedKBId || 'kb-001'} onNavigate={navigate} />;
+      case 'graphrag-hub':
+        return <GraphRAGHubPage kbId={state.selectedKBId || 'kb-001'} onNavigate={navigate} />;
       case 'chat':
         return <ChatPage convId={state.selectedConvId} onNavigate={navigate} />;
       case 'search':
         return <SearchPage onNavigate={navigate} />;
       case 'agent':
         return <AgentPage onNavigate={navigate} />;
-      // Eval
       case 'eval-dashboard':
         return <EvalDashboardPage onNavigate={navigate} />;
       case 'eval-tasks':
@@ -63,7 +75,6 @@ export default function App() {
         return <CostCenterPage />;
       case 'eval-replay':
         return <ReplayPage />;
-      // System
       case 'sys-users':
         return <UserManagePage />;
       case 'sys-roles':
@@ -104,11 +115,11 @@ export default function App() {
           currentPage={state.page}
           onNavigate={navigate}
         />
-        <main className="flex-1 overflow-hidden bg-gray-50">
+        <main className="flex-1 overflow-hidden bg-gray-50 dark:bg-gray-900">
           {renderContent()}
         </main>
       </div>
-      <StatusBar />
+      <StatusBar theme={state.theme} />
     </div>
   );
 }

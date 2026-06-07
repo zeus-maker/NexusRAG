@@ -1,12 +1,14 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Save, Play, RefreshCw, ChevronRight, ChevronDown,
   GitBranch, Search, BookOpen, TreePine, Settings,
   Plus, Trash2, RotateCcw, FileText, Network, Clock,
   CheckCircle, AlertTriangle, BarChart2, Database, Layers,
-  Eye, Edit2, XCircle, Zap
+  Eye, Edit2, XCircle, Zap, ArrowRight
 } from 'lucide-react';
 import { mockKBs } from '../mockData';
+import { KBDetailLayout } from '../components/KBDetailLayout';
+import type { KBSettingsTab } from '../store';
 
 /* ──────────────────────────────────────────────
    KB SETTINGS PAGE
@@ -19,36 +21,83 @@ const CHUNK_METHODS = [
   'Mix（混合）', 'Audio（音频）', 'Medical（医疗）',
 ];
 
+const METADATA_SCHEMA = [
+  { id: '1', name: 'department', type: 'enum', required: true, example: '法务, 财务, 研发' },
+  { id: '2', name: 'doc_type', type: 'enum', required: true, example: '合同, 报告, 政策' },
+  { id: '3', name: 'effective_date', type: 'date', required: false, example: '2024-01-01' },
+];
+
+const INDEX_OPTIONS_INIT = [
+  { key: 'vector', label: '向量索引（必选）', desc: '使用嵌入模型构建语义向量索引', enabled: true, locked: true },
+  { key: 'fulltext', label: '全文索引', desc: '基于 BM25 的关键词精确匹配', enabled: true, locked: false },
+  { key: 'pageindex', label: 'PageIndex 树索引', desc: '层次化文档结构树索引，适合长文档', enabled: true, locked: false },
+  { key: 'graph', label: '知识图谱索引', desc: '实体关系图谱，支持多跳推理', enabled: false, locked: false },
+  { key: 'wiki', label: 'Wiki 汇总索引', desc: 'LLM 生成实体 Wiki 页面，快速问答', enabled: false, locked: false },
+];
+
 interface KBSettingsPageProps {
   kbId: string;
   onNavigate: (page: string, extra?: any) => void;
+  initialTab?: KBSettingsTab;
 }
 
-export function KBSettingsPage({ kbId, onNavigate }: KBSettingsPageProps) {
+export function KBSettingsPage({ kbId, onNavigate, initialTab = 'parsing' }: KBSettingsPageProps) {
   const kb = mockKBs.find(k => k.kb_id === kbId) || mockKBs[0];
-  const [tab, setTab] = useState<'basic' | 'parsing' | 'index' | 'datasource' | 'tags'>('parsing');
+  const [tab, setTab] = useState<KBSettingsTab>(initialTab);
   const [chunkMethod, setChunkMethod] = useState('General（通用）');
-  const [graphragEnabled, setGraphragEnabled] = useState(false);
+  const [graphragEnabled, setGraphragEnabled] = useState(true);
+  const [graphragMode, setGraphragMode] = useState('LazyGraphRAG');
   const [raptorEnabled, setRaptorEnabled] = useState(false);
   const [parseType, setParseType] = useState<'builtin' | 'pipeline'>('builtin');
   const [chunkSize, setChunkSize] = useState(512);
   const [overlap, setOverlap] = useState(128);
   const [saved, setSaved] = useState(false);
+  const [indexOptions, setIndexOptions] = useState(INDEX_OPTIONS_INIT);
+  const [schemaFields, setSchemaFields] = useState(METADATA_SCHEMA);
+  const [tags, setTags] = useState(['合规', '合同', '2024年度', '供应商', '法律', '财务', '保密', '知识产权']);
+  const [newTag, setNewTag] = useState('');
+  const [fusionWeight, setFusionWeight] = useState(0.7);
+  const [rrfK, setRrfK] = useState(60);
+
+  useEffect(() => {
+    setTab(initialTab);
+  }, [initialTab]);
+
+  const subNavKey = tab === 'datasource' ? 'kb-settings-datasource' : 'kb-settings';
+
+  const toggleIndex = (key: string) => {
+    setIndexOptions(prev => prev.map(o => (o.key === key && !o.locked ? { ...o, enabled: !o.enabled } : o)));
+  };
 
   const handleSave = () => {
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
 
+  const addTag = () => {
+    const t = newTag.trim();
+    if (t && !tags.includes(t)) setTags(p => [...p, t]);
+    setNewTag('');
+  };
+
+  const removeTag = (tag: string) => setTags(p => p.filter(t => t !== tag));
+
+  const addSchemaField = () => {
+    setSchemaFields(p => [...p, { id: String(Date.now()), name: 'new_field', type: 'string', required: false, example: '' }]);
+  };
+
+  const removeSchemaField = (id: string) => setSchemaFields(p => p.filter(f => f.id !== id));
+
   return (
-    <div className="p-6 flex flex-col gap-4 h-full overflow-y-auto">
+    <KBDetailLayout kbId={kbId} activeKey={subNavKey} onNavigate={onNavigate}>
+    <div className="p-6 flex flex-col gap-4 h-full">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
-          <button onClick={() => onNavigate('kb-detail', { selectedKBId: kbId })} className="text-gray-500 hover:text-gray-700 text-sm">← 返回</button>
           <span className="text-gray-300">/</span>
-          <span className="text-sm font-bold text-gray-900">{kb.name} · 配置</span>
+          <span className="text-sm font-bold text-gray-900 dark:text-gray-100">配置</span>
         </div>
         <button
+          type="button"
           onClick={handleSave}
           className={`flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg font-medium transition-all ${saved ? 'bg-green-600 text-white' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
         >
@@ -76,25 +125,44 @@ export function KBSettingsPage({ kbId, onNavigate }: KBSettingsPageProps) {
       </div>
 
       {tab === 'basic' && (
-        <div className="space-y-4 max-w-lg">
+        <div className="space-y-4 max-w-2xl">
           <div><label className="block text-xs font-semibold text-gray-700 mb-1.5">知识库名称</label>
-            <input defaultValue={kb.name} className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" /></div>
+            <input defaultValue={kb.name} className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-600" /></div>
           <div><label className="block text-xs font-semibold text-gray-700 mb-1.5">描述</label>
-            <textarea defaultValue={kb.description} rows={3} className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" /></div>
-          <div className="grid grid-cols-2 gap-3">
+            <textarea defaultValue={kb.description} rows={3} className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none dark:bg-gray-800 dark:border-gray-600" /></div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div><label className="block text-xs text-gray-600 mb-1">默认语言</label>
-              <select className="w-full px-2.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none">
+              <select className="w-full px-2.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none dark:bg-gray-800 dark:border-gray-600">
                 <option>中文</option><option>English</option>
               </select></div>
             <div><label className="block text-xs text-gray-600 mb-1">可见性权限</label>
-              <div className="flex gap-2">
+              <div className="flex gap-4 pt-1">
                 {[{ v: 'me', l: '仅我' }, { v: 'team', l: '团队' }].map(o => (
                   <label key={o.v} className="flex items-center gap-1.5 cursor-pointer">
                     <input type="radio" name="visibility" defaultChecked={o.v === 'team'} className="text-blue-600" />
-                    <span className="text-sm text-gray-700">{o.l}</span>
+                    <span className="text-sm text-gray-700 dark:text-gray-300">{o.l}</span>
                   </label>
                 ))}
               </div></div>
+            <div><label className="block text-xs text-gray-600 mb-1">嵌入模型</label>
+              <select className="w-full px-2.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none dark:bg-gray-800 dark:border-gray-600">
+                <option>BAAI/bge-m3</option><option>BCE-Embedding</option>
+              </select></div>
+            <div><label className="block text-xs text-gray-600 mb-1">默认 LLM 模型</label>
+              <select className="w-full px-2.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none dark:bg-gray-800 dark:border-gray-600">
+                <option>DeepSeek-v4</option><option>Qwen3-72B</option><option>Claude-4</option>
+              </select></div>
+          </div>
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+            <h4 className="text-xs font-semibold text-amber-800 mb-1">权限与 ACL</h4>
+            <p className="text-[11px] text-amber-700 mb-2">团队可见时，成员默认拥有读取权限；Chunk 级 ACL 在文档解析后自动继承。</p>
+            <button
+              type="button"
+              onClick={() => onNavigate('kb-detail', { selectedKBId: kbId })}
+              className="text-xs text-amber-800 hover:underline flex items-center gap-1"
+            >
+              前往权限管理 <ArrowRight size={12} />
+            </button>
           </div>
         </div>
       )}
@@ -177,6 +245,10 @@ export function KBSettingsPage({ kbId, onNavigate }: KBSettingsPageProps) {
             {graphragEnabled && (
               <div className="space-y-2.5">
                 <div className="grid grid-cols-2 gap-3">
+                  <div><label className="block text-[10px] text-gray-600 mb-1">GraphRAG 模式</label>
+                    <select value={graphragMode} onChange={e => setGraphragMode(e.target.value)} className="w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none">
+                      <option>LazyGraphRAG</option><option>GlobalGraphRAG</option><option>LocalGraphRAG</option>
+                    </select></div>
                   <div><label className="block text-[10px] text-gray-600 mb-1">实体类型</label>
                     <input defaultValue="ORG, PERSON, LOC, CONTRACT" className="w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none" /></div>
                   <div><label className="block text-[10px] text-gray-600 mb-1">提取方法</label>
@@ -189,7 +261,9 @@ export function KBSettingsPage({ kbId, onNavigate }: KBSettingsPageProps) {
                     <Play size={11} /> 生成图谱
                   </button>
                   <button className="px-3 py-1.5 text-xs border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">查看日志</button>
-                  <button onClick={() => onNavigate('kb-pageindex-tree', { selectedKBId: kbId })} className="px-3 py-1.5 text-xs border border-blue-200 text-blue-700 rounded-lg hover:bg-blue-50">查看知识图谱</button>
+                  <button type="button" onClick={() => onNavigate('graphrag-hub', { selectedKBId: kbId })} className="px-3 py-1.5 text-xs border border-blue-200 text-blue-700 rounded-lg hover:bg-blue-50 flex items-center gap-1">
+                    进入 GraphRAG Hub <ArrowRight size={11} />
+                  </button>
                 </div>
               </div>
             )}
@@ -228,16 +302,10 @@ export function KBSettingsPage({ kbId, onNavigate }: KBSettingsPageProps) {
       )}
 
       {tab === 'index' && (
-        <div className="space-y-3 max-w-xl">
+        <div className="space-y-4 max-w-2xl">
           <p className="text-xs text-gray-500">配置全局索引选项，影响所有文档的检索行为。</p>
-          {[
-            { label: '向量索引（必选）', desc: '使用嵌入模型构建语义向量索引', enabled: true, locked: true },
-            { label: '全文索引', desc: '基于 BM25 的关键词精确匹配', enabled: true, locked: false },
-            { label: 'PageIndex 树索引', desc: '层次化文档结构树索引，适合长文档', enabled: true, locked: false },
-            { label: '知识图谱索引', desc: '实体关系图谱，支持多跳推理', enabled: false, locked: false },
-            { label: 'Wiki 汇总索引', desc: 'LLM 生成实体 Wiki 页面，快速问答', enabled: false, locked: false },
-          ].map((idx, i) => (
-            <div key={i} className={`flex items-center justify-between p-3.5 border rounded-xl ${idx.enabled ? 'border-blue-100 bg-blue-50/30' : 'border-gray-200'}`}>
+          {indexOptions.map(idx => (
+            <div key={idx.key} className={`flex items-center justify-between p-3.5 border rounded-xl ${idx.enabled ? 'border-blue-100 bg-blue-50/30' : 'border-gray-200'}`}>
               <div>
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium text-gray-800">{idx.label}</span>
@@ -246,13 +314,40 @@ export function KBSettingsPage({ kbId, onNavigate }: KBSettingsPageProps) {
                 <span className="text-[10px] text-gray-500">{idx.desc}</span>
               </div>
               <button
+                type="button"
                 disabled={idx.locked}
+                onClick={() => toggleIndex(idx.key)}
                 className={`w-11 h-6 rounded-full transition-colors relative disabled:opacity-50 ${idx.enabled ? 'bg-blue-500' : 'bg-gray-300'}`}
               >
                 <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${idx.enabled ? 'left-6' : 'left-1'}`}></span>
               </button>
             </div>
           ))}
+
+          <div className="border border-gray-200 rounded-xl p-4 bg-white">
+            <h4 className="text-sm font-semibold text-gray-800 mb-3">融合检索策略</h4>
+            <p className="text-[11px] text-gray-500 mb-3">多通道检索结果的加权 RRF 融合，与检索测试台联动预览。</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">向量通道权重</label>
+                <div className="flex items-center gap-2">
+                  <input type="range" min={0} max={1} step={0.05} value={fusionWeight} onChange={e => setFusionWeight(Number(e.target.value))} className="flex-1" />
+                  <span className="text-sm font-bold text-gray-800 w-10">{fusionWeight.toFixed(2)}</span>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">RRF 参数 k</label>
+                <input type="number" min={1} max={120} value={rrfK} onChange={e => setRrfK(Number(e.target.value))} className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none" />
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => onNavigate('kb-retrieval-test', { selectedKBId: kbId })}
+              className="mt-3 text-xs text-blue-600 hover:underline flex items-center gap-1"
+            >
+              前往检索测试台验证 <ArrowRight size={12} />
+            </button>
+          </div>
         </div>
       )}
 
@@ -283,21 +378,105 @@ export function KBSettingsPage({ kbId, onNavigate }: KBSettingsPageProps) {
       )}
 
       {tab === 'tags' && (
-        <div className="space-y-3 max-w-xl">
-          <p className="text-xs text-gray-500">配置文档级元数据标签，用于精细化过滤与 ACL 控制。</p>
-          <div className="flex flex-wrap gap-2">
-            {['合同', '供应商', '法律', '财务', '合规', '保密', '知识产权'].map(tag => (
-              <span key={tag} className="inline-flex items-center gap-1 px-3 py-1.5 bg-blue-50 border border-blue-200 text-blue-700 text-xs rounded-full">
-                {tag} <button className="hover:text-red-500 ml-0.5">✕</button>
-              </span>
-            ))}
-            <button className="inline-flex items-center gap-1 px-3 py-1.5 border-2 border-dashed border-gray-300 text-gray-500 text-xs rounded-full hover:border-blue-400 hover:text-blue-600">
-              <Plus size={11} /> 添加标签
-            </button>
+        <div className="space-y-5 max-w-3xl">
+          <div>
+            <h4 className="text-sm font-semibold text-gray-800 mb-2">标签管理</h4>
+            <p className="text-xs text-gray-500 mb-3">配置文档级元数据标签，用于精细化过滤与 ACL 控制。</p>
+            <div className="flex flex-wrap gap-2">
+              {tags.map(tag => (
+                <span key={tag} className="inline-flex items-center gap-1 px-3 py-1.5 bg-blue-50 border border-blue-200 text-blue-700 text-xs rounded-full">
+                  {tag}
+                  <button type="button" onClick={() => removeTag(tag)} className="hover:text-red-500 ml-0.5">✕</button>
+                </span>
+              ))}
+              <div className="inline-flex items-center gap-1">
+                <input
+                  value={newTag}
+                  onChange={e => setNewTag(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && addTag()}
+                  placeholder="新建标签"
+                  className="px-2 py-1 text-xs border border-gray-300 rounded-lg w-24 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+                <button type="button" onClick={addTag} className="inline-flex items-center gap-1 px-3 py-1.5 border-2 border-dashed border-gray-300 text-gray-500 text-xs rounded-full hover:border-blue-400 hover:text-blue-600">
+                  <Plus size={11} /> 新建
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h4 className="text-sm font-semibold text-gray-800">元数据字段 Schema</h4>
+                <p className="text-[11px] text-gray-500">上传时自动提取 / 手动标注</p>
+              </div>
+              <button type="button" onClick={addSchemaField} className="flex items-center gap-1 text-xs text-blue-600 hover:underline">
+                <Plus size={12} /> 添加字段
+              </button>
+            </div>
+            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-600">字段名</th>
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-600">类型</th>
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-600">必填</th>
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-600">示例值</th>
+                    <th className="w-10"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {schemaFields.map(field => (
+                    <tr key={field.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/50">
+                      <td className="px-4 py-2">
+                        <input
+                          value={field.name}
+                          onChange={e => setSchemaFields(p => p.map(f => f.id === field.id ? { ...f, name: e.target.value } : f))}
+                          className="w-full px-2 py-1 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        />
+                      </td>
+                      <td className="px-4 py-2">
+                        <select
+                          value={field.type}
+                          onChange={e => setSchemaFields(p => p.map(f => f.id === field.id ? { ...f, type: e.target.value } : f))}
+                          className="w-full px-2 py-1 text-xs border border-gray-200 rounded focus:outline-none"
+                        >
+                          <option value="string">string</option>
+                          <option value="enum">enum</option>
+                          <option value="date">date</option>
+                          <option value="number">number</option>
+                        </select>
+                      </td>
+                      <td className="px-4 py-2">
+                        <input
+                          type="checkbox"
+                          checked={field.required}
+                          onChange={e => setSchemaFields(p => p.map(f => f.id === field.id ? { ...f, required: e.target.checked } : f))}
+                          className="rounded"
+                        />
+                      </td>
+                      <td className="px-4 py-2">
+                        <input
+                          value={field.example}
+                          onChange={e => setSchemaFields(p => p.map(f => f.id === field.id ? { ...f, example: e.target.value } : f))}
+                          className="w-full px-2 py-1 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        />
+                      </td>
+                      <td className="px-2 py-2">
+                        <button type="button" onClick={() => removeSchemaField(field.id)} className="p-1 text-gray-400 hover:text-red-500">
+                          <Trash2 size={13} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
     </div>
+    </KBDetailLayout>
   );
 }
 
