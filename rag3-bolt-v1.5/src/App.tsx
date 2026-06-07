@@ -95,7 +95,7 @@ export default function App() {
       case 'sys-pipeline':
         return <PipelineConfigPage onNavigate={navigate} />;
       case 'sys-classifier':
-        return <ClassifierPage />;
+        return <ClassifierPage onNavigate={navigate} />;
       case 'sys-security':
         return <SecurityPage />;
       case 'sys-models':

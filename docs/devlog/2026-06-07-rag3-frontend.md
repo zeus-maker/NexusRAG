@@ -294,3 +294,62 @@
 - `rag3-bolt-v1.5/src/pages/PipelineConfigPage.tsx`
 - `rag3-bolt-v1.5/src/pages/System.tsx`
 - `rag3-bolt-v1.5/src/App.tsx`
+
+---
+
+## 12. 查询路由（四分类器）深化（对齐架构第五部分 + §11.3）
+
+### 背景与目标
+
+原 `ClassifierPage` 将四分类器与架构文档不一致（意图/KB路由/安全检测），路由矩阵仅「意图×复杂度×KB」，未覆盖文档类型×密级×主流水线协作。依据 `docs/tech/5-企业级RAG知识库3.0实现方案.md` 第五部分 Adaptive RAG 与 PRD §11.3，目标重构为「复杂分类器为路由中枢」的可演示配置页。
+
+**用户可见变化**：系统管理 → 查询路由 五 Tab（概览 / 四分类器 / 路由矩阵 / 综合测试 / 在线学习）；四分类器对齐复杂度 Tier1-4、文档类型 12 种、意图 6 种、安全 4 级；路由矩阵对齐架构§3.3（Tier×文档×意图×密级→P1–P5）；综合测试输出 L1–L5 Trace 与软路由说明；可跳转流水线配置与评测中心路由在线学习。
+
+### 改动摘要
+
+- 新增 `data/classifierMock.ts`：四分类器元数据、Tier 定义、文档/意图/安全映射、路由矩阵、全链路测试 preset。
+- 新增 `pages/ClassifierPage.tsx`；`SystemExtra.tsx` re-export；`App.tsx` 传入 `onNavigate`。
+
+### 验证与风险
+
+- 验证：`npm run build` 通过；sys-classifier 五 Tab 可交互；综合测试三 preset（事实/对比/闲聊拒答）可展示 Trace。
+- 风险：与 `pipelineMock` 路由规则仍为独立 mock；矩阵编辑/在线训练未接 API。
+
+### 涉及文件
+
+- `rag3-bolt-v1.5/src/data/classifierMock.ts`
+- `rag3-bolt-v1.5/src/pages/ClassifierPage.tsx`
+- `rag3-bolt-v1.5/src/pages/SystemExtra.tsx`
+- `rag3-bolt-v1.5/src/App.tsx`
+
+---
+
+## 13. 流水线配置与查询路由布局对齐评测中心
+
+### 背景与目标
+
+用户反馈两页在窄屏/侧栏展开时布局不佳；初版用 `SystemConfigShell` 仿 Hub 壳层，用户要求**参考评测中心**。评测中心契约为：`p-6 flex flex-col gap-5 h-full overflow-y-auto` 整页滚动、`EvalSubNav` 顶栏横滑 Tab、h2 子标题 + 操作区 `flex-wrap`、主从 `lg:grid-cols-5` 分栏、宽表包在 `rounded-xl border` 卡片内 `overflow-x-auto`。
+
+**用户可见变化**：系统管理 → 流水线配置/查询路由 顶栏出现 `SystemSubNav`（与 EvalSubNav 同款下划线 Tab，可在两页间切换）；页内分段 Tab 用 `SystemSectionTabs`；四分类器改为评测数据集式左表右详情（`lg:col-span-2` + `lg:col-span-3`）；删除独立 fixed header 壳层。
+
+### 改动摘要
+
+- 新增 `components/SystemSubNav.tsx`：`SystemSubNav`（跨页）、`SystemSectionTabs`（页内）、`TableCard`（宽表容器）。
+- 删除 `SystemConfigShell.tsx`。
+- `PipelineConfigPage` / `ClassifierPage` 改为评测中心同款页面骨架与按钮样式。
+
+### 验证与风险
+
+- 验证：`npm run build` 通过；与评测中心侧栏展开时表现一致，宽表在卡片内横滑。
+- 风险：`SystemSubNav` 目前仅含流水线/查询路由两项，其他系统页未纳入。
+
+### 反思与沉淀
+
+- 产品内「配置/分析」类页面应跟评测中心而非 Hub 壳层：Hub 适合全屏工具页，评测/系统配置适合可滚动内容区。
+- 主从布局用 `grid-cols-1 lg:grid-cols-5` 比横向 chip 更符合现有数据集页心智。
+
+### 涉及文件
+
+- `rag3-bolt-v1.5/src/components/SystemSubNav.tsx` — 系统路由区 SubNav + 页内 Tab + TableCard
+- `rag3-bolt-v1.5/src/pages/PipelineConfigPage.tsx` — 评测中心式布局
+- `rag3-bolt-v1.5/src/pages/ClassifierPage.tsx` — 评测中心式布局 + 四分类器主从分栏

@@ -5,6 +5,7 @@ import {
   CheckCircle, AlertCircle, Pause, Save, Eye,
 } from 'lucide-react';
 import { HubBadge, HubStatCard, hubCard, hubInput, hubSelect, BtnPrimary, BtnSecondary } from '../components/hubUi';
+import { SystemSubNav, SystemSectionTabs, TableCard } from '../components/SystemSubNav';
 import {
   PIPELINE_DEFINITIONS, DEFAULT_ROUTING_RULES, DEFAULT_MODEL_CONFIG, PIPELINE_GLOBAL_SETTINGS,
   PIPELINE_STATS, PIPELINE_STATUS_LABEL, FUSION_STRATEGY_LABEL,
@@ -36,70 +37,55 @@ export function PipelineConfigPage({ onNavigate }: PipelineConfigPageProps) {
   };
 
   return (
-    <div className="h-full flex flex-col overflow-hidden bg-gray-50/50 dark:bg-gray-950">
+    <div className="p-6 flex flex-col gap-5 h-full overflow-y-auto bg-gray-50 dark:bg-gray-950">
       {toast && (
         <div className="fixed top-4 right-4 z-50 px-4 py-2 bg-gray-900 text-white text-sm rounded-lg shadow-lg">{toast}</div>
       )}
 
-      <div className="px-6 py-4 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 flex-shrink-0">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
-              <GitBranch size={20} className="text-blue-600" /> 流水线配置
-            </h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-              五大 RAG 流水线开关 · 分类器路由规则 · 模型与融合策略（§6.2）
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <BtnSecondary onClick={() => showToast('配置已重置为默认（mock）')}>
-              <RefreshCw size={14} /> 重置
-            </BtnSecondary>
-            <BtnPrimary onClick={() => showToast('流水线配置已保存')}>
-              <Save size={14} /> 保存配置
-            </BtnPrimary>
-          </div>
+      <div>
+        <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">系统管理</h1>
+        {onNavigate && <SystemSubNav currentPage="sys-pipeline" onNavigate={onNavigate} />}
+      </div>
+
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+            <GitBranch size={18} className="text-blue-600" /> 流水线配置
+          </h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">五大 RAG 流水线开关 · 分类器路由规则 · 模型与融合策略（§6.2）</p>
         </div>
-        <div className="flex gap-1 mt-4 overflow-x-auto">
-          {TABS.map((tab, i) => (
-            <button
-              key={tab}
-              type="button"
-              onClick={() => setActiveTab(i)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg whitespace-nowrap transition-colors ${
-                activeTab === i
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
-              }`}
-            >
-              {tab}
-            </button>
-          ))}
+        <div className="flex gap-2 flex-wrap">
+          <button type="button" onClick={() => showToast('配置已重置为默认（mock）')} className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-white dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300">
+            <RefreshCw size={14} /> 重置
+          </button>
+          <button type="button" onClick={() => showToast('流水线配置已保存')} className="flex items-center gap-1.5 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+            <Save size={14} /> 保存配置
+          </button>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6">
-        {activeTab === 0 && <OverviewTab pipelines={pipelines} onNavigate={onNavigate} />}
-        {activeTab === 1 && (
-          <PipelinesTab
-            pipelines={pipelines}
-            expanded={expandedPipeline}
-            onExpand={setExpandedPipeline}
-            onStatusChange={setPipelineStatus}
-            onNavigate={onNavigate}
-            showToast={showToast}
-          />
-        )}
-        {activeTab === 2 && (
-          <RoutingTab rules={rules} setRules={setRules} showToast={showToast} />
-        )}
-        {activeTab === 3 && (
-          <ModelsTab models={models} setModels={setModels} showToast={showToast} />
-        )}
-        {activeTab === 4 && (
-          <GlobalSettingsTab settings={globalSettings} setSettings={setGlobalSettings} showToast={showToast} />
-        )}
-      </div>
+      <SystemSectionTabs tabs={TABS} activeTab={activeTab} onTabChange={setActiveTab} />
+
+      {activeTab === 0 && <OverviewTab pipelines={pipelines} onNavigate={onNavigate} />}
+      {activeTab === 1 && (
+        <PipelinesTab
+          pipelines={pipelines}
+          expanded={expandedPipeline}
+          onExpand={setExpandedPipeline}
+          onStatusChange={setPipelineStatus}
+          onNavigate={onNavigate}
+          showToast={showToast}
+        />
+      )}
+      {activeTab === 2 && (
+        <RoutingTab rules={rules} setRules={setRules} showToast={showToast} />
+      )}
+      {activeTab === 3 && (
+        <ModelsTab models={models} setModels={setModels} showToast={showToast} />
+      )}
+      {activeTab === 4 && (
+        <GlobalSettingsTab settings={globalSettings} setSettings={setGlobalSettings} showToast={showToast} />
+      )}
     </div>
   );
 }
@@ -108,7 +94,7 @@ function OverviewTab({ pipelines, onNavigate }: { pipelines: PipelineDefinition[
   const maxWeekly = Math.max(...PIPELINE_STATS.weeklyRoutes);
 
   return (
-    <div className="space-y-4 max-w-6xl">
+    <div className="space-y-4 w-full min-w-0">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <HubStatCard label="启用流水线" value={`${PIPELINE_STATS.activeCount}/5`} icon={<CheckCircle size={18} className="text-green-500" />} />
         <HubStatCard label="今日路由决策" value={PIPELINE_STATS.todayRoutes.toLocaleString()} icon={<Route size={18} className="text-blue-500" />} />
@@ -122,22 +108,26 @@ function OverviewTab({ pipelines, onNavigate }: { pipelines: PipelineDefinition[
           {pipelines.map(p => {
             const sc = PIPELINE_STATUS_LABEL[p.status];
             return (
-              <div key={p.key} className="flex items-center gap-3">
-                <span className="text-lg w-6">{p.icon}</span>
-                <span className="text-xs font-medium text-gray-700 dark:text-gray-300 w-28 flex-shrink-0">{p.shortName}</span>
-                <div className="flex-1 h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full rounded-full ${p.health >= 90 ? 'bg-green-500' : p.health >= 70 ? 'bg-amber-500' : p.health > 0 ? 'bg-red-400' : 'bg-gray-300'}`}
-                    style={{ width: `${p.health}%` }}
-                  />
+              <div key={p.key} className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  <span className="text-lg w-6 flex-shrink-0">{p.icon}</span>
+                  <span className="text-xs font-medium text-gray-700 dark:text-gray-300 w-24 sm:w-28 flex-shrink-0 truncate">{p.shortName}</span>
+                  <div className="flex-1 min-w-0 h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${p.health >= 90 ? 'bg-green-500' : p.health >= 70 ? 'bg-amber-500' : p.health > 0 ? 'bg-red-400' : 'bg-gray-300'}`}
+                      style={{ width: `${p.health}%` }}
+                    />
+                  </div>
                 </div>
-                <HubBadge variant={sc.variant}>{sc.label}</HubBadge>
-                <span className="text-[10px] text-gray-400 w-16 text-right">{p.avgLatencyMs}ms</span>
-                {p.hubPage && onNavigate && (
-                  <button type="button" onClick={() => onNavigate(p.hubPage!)} className="text-[10px] text-blue-600 hover:underline flex items-center gap-0.5">
-                    <ExternalLink size={10} /> Hub
-                  </button>
-                )}
+                <div className="flex items-center gap-2 flex-shrink-0 pl-8 sm:pl-0">
+                  <HubBadge variant={sc.variant}>{sc.label}</HubBadge>
+                  <span className="text-[10px] text-gray-400">{p.avgLatencyMs}ms</span>
+                  {p.hubPage && onNavigate && (
+                    <button type="button" onClick={() => onNavigate(p.hubPage!)} className="text-[10px] text-blue-600 hover:underline flex items-center gap-0.5">
+                      <ExternalLink size={10} /> Hub
+                    </button>
+                  )}
+                </div>
               </div>
             );
           })}
@@ -181,7 +171,7 @@ function PipelinesTab({
   showToast: (m: string) => void;
 }) {
   return (
-    <div className="space-y-3 max-w-5xl">
+    <div className="space-y-3 w-full min-w-0">
       <p className="text-xs text-gray-500 dark:text-gray-400">
         启用 / 仅索引 / 禁用 三态开关。仅索引时参与入库但不作为检索主通道；禁用则跳过建索引与检索。
       </p>
@@ -190,38 +180,50 @@ function PipelinesTab({
         const isOpen = expanded === p.key;
         return (
           <div key={p.key} className={`${hubCard} overflow-hidden`}>
-            <div className="px-4 py-3.5 flex items-center gap-3">
-              <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-sm font-bold ${p.status !== 'disabled' ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700' : 'bg-gray-100 text-gray-400'}`}>
-                {p.key}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{p.name}</span>
-                  <HubBadge variant={sc.variant}>{sc.label}</HubBadge>
+            <div className="px-3 sm:px-4 py-3 flex flex-col gap-3">
+              <div className="flex items-start gap-3 min-w-0">
+                <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-sm font-bold flex-shrink-0 ${p.status !== 'disabled' ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700' : 'bg-gray-100 text-gray-400'}`}>
+                  {p.key}
                 </div>
-                <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{p.desc}</p>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{p.name}</span>
+                    <HubBadge variant={sc.variant}>{sc.label}</HubBadge>
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 sm:truncate">{p.desc}</p>
+                </div>
+                <button type="button" onClick={() => onExpand(isOpen ? null : p.key)} className="p-1 text-gray-400 hover:text-gray-600 flex-shrink-0 sm:hidden">
+                  {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                </button>
               </div>
-              <div className="hidden sm:flex items-center gap-4 text-[10px] text-gray-400 flex-shrink-0">
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-gray-400 sm:hidden pl-12">
                 <span>{p.indexed}/{p.total || '—'} 索引</span>
                 <span>avg {p.avgLatencyMs}ms</span>
                 <span>{p.dailyCalls.toLocaleString()} 调用/日</span>
               </div>
-              <div className="flex gap-1 flex-shrink-0">
-                {(['active', 'index_only', 'disabled'] as PipelineStatus[]).map(s => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => onStatusChange(p.key, s)}
-                    className={`text-[10px] px-2 py-1 rounded-lg border ${
-                      p.status === s ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-500 hover:bg-gray-50'
-                    }`}
-                  >
-                    {PIPELINE_STATUS_LABEL[s].label}
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pl-12 sm:pl-0">
+                <div className="hidden sm:flex items-center gap-4 text-[10px] text-gray-400">
+                  <span>{p.indexed}/{p.total || '—'} 索引</span>
+                  <span>avg {p.avgLatencyMs}ms</span>
+                  <span>{p.dailyCalls.toLocaleString()} 调用/日</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-1">
+                  {(['active', 'index_only', 'disabled'] as PipelineStatus[]).map(s => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => onStatusChange(p.key, s)}
+                      className={`text-[10px] px-2 py-1 rounded-lg border ${
+                        p.status === s ? 'border-blue-400 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' : 'border-gray-200 dark:border-gray-700 text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800'
+                      }`}
+                    >
+                      {PIPELINE_STATUS_LABEL[s].label}
+                    </button>
+                  ))}
+                  <button type="button" onClick={() => onExpand(isOpen ? null : p.key)} className="p-1 text-gray-400 hover:text-gray-600 hidden sm:block">
+                    {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                   </button>
-                ))}
-                <button type="button" onClick={() => onExpand(isOpen ? null : p.key)} className="p-1 text-gray-400 hover:text-gray-600">
-                  {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                </button>
+                </div>
               </div>
             </div>
 
@@ -298,7 +300,7 @@ function RoutingTab({
   };
 
   return (
-    <div className="space-y-4 max-w-6xl">
+    <div className="space-y-4 w-full min-w-0">
       <div className={`${hubCard} p-4 bg-blue-50/50 dark:bg-blue-900/10 border-blue-200 dark:border-blue-800`}>
         <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-2 flex items-center gap-2">
           <Route size={14} className="text-blue-600" /> 路由规则可视化
@@ -320,7 +322,7 @@ function RoutingTab({
         </BtnSecondary>
       </div>
 
-      <div className={`${hubCard} overflow-hidden`}>
+      <TableCard minWidth={880}>
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs text-gray-500 border-b border-gray-100 dark:border-gray-800 bg-gray-50/80 dark:bg-gray-800/50">
@@ -370,9 +372,9 @@ function RoutingTab({
             ))}
           </tbody>
         </table>
-      </div>
+      </TableCard>
 
-      <div className={`${hubCard} p-4`}>
+      <div className={`${hubCard} dark:bg-gray-900 dark:border-gray-700 p-4`}>
         <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-3 flex items-center gap-2">
           <Eye size={14} className="text-cyan-600" /> 路由效果预览
         </h3>
@@ -422,8 +424,8 @@ function ModelsTab({
   showToast: (m: string) => void;
 }) {
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 max-w-5xl">
-      <div className={`${hubCard} p-5`}>
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 w-full min-w-0">
+      <div className={`${hubCard} p-4 sm:p-5`}>
         <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-4 flex items-center gap-2">
           <Cpu size={16} className="text-blue-600" /> 模型配置
         </h3>
@@ -463,7 +465,7 @@ function ModelsTab({
         </div>
       </div>
 
-      <div className={`${hubCard} p-5`}>
+      <div className={`${hubCard} p-4 sm:p-5`}>
         <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-4 flex items-center gap-2">
           <Zap size={16} className="text-amber-500" /> 融合策略默认值（§11.8）
         </h3>
@@ -503,10 +505,10 @@ function GlobalSettingsTab({
   showToast: (m: string) => void;
 }) {
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 max-w-5xl">
-      <div className={`${hubCard} p-5 space-y-4`}>
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 w-full min-w-0">
+      <div className={`${hubCard} p-4 sm:p-5 space-y-4`}>
         <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">运行时参数</h3>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">最大并发</label>
             <input type="number" value={settings.maxConcurrency} onChange={e => setSettings(s => ({ ...s, maxConcurrency: +e.target.value }))} className={hubInput} />
@@ -531,7 +533,7 @@ function GlobalSettingsTab({
         </label>
       </div>
 
-      <div className={`${hubCard} p-5 space-y-4`}>
+      <div className={`${hubCard} p-4 sm:p-5 space-y-4`}>
         <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-2">
           <Pause size={14} /> 灰度发布（§6.6）
         </h3>
