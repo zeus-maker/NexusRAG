@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Search, RefreshCw, Plus, Download, GitCompare, BookmarkPlus,
-  ExternalLink, Layers, Info,
+  ExternalLink, Layers,
 } from 'lucide-react';
 import { KBDetailLayout } from '../components/KBDetailLayout';
 import { RERANK_MODEL_OPTIONS } from '../data/fusionMock';
@@ -19,9 +19,9 @@ import { searchKb } from '../hooks/useKbData';
 import { useLlmModels, useTenantModels } from '../hooks/useLlmData';
 import {
   API_AVAILABLE_CHANNELS,
-  API_UNAVAILABLE_CHANNELS,
-  API_UNAVAILABLE_HINT,
+  API_RAG3_CHANNELS,
   buildRealRetrievalResult,
+  fetchRag3ChannelResult,
   type RealApiChannel,
 } from '../utils/retrievalTestApi';
 
@@ -143,16 +143,27 @@ export function RetrievalTestPage({ kbId, onNavigate }: RetrievalTestPageProps) 
         }
         const latencyMs = Math.round(performance.now() - t0);
 
+        const ragflowChannels = [...apiChannels].filter(
+          (ch): ch is 'vector' | 'bm25' | 'graphrag' => ch === 'vector' || ch === 'bm25' || ch === 'graphrag',
+        );
         const res = buildRealRetrievalResult({
           query: query.trim(),
           pre,
           post,
           vectorWeight,
-          enabledChannels: apiChannels,
+          enabledChannels: new Set(ragflowChannels),
           useKg,
           latencyMs,
           rerankMeta,
         });
+        const rag3Channels = API_RAG3_CHANNELS.filter(ch => apiChannels.has(ch));
+        if (rag3Channels.length) {
+          const rag3Results = await Promise.all(
+            rag3Channels.map(ch => fetchRag3ChannelResult(kbId, ch, query.trim())),
+          );
+          res.channels = [...res.channels, ...rag3Results];
+          res.totalLatencyMs += rag3Results.reduce((s, c) => s + c.latencyMs, 0);
+        }
         setResult(res);
         setChannelTab(res.channels[0]?.channel ?? 'vector');
       } else {
@@ -185,7 +196,7 @@ export function RetrievalTestPage({ kbId, onNavigate }: RetrievalTestPageProps) 
             <h2 className="text-base font-bold text-gray-900 dark:text-gray-100">检索测试</h2>
             <p className="text-xs text-gray-500 dark:text-gray-400">
               {useRealApi
-                ? 'RAGFlow 混合检索 · 向量/BM25 分路由 similarity 字段派生 · GraphRAG 对应 use_kg'
+                ? 'RAGFlow 混合检索 + RAG3 PageIndex/Wiki 通道 · GraphRAG 对应 use_kg'
                 : '五通道分路 + Weighted RRF 融合对比（§10.5 mock）'}
             </p>
           </div>
@@ -242,19 +253,6 @@ export function RetrievalTestPage({ kbId, onNavigate }: RetrievalTestPageProps) 
                           {ch === 'graphrag' && (
                             <span className="text-[9px] text-gray-400">需开启知识图谱</span>
                           )}
-                        </label>
-                      ))}
-                      {API_UNAVAILABLE_CHANNELS.map(ch => (
-                        <label
-                          key={ch}
-                          className="flex items-center gap-2 text-xs text-gray-400 cursor-not-allowed"
-                          title={API_UNAVAILABLE_HINT}
-                        >
-                          <input type="checkbox" disabled checked={false} className="rounded opacity-40" />
-                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium opacity-50 ${CHANNEL_META[ch].color}`}>
-                            {CHANNEL_META[ch].label}
-                          </span>
-                          <Info size={10} className="opacity-60" />
                         </label>
                       ))}
                     </>

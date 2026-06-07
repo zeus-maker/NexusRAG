@@ -9,8 +9,9 @@ import { HubKBLayout } from '../../components/HubKBLayout';
 import { HubPageShell } from '../../components/HubPageShell';
 import { HubBadge, HubStatCard, hubCard, hubInput, hubSelect, BtnPrimary, BtnSecondary } from '../../components/hubUi';
 import { useWikiHubData } from '../../hooks/useEnhancementHubData';
+import { WikiHubContext, useWikiHubContext } from './wikiHubContext';
 import {
-  WIKI_PAGES, WIKI_TREE, WIKI_SOURCE_DOCS, WIKI_COMPILE_QUEUE, WIKI_COMMITS, WIKI_STATS, WIKI_LAYER_FILTERS,
+  WIKI_COMMITS, WIKI_STATS, WIKI_LAYER_FILTERS,
   filterWikiTree, getWikiPage,
   type WikiPage, type WikiPageStatus, type WikiPageType, type WikiCompileJob, type WikiTreeNode,
   type WikiSourceDoc, type WikiIngestStatus,
@@ -67,20 +68,12 @@ export default function WikiHubPage({ kbId, onNavigate }: WikiHubPageProps) {
   const kb = wiki.kb;
   const [activeTab, setActiveTab] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
-  const [pages, setPages] = useState(wiki.pages);
-  const [queue, setQueue] = useState(WIKI_COMPILE_QUEUE);
   const [browserFocus, setBrowserFocus] = useState<{ slug: string; rawPath?: string } | null>(null);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
-  const reviewingCount = queue.filter(q => q.status === 'reviewing').length;
-  const compilingCount = queue.filter(q => q.status === 'compiling').length;
-  const sourceDocs = wiki.isApiMode ? wiki.sourceDocs : WIKI_SOURCE_DOCS;
-  const wikiStats = wiki.isApiMode ? wiki.stats : WIKI_STATS;
-  const ingestedCount = sourceDocs.filter(d => d.ingestStatus === 'compiled').length;
-
-  useEffect(() => {
-    if (wiki.isApiMode) setPages(wiki.pages);
-  }, [wiki.pages, wiki.isApiMode]);
+  const reviewingCount = wiki.compileQueue.filter(q => q.status === 'reviewing').length;
+  const compilingCount = wiki.compileQueue.filter(q => q.status === 'compiling').length;
+  const ingestedCount = wiki.sourceDocs.filter(d => d.ingestStatus === 'compiled').length;
 
   const tabs = [
     '文档列表',
@@ -92,15 +85,24 @@ export default function WikiHubPage({ kbId, onNavigate }: WikiHubPageProps) {
 
   return (
     <HubKBLayout kbId={kbId || kb.kb_id} activeKey="wiki-hub" onNavigate={onNavigate}>
+      <WikiHubContext.Provider value={wiki}>
       {toast && <div className="fixed top-4 right-4 z-50 px-4 py-2 bg-gray-900 text-white text-sm rounded-lg shadow-lg">{toast}</div>}
       <HubPageShell
         title="LLM Wiki 知识库"
-        subtitle={`${kb.name} · raw/ 原始资料 → wiki/ 编译知识库 · ${ingestedCount}/${sourceDocs.length} 文档已 Ingest · ${wikiStats.published}/${wikiStats.total} Wiki 页${wiki.isApiMode ? ' · API' : ''}`}
+        subtitle={`${kb.name} · raw/ 原始资料 → wiki/ 编译知识库 · ${ingestedCount}/${wiki.sourceDocs.length} 文档已 Ingest · ${wiki.stats.published}/${wiki.stats.total} Wiki 页${wiki.isApiMode ? ' · API' : ''}`}
         icon={<BookOpen size={16} className="text-violet-500" />}
         badge={compilingCount > 0 ? { label: `${compilingCount} 编译中`, variant: 'indexing' } : undefined}
         onBack={() => onNavigate('kb-detail', { selectedKBId: kbId || kb.kb_id })}
-        secondaryAction={{ label: '触发全量编译', icon: <RefreshCw size={14} />, onClick: () => showToast('全量编译任务已加入队列') }}
-        primaryAction={{ label: '新建页面', icon: <Plus size={14} />, onClick: () => showToast('新建 Wiki 页面（mock）') }}
+        secondaryAction={{
+          label: '触发全量编译',
+          icon: <RefreshCw size={14} />,
+          onClick: () => void wiki.runBuild().then(() => showToast(wiki.isApiMode ? '已提交 Wiki 全量编译' : '全量编译任务已加入队列（mock）')),
+        }}
+        primaryAction={{
+          label: '新建页面',
+          icon: <Plus size={14} />,
+          onClick: () => showToast(wiki.isApiMode ? '新建 Wiki 页需后端 Git 仓库 API，当前由 Ingest 自动生成' : '新建 Wiki 页面（mock）'),
+        }}
         tabs={tabs}
         activeTab={activeTab}
         onTabChange={setActiveTab}
@@ -108,26 +110,25 @@ export default function WikiHubPage({ kbId, onNavigate }: WikiHubPageProps) {
         {activeTab === 0 && (
           <DocumentsTab
             onViewWiki={doc => {
-              setBrowserFocus({ slug: doc.primaryWikiSlug, rawPath: doc.rawPath });
+              setBrowserFocus({ slug: doc.primaryWikiSlug || doc.relatedSlugs[0] || '', rawPath: doc.rawPath });
               setActiveTab(1);
             }}
-            onIngest={doc => showToast(`Ingest 已触发：${doc.name}（mock）`)}
             showToast={showToast}
           />
         )}
         {activeTab === 1 && (
           <BrowserTab
-            pages={pages}
             focusSlug={browserFocus?.slug}
             focusRawPath={browserFocus?.rawPath}
             onClearFocus={() => setBrowserFocus(null)}
-            onApprove={slug => { setPages(p => p.map(x => x.slug === slug ? { ...x, status: 'published' } : x)); showToast('页面已发布'); }}
+            onApprove={slug => showToast(wiki.isApiMode ? `[[${slug}]] 已发布（API 模式条目默认已发布）` : `[[${slug}]] 已发布`)}
           />
         )}
-        {activeTab === 2 && <CompileQueueTab queue={queue} setQueue={setQueue} showToast={showToast} />}
+        {activeTab === 2 && <CompileQueueTab showToast={showToast} />}
         {activeTab === 3 && <CompileSettingsTab showToast={showToast} />}
         {activeTab === 4 && <StatsTab />}
       </HubPageShell>
+      </WikiHubContext.Provider>
     </HubKBLayout>
   );
 }
@@ -187,31 +188,39 @@ function WikiTreeItem({
 }
 
 function DocumentsTab({
-  onViewWiki, onIngest, showToast,
+  onViewWiki, showToast,
 }: {
   onViewWiki: (doc: WikiSourceDoc) => void;
-  onIngest: (doc: WikiSourceDoc) => void;
   showToast: (m: string) => void;
 }) {
+  const wiki = useWikiHubContext();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<WikiIngestStatus | 'all'>('all');
 
   const filtered = useMemo(() => {
-    return WIKI_SOURCE_DOCS.filter(d => {
+    return wiki.sourceDocs.filter(d => {
       if (statusFilter !== 'all' && d.ingestStatus !== statusFilter) return false;
       if (search && !d.name.includes(search) && !d.rawPath.includes(search)) return false;
       return true;
     });
-  }, [search, statusFilter]);
+  }, [search, statusFilter, wiki.sourceDocs]);
 
-  const pendingCount = WIKI_SOURCE_DOCS.filter(d => d.ingestStatus === 'pending').length;
-  const compilingDocCount = WIKI_SOURCE_DOCS.filter(d => d.ingestStatus === 'compiling').length;
+  const pendingCount = wiki.sourceDocs.filter(d => d.ingestStatus === 'pending').length;
+  const compilingDocCount = wiki.sourceDocs.filter(d => d.ingestStatus === 'compiling').length;
+
+  const handleIngest = (doc: WikiSourceDoc) => {
+    if (wiki.isApiMode) {
+      void wiki.runBuild([doc.id]).then(() => showToast(`已提交 Ingest：${doc.name}`));
+    } else {
+      showToast(`Ingest 已触发：${doc.name}（mock）`);
+    }
+  };
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <HubStatCard label="原始文档" value={String(WIKI_SOURCE_DOCS.length)} icon={<FileText size={18} className="text-violet-500" />} />
-        <HubStatCard label="已 Ingest" value={String(WIKI_SOURCE_DOCS.filter(d => d.ingestStatus === 'compiled').length)} icon={<CheckCircle size={18} className="text-green-500" />} />
+        <HubStatCard label="原始文档" value={String(wiki.sourceDocs.length)} icon={<FileText size={18} className="text-violet-500" />} />
+        <HubStatCard label="已 Ingest" value={String(wiki.sourceDocs.filter(d => d.ingestStatus === 'compiled').length)} icon={<CheckCircle size={18} className="text-green-500" />} />
         <HubStatCard label="编译中" value={String(compilingDocCount)} icon={<RefreshCw size={18} className="text-blue-500" />} />
         <HubStatCard label="待 Ingest" value={String(pendingCount)} icon={<Clock size={18} className="text-amber-500" />} />
       </div>
@@ -272,7 +281,7 @@ function DocumentsTab({
                 </td>
                 <td className="px-4 py-3 text-xs text-gray-600">
                   {doc.wikiPageCount > 0 ? (
-                    <span>{doc.wikiPageCount} 页 · {doc.relatedSlugs.slice(0, 2).map(s => `[[${getWikiPage(s)?.title ?? s}]]`).join('、')}{doc.relatedSlugs.length > 2 ? '…' : ''}</span>
+                    <span>{doc.wikiPageCount} 页 · {doc.relatedSlugs.slice(0, 2).map(s => `[[${wiki.getPage(s)?.title ?? getWikiPage(s)?.title ?? s}]]`).join('、')}{doc.relatedSlugs.length > 2 ? '…' : ''}</span>
                   ) : (
                     <span className="text-gray-400">—</span>
                   )}
@@ -286,12 +295,12 @@ function DocumentsTab({
                       </button>
                     )}
                     {doc.ingestStatus !== 'compiling' && (
-                      <button type="button" onClick={() => onIngest(doc)} className="text-[10px] text-blue-600 hover:underline">
+                      <button type="button" onClick={() => handleIngest(doc)} className="text-[10px] text-blue-600 hover:underline">
                         {doc.ingestStatus === 'pending' ? '触发 Ingest' : '重新 Ingest'}
                       </button>
                     )}
                     {doc.ingestStatus === 'failed' && (
-                      <button type="button" onClick={() => showToast('重试中…')} className="text-[10px] text-red-600 hover:underline">重试</button>
+                      <button type="button" onClick={() => handleIngest(doc)} className="text-[10px] text-red-600 hover:underline">重试</button>
                     )}
                   </div>
                 </td>
@@ -305,17 +314,17 @@ function DocumentsTab({
 }
 
 function BrowserTab({
-  pages, onApprove, focusSlug, focusRawPath, onClearFocus,
+  onApprove, focusSlug, focusRawPath, onClearFocus,
 }: {
-  pages: WikiPage[];
   onApprove: (slug: string) => void;
   focusSlug?: string;
   focusRawPath?: string;
   onClearFocus?: () => void;
 }) {
+  const wiki = useWikiHubContext();
   const [search, setSearch] = useState('');
   const [layerFilter, setLayerFilter] = useState<WikiPageType | 'all'>('all');
-  const [selectedSlug, setSelectedSlug] = useState('supplier-penalty');
+  const [selectedSlug, setSelectedSlug] = useState(wiki.pages[0]?.slug ?? 'supplier-penalty');
   const [showEditor, setShowEditor] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [editContent, setEditContent] = useState('');
@@ -324,12 +333,16 @@ function BrowserTab({
     if (focusSlug) setSelectedSlug(focusSlug);
   }, [focusSlug]);
 
+  useEffect(() => {
+    if (!focusSlug && wiki.pages[0]?.slug) setSelectedSlug(wiki.pages[0].slug);
+  }, [wiki.pages, focusSlug]);
+
   const filteredTree = useMemo(
-    () => filterWikiTree(WIKI_TREE, layerFilter, search),
-    [layerFilter, search],
+    () => filterWikiTree(wiki.tree, layerFilter, search),
+    [wiki.tree, layerFilter, search],
   );
 
-  const page = pages.find(p => p.slug === selectedSlug) ?? getWikiPage(selectedSlug);
+  const page = wiki.getPage(selectedSlug) ?? getWikiPage(selectedSlug);
 
   const openEditor = () => {
     if (!page) return;
@@ -503,10 +516,21 @@ function BrowserTab({
   );
 }
 
-function CompileQueueTab({ queue, setQueue, showToast }: { queue: WikiCompileJob[]; setQueue: React.Dispatch<React.SetStateAction<WikiCompileJob[]>>; showToast: (m: string) => void }) {
+function CompileQueueTab({ showToast }: { showToast: (m: string) => void }) {
+  const wiki = useWikiHubContext();
   const [filter, setFilter] = useState<string>('全部');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [reviewNote, setReviewNote] = useState('');
+  const queue = wiki.compileQueue;
+
+  const retryJob = (job: WikiCompileJob) => {
+    const docId = job.id.replace(/^(build|pending|failed)-/, '');
+    if (wiki.isApiMode) {
+      void wiki.runBuild([docId]).then(() => showToast(`已提交重试：${job.title}`));
+    } else {
+      showToast('重试中…');
+    }
+  };
 
   const filtered = useMemo(() => {
     const list = filter === '全部' ? queue : queue.filter(q => STATUS_CFG[q.status].label === filter || (filter === '排队中' && q.status === 'queued'));
@@ -524,8 +548,7 @@ function CompileQueueTab({ queue, setQueue, showToast }: { queue: WikiCompileJob
   };
 
   const approveSelected = () => {
-    setQueue(prev => prev.map(q => selected.has(q.id) && q.status === 'reviewing' ? { ...q, status: 'published' as const, step: '已发布' } : q));
-    showToast(`已通过 ${selected.size} 项`);
+    showToast(wiki.isApiMode ? `已通过 ${selected.size} 项（API 条目默认已发布）` : `已通过 ${selected.size} 项`);
     setSelected(new Set());
   };
 
@@ -553,6 +576,9 @@ function CompileQueueTab({ queue, setQueue, showToast }: { queue: WikiCompileJob
             </tr>
           </thead>
           <tbody>
+            {filtered.length === 0 && wiki.isApiMode && (
+              <tr><td colSpan={6} className="px-4 py-8 text-center text-xs text-gray-400">暂无排队或进行中的编译任务</td></tr>
+            )}
             {filtered.map(item => (
               <tr key={item.id} className="border-b border-gray-50 hover:bg-gray-50/50">
                 <td className="px-4 py-2.5"><input type="checkbox" checked={selected.has(item.id)} onChange={() => toggle(item.id)} /></td>
@@ -573,18 +599,24 @@ function CompileQueueTab({ queue, setQueue, showToast }: { queue: WikiCompileJob
                     {item.status === 'reviewing' && (
                       <>
                         <button type="button" onClick={() => showToast('预览（mock）')} className="text-[10px] text-blue-600">预览</button>
-                        <button type="button" onClick={() => { setQueue(p => p.map(q => q.id === item.id ? { ...q, status: 'published', step: '已发布' } : q)); showToast('已通过'); }} className="text-[10px] text-green-600">通过</button>
+                        <button type="button" onClick={() => showToast('已通过')} className="text-[10px] text-green-600">通过</button>
                         <button type="button" onClick={() => showToast('已退回修改')} className="text-[10px] text-red-600">退回</button>
                       </>
                     )}
-                    {item.status === 'compiling' && <button type="button" onClick={() => showToast('已暂停')} className="text-[10px] text-gray-600 flex items-center gap-0.5"><Pause size={10} /> 暂停</button>}
+                    {item.status === 'compiling' && (
+                      <button type="button" disabled={wiki.isApiMode} onClick={() => showToast(wiki.isApiMode ? '暂停暂不支持' : '已暂停')} className={`text-[10px] flex items-center gap-0.5 ${wiki.isApiMode ? 'text-gray-400' : 'text-gray-600'}`}><Pause size={10} /> 暂停</button>
+                    )}
                     {item.status === 'failed' && (
                       <>
-                        <button type="button" onClick={() => showToast('重试中…')} className="text-[10px] text-blue-600 flex items-center gap-0.5"><RotateCcw size={10} /> 重试</button>
+                        <button type="button" onClick={() => retryJob(item)} className="text-[10px] text-blue-600 flex items-center gap-0.5"><RotateCcw size={10} /> 重试</button>
                         <button type="button" onClick={() => showToast('已跳过')} className="text-[10px] text-gray-500 flex items-center gap-0.5"><SkipForward size={10} /> 跳过</button>
                       </>
                     )}
-                    {item.status === 'published' && <button type="button" onClick={() => showToast('重编译已触发')} className="text-[10px] text-blue-600">重编译</button>}
+                    {(item.status === 'published' || item.status === 'queued') && (
+                      <button type="button" onClick={() => retryJob(item)} className="text-[10px] text-blue-600">
+                        {item.status === 'queued' ? '触发' : '重编译'}
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -688,22 +720,29 @@ function CompileSettingsTab({ showToast }: { showToast: (m: string) => void }) {
 }
 
 function StatsTab() {
-  const maxCompile = Math.max(...WIKI_STATS.weeklyCompile);
+  const wiki = useWikiHubContext();
+  const stats = wiki.stats;
+  const maxCompile = Math.max(...(stats.weeklyCompile?.length ? stats.weeklyCompile : [1]));
 
   return (
     <div className="space-y-5">
+      {wiki.isApiMode && (
+        <div className={`${hubCard} p-3 text-xs text-violet-800 dark:text-violet-200 bg-violet-50 dark:bg-violet-900/20 border-violet-200 dark:border-violet-800`}>
+          统计指标来自 RAG3 <code className="text-[10px]">GET /rag3/datasets/:id/wiki/entries</code>；层级分布与周编译趋势在真实 Ingest 积累后逐步有数据。
+        </div>
+      )}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <HubStatCard label="已发布页面" value={`${WIKI_STATS.published}/${WIKI_STATS.total}`} icon={<CheckCircle size={18} className="text-green-500" />} />
-        <HubStatCard label="待审核" value={String(WIKI_STATS.reviewing)} icon={<Clock size={18} className="text-yellow-500" />} />
-        <HubStatCard label="编译中" value={String(WIKI_STATS.compiling)} icon={<RefreshCw size={18} className="text-blue-500" />} />
-        <HubStatCard label="平均引用率" value={`${WIKI_STATS.avgCiteRate}%`} icon={<Eye size={18} className="text-purple-500" />} />
+        <HubStatCard label="已发布页面" value={`${stats.published}/${stats.total}`} icon={<CheckCircle size={18} className="text-green-500" />} />
+        <HubStatCard label="待审核" value={String(stats.reviewing)} icon={<Clock size={18} className="text-yellow-500" />} />
+        <HubStatCard label="编译中" value={String(stats.compiling)} icon={<RefreshCw size={18} className="text-blue-500" />} />
+        <HubStatCard label="平均引用率" value={stats.avgCiteRate ? `${stats.avgCiteRate}%` : '—'} icon={<Eye size={18} className="text-purple-500" />} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className={`${hubCard} p-4`}>
           <h3 className="text-sm font-semibold text-gray-800 mb-4">层级分布</h3>
           <div className="space-y-3">
-            {WIKI_STATS.layerDist.map(l => (
+            {(stats.layerDist ?? WIKI_STATS.layerDist).map(l => (
               <div key={l.layer}>
                 <div className="flex justify-between text-xs mb-1">
                   <span className="text-gray-700">{l.layer}</span>
@@ -720,7 +759,7 @@ function StatsTab() {
         <div className={`${hubCard} p-4`}>
           <h3 className="text-sm font-semibold text-gray-800 mb-4">高引用页面 Top 5</h3>
           <div className="space-y-2">
-            {WIKI_STATS.topCited.map((t, i) => (
+            {(stats.topCited ?? WIKI_STATS.topCited).map((t, i) => (
               <div key={t.title} className="flex items-center justify-between text-sm">
                 <span className="text-gray-700"><span className="text-gray-400 mr-2">#{i + 1}</span>{t.title}</span>
                 <span className="text-xs font-medium text-violet-600">{t.cites} 次引用</span>
@@ -733,20 +772,20 @@ function StatsTab() {
       <div className={`${hubCard} p-4`}>
         <h3 className="text-sm font-semibold text-gray-800 mb-4">编译趋势（近 7 天）</h3>
         <div className="flex items-end gap-2 h-28">
-          {WIKI_STATS.weeklyCompile.map((val, idx) => (
+          {(stats.weeklyCompile ?? WIKI_STATS.weeklyCompile).map((val, idx) => (
             <div key={idx} className="flex-1 flex flex-col items-center gap-1">
               <div className="w-full bg-violet-500 rounded-t-sm opacity-80" style={{ height: `${(val / maxCompile) * 100}%`, minHeight: 4 }} />
               <span className="text-[10px] text-gray-400">{['一', '二', '三', '四', '五', '六', '日'][idx]}</span>
             </div>
           ))}
         </div>
-        <p className="text-[10px] text-gray-400 mt-2">GET /api/v1/knowledge-bases/&#123;kb_id&#125;/wiki/stats</p>
+        <p className="text-[10px] text-gray-400 mt-2">GET /api/v1/rag3/datasets/&#123;kb_id&#125;/wiki/entries</p>
       </div>
 
-      {WIKI_STATS.failed > 0 && (
+      {stats.failed > 0 && (
         <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
           <AlertCircle size={16} />
-          {WIKI_STATS.failed} 个页面编译失败，请前往编译队列处理
+          {stats.failed} 个文档编译失败，请前往编译队列处理
         </div>
       )}
     </div>

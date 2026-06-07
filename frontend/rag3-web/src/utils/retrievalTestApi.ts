@@ -1,5 +1,6 @@
 import type { SearchResult } from '../services/kbApi';
 import type { RagflowSearchChunk } from '../services/kbMappers';
+import { hubApi } from '../services/hubApi';
 import type {
   ChannelHit,
   ChannelResult,
@@ -8,15 +9,19 @@ import type {
   RetrievalChannel,
 } from '../data/retrievalTestMock';
 
-/** API 模式可用通道（由 RAGFlow search 响应派生） */
-export const API_AVAILABLE_CHANNELS = ['vector', 'bm25', 'graphrag'] as const;
+/** API 模式可用通道 */
+export const API_AVAILABLE_CHANNELS = ['vector', 'bm25', 'graphrag', 'pageindex', 'wiki'] as const;
 export type RealApiChannel = (typeof API_AVAILABLE_CHANNELS)[number];
 
-/** 需 RAG3 多通道 API 的通道 */
-export const API_UNAVAILABLE_CHANNELS = ['pageindex', 'wiki'] as const;
+/** RAGFlow search 派生通道 */
+export const API_RAGFLOW_CHANNELS = ['vector', 'bm25', 'graphrag'] as const;
 
-export const API_UNAVAILABLE_HINT =
-  '需 RAG3 多通道检索 API（PageIndex / Wiki 索引未接入 RAGFlow search）';
+/** RAG3 Hub 检索 API 通道 */
+export const API_RAG3_CHANNELS = ['pageindex', 'wiki'] as const;
+
+export const API_UNAVAILABLE_CHANNELS: RetrievalChannel[] = [];
+
+export const API_UNAVAILABLE_HINT = '';
 
 function snippet(chunk: RagflowSearchChunk): string {
   const html = chunk.content_with_weight || chunk.content || '';
@@ -83,6 +88,44 @@ function mapFusionHits(result: SearchResult, preScores?: Map<string, number>): F
       sources: inferSources(raw),
     };
   });
+}
+
+export async function fetchRag3ChannelResult(
+  kbId: string,
+  channel: 'pageindex' | 'wiki',
+  query: string,
+): Promise<ChannelResult> {
+  if (channel === 'wiki') {
+    const res = await hubApi.searchWiki(kbId, query, 10);
+    return {
+      channel: 'wiki',
+      label: 'Wiki',
+      latencyMs: Number(res?.total_ms) || 0,
+      hits: (res?.hits ?? []).map((h, i) => ({
+        rank: i + 1,
+        doc: String(h.doc_name ?? h.title ?? '—'),
+        score: Number(h.score) || 0,
+        snippet: String(h.content ?? ''),
+        chunkId: String(h.id ?? ''),
+        docId: h.doc_id ? String(h.doc_id) : undefined,
+      })),
+    };
+  }
+  const res = await hubApi.searchPageIndex(kbId, query, { topK: 10 });
+  return {
+    channel: 'pageindex',
+    label: 'PageIndex',
+    latencyMs: Number(res?.total_ms) || 0,
+    hits: (res?.hits ?? []).map((h, i) => ({
+      rank: i + 1,
+      doc: String(h.doc_name ?? '—'),
+      page: typeof h.page_range === 'string' ? parseInt(h.page_range.replace(/\D/g, ''), 10) || undefined : undefined,
+      score: Number(h.confidence) || 0,
+      snippet: String(h.excerpt ?? ''),
+      chunkId: String(h.node_id ?? ''),
+      docId: h.doc_id ? String(h.doc_id) : undefined,
+    })),
+  };
 }
 
 export function buildRealRetrievalResult(params: {

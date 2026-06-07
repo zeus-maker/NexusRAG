@@ -27,9 +27,14 @@ import {
   WIKI_PAGES,
   WIKI_SOURCE_DOCS,
   WIKI_STATS,
+  WIKI_COMPILE_QUEUE,
+  WIKI_TREE,
   type WikiPage,
+  type WikiCompileJob,
   type WikiSourceDoc,
+  type WikiTreeNode,
 } from '../data/wikiMock';
+import { buildWikiTreeFromPages } from '../utils/wikiTreeUtils';
 import { useKnowledgeBase } from './useKbData';
 import { kbApi } from '../services/kbApi';
 import { hubApi } from '../services/hubApi';
@@ -466,58 +471,181 @@ export function useGraphHubData(kbId: string) {
   return { kb, stats, sourceDocs, nodes, edges, loading, refresh, getDoc, runGraphSearch, runBuild, isApiMode: useRealApi };
 }
 
+export interface WikiTraceSnapshot {
+  progress: number;
+  progress_msg: string;
+  running: boolean;
+  failed: boolean;
+  done: boolean;
+  doc_ids: string[];
+}
+
+function normalizeWikiTrace(raw: Record<string, unknown> | undefined): WikiTraceSnapshot | null {
+  if (!raw || !Object.keys(raw).length) return null;
+  const progress = typeof raw.progress === 'number' ? raw.progress : -2;
+  return {
+    progress,
+    progress_msg: typeof raw.progress_msg === 'string' ? raw.progress_msg : '',
+    running: progress >= 0 && progress < 1,
+    failed: progress < 0,
+    done: progress >= 1,
+    doc_ids: Array.isArray(raw.doc_ids) ? raw.doc_ids.map(String) : [],
+  };
+}
+
+function mapWikiIngestStatus(raw: string): WikiSourceDoc['ingestStatus'] {
+  if (raw === 'compiled' || raw === 'compiling' || raw === 'failed') return raw;
+  return 'pending';
+}
+
+function mapWikiEntry(raw: Record<string, unknown>, i: number): WikiPage {
+  const id = String(raw.id ?? `wiki-${i}`);
+  const docId = String(raw.doc_id ?? '');
+  const docName = String(raw.doc_name ?? '');
+  return {
+    id,
+    slug: id,
+    title: String(raw.title ?? 'Wiki 条目'),
+    pageType: 'entity',
+    content: String(raw.content ?? ''),
+    sources: docId ? [docId] : [],
+    related: [],
+    status: 'published',
+    citeRate: null,
+    priority: '中',
+    author: 'RAG3',
+    updated: '—',
+    views: 0,
+    version: 'v1',
+    rawSource: docName ? `raw/${docName}` : undefined,
+  };
+}
+
+function mapWikiSourceDoc(raw: Record<string, unknown>): WikiSourceDoc {
+  const related = Array.isArray(raw.related_slugs) ? raw.related_slugs.map(String) : [];
+  return {
+    id: String(raw.id),
+    name: String(raw.name ?? '—'),
+    rawPath: String(raw.raw_path ?? `raw/${raw.name ?? ''}`),
+    fileType: String(raw.file_type ?? ''),
+    size: typeof raw.size === 'number' ? formatBytes(raw.size) : String(raw.size ?? '—'),
+    ingestStatus: mapWikiIngestStatus(String(raw.ingest_status ?? 'pending')),
+    wikiPageCount: Number(raw.wiki_page_count) || 0,
+    relatedSlugs: related,
+    primaryWikiSlug: String(raw.primary_wiki_slug ?? related[0] ?? ''),
+    lastIngest: String(raw.last_ingest ?? '—'),
+  };
+}
+
+function buildApiCompileQueue(sourceDocs: WikiSourceDoc[], trace: WikiTraceSnapshot | null): WikiCompileJob[] {
+  const jobs: WikiCompileJob[] = [];
+  const lastLog = (trace?.progress_msg ?? '').split('\n').filter(Boolean).pop() ?? '';
+  if (trace?.running) {
+    const targets = trace.doc_ids.length
+      ? sourceDocs.filter(d => trace.doc_ids.includes(d.id))
+      : sourceDocs.filter(d => d.ingestStatus === 'compiling');
+    for (const doc of targets) {
+      jobs.push({
+        id: `build-${doc.id}`,
+        title: doc.name,
+        status: 'compiling',
+        progress: Math.round((trace?.progress ?? 0) * 100),
+        step: lastLog || 'Wiki 编译中',
+        citeRate: null,
+        priority: '中',
+        started: '进行中',
+      });
+    }
+  }
+  for (const doc of sourceDocs) {
+    if (doc.ingestStatus === 'pending') {
+      jobs.push({
+        id: `pending-${doc.id}`,
+        title: doc.name,
+        status: 'queued',
+        progress: 0,
+        step: '等待 Ingest',
+        citeRate: null,
+        priority: '低',
+        started: '—',
+      });
+    } else if (doc.ingestStatus === 'failed') {
+      jobs.push({
+        id: `failed-${doc.id}`,
+        title: doc.name,
+        status: 'failed',
+        progress: 0,
+        step: '编译失败',
+        citeRate: null,
+        priority: '低',
+        started: doc.lastIngest,
+      });
+    }
+  }
+  return jobs;
+}
+
 export function useWikiHubData(kbId: string) {
   const { data: kb } = useKnowledgeBase(kbId);
   const [pages, setPages] = useState<WikiPage[]>(WIKI_PAGES);
   const [sourceDocs, setSourceDocs] = useState<WikiSourceDoc[]>(WIKI_SOURCE_DOCS);
   const [stats, setStats] = useState(WIKI_STATS);
+  const [trace, setTrace] = useState<WikiTraceSnapshot | null>(null);
+  const [tree, setTree] = useState<WikiTreeNode>(WIKI_TREE);
+  const [compileQueue, setCompileQueue] = useState<WikiCompileJob[]>(WIKI_COMPILE_QUEUE);
   const [loading, setLoading] = useState(useRealApi);
 
   const refresh = useCallback(() => {
-    if (!useRealApi) return;
+    if (!useRealApi) {
+      setPages(WIKI_PAGES);
+      setSourceDocs(WIKI_SOURCE_DOCS);
+      setStats(WIKI_STATS);
+      setTrace(null);
+      setTree(WIKI_TREE);
+      setCompileQueue(WIKI_COMPILE_QUEUE);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     hubApi.listWikiEntries(kbId)
       .then(data => {
         const entries = data?.entries ?? [];
-        setPages(entries.map((e, i) => ({
-          id: String(e.id ?? i),
-          slug: String(e.id ?? `wiki-${i}`),
-          title: String(e.title ?? 'Wiki 条目'),
-          pageType: 'entity' as const,
-          content: String(e.content ?? ''),
-          sources: [String(e.doc_id ?? '')],
-          related: [],
-          status: 'published' as const,
-          citeRate: 0.9,
-          priority: '中' as const,
-          author: 'RAG3',
-          updated: '—',
-          views: 0,
-          version: 'v1',
-        })));
-        setSourceDocs((data?.source_documents ?? []).map(s => ({
-          id: String(s.id),
-          name: String(s.name),
-          rawPath: `raw/${s.name}`,
-          fileType: String(s.file_type ?? ''),
-          size: typeof s.size === 'number' ? formatBytes(s.size) : String(s.size ?? ''),
-          ingestStatus: s.ingest_status === 'compiled' ? 'compiled' : 'pending',
-          wikiPageCount: Number(s.wiki_page_count) || 0,
-          relatedSlugs: [],
-          primaryWikiSlug: '',
-          lastIngest: String(s.last_ingest ?? ''),
-        })));
+        const mappedPages = entries.map((e, i) => mapWikiEntry(e as Record<string, unknown>, i));
+        const mappedDocs = (data?.source_documents ?? []).map(s => mapWikiSourceDoc(s as Record<string, unknown>));
+        const traceSnap = normalizeWikiTrace(data?.trace as Record<string, unknown> | undefined);
         const st = data?.stats ?? {};
+        setPages(mappedPages);
+        setSourceDocs(mappedDocs);
+        setTrace(traceSnap);
+        setTree(buildWikiTreeFromPages(mappedPages, mappedDocs));
+        setCompileQueue(buildApiCompileQueue(mappedDocs, traceSnap));
         setStats({
           ...WIKI_STATS,
-          total: Number(st.total_entries) || 0,
-          published: Number(st.total_entries) || 0,
+          total: Number(st.total_entries) || mappedPages.length,
+          published: Number(st.published ?? st.total_entries) || mappedPages.length,
+          reviewing: Number(st.reviewing) || 0,
+          compiling: Number(st.compiling ?? st.compiling_docs) || 0,
+          failed: Number(st.failed ?? st.failed_docs) || 0,
+          avgCiteRate: mappedPages.length ? 84 : 0,
         });
+      })
+      .catch(() => {
+        setPages([]);
+        setSourceDocs([]);
+        setTrace(null);
+        setTree({ id: 'root', title: 'index.md', nodeType: 'folder', pageType: 'index', children: [] });
+        setCompileQueue([]);
       })
       .finally(() => setLoading(false));
   }, [kbId]);
 
   useEffect(() => { refresh(); }, [refresh]);
+
+  useEffect(() => {
+    if (!useRealApi || !trace?.running) return;
+    const timer = window.setInterval(() => { void refresh(); }, 3000);
+    return () => window.clearInterval(timer);
+  }, [useRealApi, trace?.running, refresh]);
 
   const runBuild = useCallback(async (docIds?: string[]) => {
     if (!useRealApi) return;
@@ -531,10 +659,10 @@ export function useWikiHubData(kbId: string) {
     return (res?.hits ?? []).map((h, i) => ({
       id: String(h.id ?? i),
       slug: String(h.id),
-      title: String(h.title),
+      title: String(h.title ?? 'Wiki 条目'),
       pageType: 'entity' as const,
       content: String(h.content ?? ''),
-      sources: [],
+      sources: h.doc_id ? [String(h.doc_id)] : [],
       related: [],
       status: 'published' as const,
       citeRate: Number(h.score) || 0.8,
@@ -546,5 +674,21 @@ export function useWikiHubData(kbId: string) {
     }));
   }, [kbId, pages]);
 
-  return { kb, pages, sourceDocs, stats, loading, refresh, runBuild, searchWiki, isApiMode: useRealApi };
+  const getPage = useCallback((slug: string) => pages.find(p => p.slug === slug || p.id === slug), [pages]);
+
+  return {
+    kb,
+    pages,
+    sourceDocs,
+    stats,
+    trace,
+    tree,
+    compileQueue,
+    loading,
+    refresh,
+    runBuild,
+    searchWiki,
+    getPage,
+    isApiMode: useRealApi,
+  };
 }

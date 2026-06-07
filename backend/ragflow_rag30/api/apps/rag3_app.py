@@ -265,5 +265,5 @@ async def rag3_wiki_search(tenant_id, dataset_id):
     body = await request.get_json(silent=True) or {}
     query = body.get("query", "")
     top_k = int(body.get("top_k", 10))
-    hits = search_wiki_library(dataset_id, query, top_k=top_k)
-    return get_json_result(data={"query": query, "hits": hits, "total": len(hits)})
+    result = search_wiki_library(dataset_id, query, top_k=top_k)
+    return get_json_result(data=result)

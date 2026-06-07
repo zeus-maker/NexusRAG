@@ -77,7 +77,12 @@ export const hubApi = {
   },
 
   async searchWiki(datasetId: string, query: string, topK = 10) {
-    const { data } = await apiRequest<{ hits: Array<Record<string, unknown>>; total: number }>(
+    const { data } = await apiRequest<{
+      hits: Array<Record<string, unknown>>;
+      total: number;
+      total_ms?: number;
+      query?: string;
+    }>(
       `/rag3/datasets/${datasetId}/wiki/search`,
       { method: 'POST', body: JSON.stringify({ query, top_k: topK }) },
     );

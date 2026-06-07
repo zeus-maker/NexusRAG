@@ -626,25 +626,54 @@ def list_wiki_hub_entries(dataset_id: str, tenant_id: str) -> tuple[bool, dict[s
         types=[],
         suffix=[],
     )
+    task_running = trace_ok and isinstance(trace, dict) and 0 <= float(trace.get("progress", -2)) < 1
+    trace_doc_ids = set(trace.get("doc_ids") or []) if isinstance(trace, dict) else set()
+
     source_docs = []
+    pending = compiling = compiled = failed = 0
     for doc in documents:
-        related = [e for e in entries if e.get("doc_id") == doc["id"]]
+        doc_id = doc["id"]
+        related = [e for e in entries if e.get("doc_id") == doc_id]
+        if related:
+            ingest_status = "compiled"
+            compiled += 1
+        elif task_running and doc_id in trace_doc_ids:
+            ingest_status = "compiling"
+            compiling += 1
+        elif doc.get("progress", 0) == -1:
+            ingest_status = "failed"
+            failed += 1
+        else:
+            ingest_status = "pending"
+            pending += 1
+        doc_name = doc.get("name") or doc_id
         source_docs.append({
-            "id": doc["id"],
-            "name": doc.get("name") or doc["id"],
-            "file_type": doc.get("suffix") or "",
+            "id": doc_id,
+            "name": doc_name,
+            "file_type": doc.get("suffix") or doc.get("type") or "",
             "size": doc.get("size") or 0,
-            "ingest_status": "compiled" if related else "pending",
+            "ingest_status": ingest_status,
             "wiki_page_count": len(related),
-            "last_ingest": doc.get("update_date") or "",
+            "related_slugs": [e.get("id") for e in related if e.get("id")],
+            "primary_wiki_slug": related[0].get("id") if related else "",
+            "raw_path": f"raw/{doc_name}",
+            "last_ingest": doc.get("update_date") or doc.get("create_date") or "",
         })
     return True, {
         "entries": entries,
         "source_documents": source_docs,
         "stats": {
             "total_entries": len(entries),
+            "published": len(entries),
+            "total": len(entries),
             "total_docs": len(documents),
-            "compiled_docs": sum(1 for s in source_docs if s["ingest_status"] == "compiled"),
+            "compiled_docs": compiled,
+            "pending_docs": pending,
+            "compiling_docs": compiling,
+            "failed_docs": failed,
+            "reviewing": 0,
+            "compiling": compiling,
+            "failed": failed if task_running and isinstance(trace, dict) and float(trace.get("progress", -2)) < 0 else failed,
         },
         "trace": trace if trace_ok and isinstance(trace, dict) else {},
     }
@@ -752,18 +781,26 @@ def get_pageindex_hub_analytics(dataset_id: str, tenant_id: str) -> tuple[bool, 
     return True, get_pageindex_analytics(dataset_id, items, trees)
 
 
-def search_wiki_library(kb_id: str, query: str, top_k: int = 10) -> list[dict[str, Any]]:
+def search_wiki_library(kb_id: str, query: str, top_k: int = 10) -> dict[str, Any]:
+    started = time.time()
     hits = search_wiki_hits(kb_id, query, top_k=top_k)
-    return [
+    formatted = [
         {
-            "id": h["chunk_id"],
-            "title": h["doc_name"],
+            "id": h.get("entry_id") or h["chunk_id"],
+            "title": h.get("title") or h["doc_name"],
             "content": h["snippet"],
             "doc_id": h["doc_id"],
+            "doc_name": h["doc_name"],
             "score": h["score"],
         }
         for h in hits
     ]
+    return {
+        "query": query,
+        "hits": formatted,
+        "total": len(formatted),
+        "total_ms": max(1, int((time.time() - started) * 1000)),
+    }
 
 
 def search_wiki_hits(kb_id: str, query: str, top_k: int = 10) -> list[dict[str, Any]]:
@@ -782,6 +819,8 @@ def search_wiki_hits(kb_id: str, query: str, top_k: int = 10) -> list[dict[str, 
                 continue
         hits.append({
             "chunk_id": entry.get("chunk_id") or entry.get("id"),
+            "entry_id": entry.get("id"),
+            "title": entry.get("title") or entry.get("doc_name") or "Wiki",
             "doc_id": entry.get("doc_id", "wiki"),
             "doc_name": entry.get("doc_name") or entry.get("title", "Wiki"),
             "score": min(0.99, 0.55 + score * 0.2),
