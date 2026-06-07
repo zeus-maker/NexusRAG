@@ -1760,3 +1760,29 @@ Hub 概览 Tab 白屏，控制台 `OverviewTab` 报 `Cannot read properties of u
 - `frontend/rag3-web/src/data/pageIndexMock.ts`
 - `frontend/rag3-web/src/hooks/useEnhancementHubData.ts`
 - `frontend/rag3-web/src/pages/Hub/PageIndexHubPage.tsx`
+
+---
+
+## 59. LLM Wiki Hub 全 Tab 对接 RAG3 真实 API
+
+### 背景与目标
+
+Wiki Hub 各 Tab 仍直接读 `WIKI_*` mock；`useWikiHubData` 虽调 `listWikiEntries`，页面未消费 trace/树/队列。需将 Ingest、浏览、搜索、编译触发接到 `/api/v1/rag3/datasets/:id/wiki/*`。
+
+### 改动摘要
+
+- **后端**：`list_wiki_hub_entries` 补 compiling/failed ingest、`related_slugs`、`primary_wiki_slug`；`search_wiki_library` 返回 `{query,hits,total,total_ms}`。
+- **前端**：`useWikiHubData` 增 trace 轮询、动态目录树、编译队列；`WikiHubPage` 全 Tab 经 `WikiHubContext` 接 API。
+- **检索测试**：Wiki/PageIndex 通道调 `hubApi.searchWiki/searchPageIndex`。
+
+### 验证与风险
+
+- `npm run build` 通过；Wiki Hub API 模式触发 Ingest 后队列应显示 trace 进度。
+- 风险：编译设置/Git 审核仍为 UI mock；层级分布/周编译趋势无独立 API。
+
+### 涉及文件
+
+- `backend/ragflow_rag30/rag3/index_service.py`、`api/apps/rag3_app.py`
+- `frontend/rag3-web/src/hooks/useEnhancementHubData.ts`
+- `frontend/rag3-web/src/pages/Hub/WikiHubPage.tsx`、`wikiHubContext.tsx`
+- `frontend/rag3-web/src/utils/wikiTreeUtils.ts`、`retrievalTestApi.ts`
