@@ -2,16 +2,20 @@ import { useState, useMemo, useEffect } from 'react';
 import {
   GitBranch, FileText, CheckCircle, AlertCircle, ChevronDown, ChevronRight,
   Search, Eye, RefreshCw, Folder, FolderOpen, Settings, Play, RotateCcw,
-  SkipForward, Zap, Target, Layers, ArrowLeft, MessageSquare, Box,
+  SkipForward, Zap, Target, Layers, ArrowLeft, MessageSquare, Box, Pause,
+  BarChart2, Clock, TrendingUp,
 } from 'lucide-react';
 import { HubPageShell } from '../../components/HubPageShell';
 import { HubBadge, HubStatCard, hubCard, hubInput, hubSelect, BtnPrimary, BtnSecondary } from '../../components/hubUi';
 import { mockKBs } from '../../mockData';
 import {
   PAGEINDEX_STATS, PAGEINDEX_DOCUMENTS, PAGEINDEX_TREE_V5, PAGEINDEX_DEFAULT_SETTINGS,
-  getPageIndexDoc, getPageIndexTree, findTreeNode, runMockTreeSearch,
+  PAGEINDEX_BUILD_QUEUE, PAGEINDEX_PIPELINE_STEPS, PAGEINDEX_ANALYTICS, BUILD_STAGE_LABEL,
+  getPageIndexActiveBuildJobs, getPageIndexDoc, getPageIndexTree, findTreeNode,
+  getNodePreviewBbox, runMockTreeSearch, runMockLibrarySearch,
   type PageIndexDocument, type PageIndexDocStatus, type PageIndexTreeNode,
-  type PageIndexSearchResult, type PageIndexSearchMode,
+  type PageIndexSearchResult, type PageIndexSearchMode, type PageIndexLibrarySearchResult,
+  type PageIndexBbox,
 } from '../../data/pageIndexMock';
 
 interface PageIndexHubPageProps {
@@ -44,9 +48,18 @@ export default function PageIndexHubPage({ kbId, onNavigate }: PageIndexHubPageP
   const [debugDocId, setDebugDocId] = useState<string | null>(null);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
-  const buildingCount = PAGEINDEX_STATS.building;
+  const activeBuildJobs = getPageIndexActiveBuildJobs();
+  const buildingCount = activeBuildJobs.filter(j => j.stage !== 'queued').length;
+  const queueActive = activeBuildJobs.length;
 
-  const tabs = ['概览', '文档列表', '建树设置'];
+  const tabs = [
+    '概览',
+    '文档列表',
+    `建树队列${queueActive > 0 ? ` (${queueActive})` : ''}`,
+    '检索调试',
+    '建树设置',
+    '统计',
+  ];
 
   const openDocDetail = (docId: string, debug = false) => {
     setSelectedDocId(docId);
@@ -96,7 +109,15 @@ export default function PageIndexHubPage({ kbId, onNavigate }: PageIndexHubPageP
             showToast={showToast}
           />
         )}
-        {activeTab === 2 && <SettingsTab showToast={showToast} />}
+        {activeTab === 2 && <BuildQueueTab showToast={showToast} onViewDoc={id => openDocDetail(id)} />}
+        {activeTab === 3 && (
+          <LibrarySearchTab
+            showToast={showToast}
+            onOpenDoc={(docId, debug) => openDocDetail(docId, debug)}
+          />
+        )}
+        {activeTab === 4 && <SettingsTab showToast={showToast} />}
+        {activeTab === 5 && <StatsTab />}
       </HubPageShell>
     </>
   );
@@ -104,6 +125,7 @@ export default function PageIndexHubPage({ kbId, onNavigate }: PageIndexHubPageP
 
 function OverviewTab({ onViewDoc, onRetry }: { onViewDoc: (id: string) => void; onRetry: () => void }) {
   const maxWeekly = Math.max(...PAGEINDEX_STATS.weeklyBuilds);
+  const activeJobs = getPageIndexActiveBuildJobs().filter(j => j.stage !== 'queued');
 
   return (
     <div className="space-y-4">
@@ -128,18 +150,22 @@ function OverviewTab({ onViewDoc, onRetry }: { onViewDoc: (id: string) => void; 
         </div>
       </div>
 
-      {PAGEINDEX_STATS.buildingJobs.length > 0 && (
+      {activeJobs.length > 0 && (
         <div className={`${hubCard} p-4`}>
           <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-3 flex items-center gap-2">
             <RefreshCw size={14} className="text-cyan-600 animate-spin" /> 建树进行中
+            <span className="text-[10px] font-normal text-gray-400">（与建树队列同步）</span>
           </h3>
           <div className="space-y-3">
-            {PAGEINDEX_STATS.buildingJobs.map(job => (
+            {activeJobs.map(job => (
               <div key={job.docId}>
                 <div className="flex justify-between text-xs mb-1">
-                  <span className="text-gray-700 dark:text-gray-300 font-medium">{job.name}</span>
-                  <span className="text-gray-400">{job.eta}</span>
+                  <button type="button" onClick={() => onViewDoc(job.docId)} className="text-gray-700 dark:text-gray-300 font-medium hover:text-cyan-600 hover:underline text-left">
+                    {job.name}
+                  </button>
+                  <span className="text-gray-400">{job.eta ?? BUILD_STAGE_LABEL[job.stage]}</span>
                 </div>
+                <p className="text-[10px] text-gray-400 mb-1">{job.stepLabel}</p>
                 <div className="w-full h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
                   <div className="h-full bg-cyan-500 rounded-full transition-all" style={{ width: `${job.progress}%` }} />
                 </div>
@@ -339,6 +365,261 @@ function DocumentsTab({
   );
 }
 
+function BuildQueueTab({
+  showToast, onViewDoc,
+}: {
+  showToast: (m: string) => void;
+  onViewDoc: (id: string) => void;
+}) {
+  const [queue, setQueue] = useState(PAGEINDEX_BUILD_QUEUE);
+
+  return (
+    <div className="space-y-4">
+      <div className={`${hubCard} p-3 text-xs text-gray-600 dark:text-gray-400`}>
+        <span className="font-medium">Ingest 流水线：</span>
+        {PAGEINDEX_PIPELINE_STEPS.map((s, i) => (
+          <span key={s}>{s}{i < PAGEINDEX_PIPELINE_STEPS.length - 1 ? ' → ' : ''}</span>
+        ))}
+        <span className="text-cyan-600 ml-2">（无分块向量化 · JSON 树索引直出）</span>
+      </div>
+      <div className={`${hubCard} overflow-hidden`}>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs text-gray-500 border-b border-gray-100 dark:border-gray-800 bg-gray-50/80 dark:bg-gray-800/50">
+              <th className="px-4 py-2.5">文档</th>
+              <th className="px-4 py-2.5">阶段</th>
+              <th className="px-4 py-2.5">进度</th>
+              <th className="px-4 py-2.5">节点</th>
+              <th className="px-4 py-2.5">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {queue.map(item => (
+              <tr key={item.id} className="border-b border-gray-50 dark:border-gray-800/50 hover:bg-gray-50/50 dark:hover:bg-gray-800/30">
+                <td className="px-4 py-3">
+                  <p className="text-xs font-medium text-gray-900 dark:text-gray-100">{item.docName}</p>
+                  <p className="text-[10px] text-gray-400">{item.stepLabel}{item.eta ? ` · ${item.eta}` : ''}</p>
+                </td>
+                <td className="px-4 py-3">
+                  <HubBadge variant={item.stage === 'failed' ? 'error' : item.stage === 'done' ? 'active' : 'indexing'}>
+                    {BUILD_STAGE_LABEL[item.stage]}
+                  </HubBadge>
+                </td>
+                <td className="px-4 py-3 w-36">
+                  <div className="w-full h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full ${item.stage === 'failed' ? 'bg-red-400' : item.stage === 'done' ? 'bg-green-500' : 'bg-cyan-500'}`} style={{ width: `${item.progress}%` }} />
+                  </div>
+                  <span className="text-[10px] text-gray-400">{item.progress}%</span>
+                </td>
+                <td className="px-4 py-3 text-xs text-gray-500">{item.nodesBuilt != null ? item.nodesBuilt : '—'}</td>
+                <td className="px-4 py-3">
+                  <div className="flex gap-2 flex-wrap">
+                    {item.stage === 'done' && (
+                      <button type="button" onClick={() => onViewDoc(item.docId)} className="text-[10px] text-cyan-600 hover:underline">查看树</button>
+                    )}
+                    {item.stage !== 'done' && item.stage !== 'failed' && (
+                      <button type="button" onClick={() => showToast('已暂停')} className="text-[10px] text-gray-600 flex items-center gap-0.5"><Pause size={10} /> 暂停</button>
+                    )}
+                    {item.stage === 'failed' && (
+                      <>
+                        <button type="button" onClick={() => showToast('重试中…')} className="text-[10px] text-cyan-600 flex items-center gap-0.5"><RotateCcw size={10} /> 重试</button>
+                        <button type="button" onClick={() => onViewDoc(item.docId)} className="text-[10px] text-blue-600 hover:underline">调试</button>
+                      </>
+                    )}
+                    {item.stage === 'queued' && (
+                      <button type="button" onClick={() => setQueue(q => q.map(x => x.id === item.id ? { ...x, stage: 'parsing' as const, progress: 5, stepLabel: '开始文档解析' } : x))} className="text-[10px] text-cyan-600">优先</button>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function LibrarySearchTab({
+  showToast, onOpenDoc,
+}: {
+  showToast: (m: string) => void;
+  onOpenDoc: (docId: string, debug?: boolean) => void;
+}) {
+  const [testQuery, setTestQuery] = useState('违约金如何计算');
+  const [searchMode, setSearchMode] = useState<PageIndexSearchMode>('mcts_hybrid');
+  const [result, setResult] = useState<PageIndexLibrarySearchResult | null>(null);
+  const [searching, setSearching] = useState(false);
+  const completedDocs = PAGEINDEX_DOCUMENTS.filter(d => d.treeStatus === 'completed');
+
+  const handleSearch = () => {
+    setSearching(true);
+    setResult(null);
+    setTimeout(() => {
+      const r = runMockLibrarySearch(testQuery);
+      setResult({ ...r, mode: searchMode });
+      setSearching(false);
+    }, 800);
+  };
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-gray-500 dark:text-gray-400">
+        库级树搜索调试：在 <strong>{completedDocs.length}</strong> 份已建树文档上执行 In-Context 推理导航，对比多文档命中与置信度（对齐 §11.2.3 单文档调试的库级扩展）。
+      </p>
+      <div className={`${hubCard} p-4 space-y-3`}>
+        <div className="flex flex-wrap gap-3">
+          <div className="flex-1 min-w-[240px] relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              value={testQuery}
+              onChange={e => setTestQuery(e.target.value)}
+              placeholder="输入测试查询，如：违约金如何计算"
+              className={`${hubInput} pl-9`}
+              onKeyDown={e => e.key === 'Enter' && handleSearch()}
+            />
+          </div>
+          <select className={hubSelect} value={searchMode} onChange={e => setSearchMode(e.target.value as PageIndexSearchMode)}>
+            <option value="llm_prompt">LLM Prompt 逐步推理</option>
+            <option value="mcts_hybrid">MCTS 混合搜索</option>
+          </select>
+          <BtnPrimary onClick={handleSearch} disabled={searching}>
+            {searching ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}
+            {searching ? '推理中' : '执行库级搜索'}
+          </BtnPrimary>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {['违约金如何计算', '保密期限'].map(q => (
+            <button key={q} type="button" onClick={() => setTestQuery(q)} className="text-[10px] px-2 py-1 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded-md hover:bg-cyan-50 hover:text-cyan-700">
+              {q}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {result && (
+        <div className={`${hubCard} p-4`}>
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+            <p className="text-xs font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-1">
+              <Zap size={12} className="text-cyan-600" /> 命中 {result.hits.length} 个叶节点 · 检索 {result.docsSearched} 文档
+            </p>
+            <span className="text-[10px] text-gray-500">{SEARCH_MODE_LABEL[result.mode]} · {result.totalMs}ms</span>
+          </div>
+          <div className="space-y-3">
+            {result.hits.map((hit, i) => (
+              <div key={`${hit.docId}-${hit.nodeId}`} className="border border-gray-100 dark:border-gray-800 rounded-lg p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="w-5 h-5 bg-cyan-600 text-white rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0">{i + 1}</span>
+                    <span className="text-xs font-medium text-gray-900 dark:text-gray-100 truncate">{hit.docName}</span>
+                    <span className="text-[10px] text-gray-400">→ {hit.nodeTitle}</span>
+                  </div>
+                  <span className="text-[10px] text-cyan-600">{(hit.confidence * 100).toFixed(0)}% · {hit.pageRange}</span>
+                </div>
+                <p className="text-xs text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 rounded-lg p-2 mb-2">{hit.excerpt}</p>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => onOpenDoc(hit.docId)} className="text-[10px] text-cyan-600 hover:underline">查看树</button>
+                  <button type="button" onClick={() => onOpenDoc(hit.docId, true)} className="text-[10px] text-blue-600 hover:underline">单文档调试</button>
+                  <button type="button" onClick={() => showToast('已跳转对话测试（mock）')} className="text-[10px] text-gray-500 hover:underline">在对话中测试</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className={`${hubCard} p-4 bg-cyan-50/50 dark:bg-cyan-900/10 border-cyan-200 dark:border-cyan-800`}>
+        <p className="text-xs text-gray-600 dark:text-gray-400">
+          <strong>Vectorless vs 向量：</strong>PageIndex 在 {PAGEINDEX_ANALYTICS.vectorCompare.financeBench} 基准召回 <strong>{PAGEINDEX_ANALYTICS.vectorCompare.pageindexRecall}%</strong>，
+          传统向量 RAG 约 {PAGEINDEX_ANALYTICS.vectorCompare.vectorRecall}%。适合长文档、结构化合同/财报等需精确定位的场景。
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function StatsTab() {
+  const maxWeekly = Math.max(...PAGEINDEX_ANALYTICS.weeklySearches);
+  const maxType = Math.max(...PAGEINDEX_ANALYTICS.docTypeDist.map(d => d.count));
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <HubStatCard label="P50 延迟" value={`${PAGEINDEX_ANALYTICS.searchLatencyP50}ms`} icon={<Clock size={18} className="text-cyan-600" />} />
+        <HubStatCard label="P95 延迟" value={`${PAGEINDEX_ANALYTICS.searchLatencyP95}ms`} icon={<Clock size={18} className="text-amber-500" />} />
+        <HubStatCard label="平均推理跳数" value={`${PAGEINDEX_ANALYTICS.avgHops} 跳`} icon={<TrendingUp size={18} className="text-blue-500" />} />
+        <HubStatCard label="FinanceBench" value={`${PAGEINDEX_ANALYTICS.vectorCompare.pageindexRecall}%`} icon={<BarChart2 size={18} className="text-green-500" />} />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className={`${hubCard} p-4`}>
+          <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-3">文档类型分布</h3>
+          <div className="space-y-2">
+            {PAGEINDEX_ANALYTICS.docTypeDist.map(item => (
+              <div key={item.type} className="flex items-center gap-3">
+                <span className="flex-1 text-xs text-gray-600 dark:text-gray-400">{item.type}</span>
+                <span className="text-xs text-gray-500 w-8 text-right">{item.count}</span>
+                <div className="w-24 h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-cyan-500 rounded-full" style={{ width: `${(item.count / maxType) * 100}%` }} />
+                </div>
+                <span className="text-[10px] text-gray-400 w-10">{item.pct}%</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className={`${hubCard} p-4`}>
+          <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-3">树深度分布（已建树）</h3>
+          <div className="space-y-2">
+            {PAGEINDEX_ANALYTICS.depthDist.map(item => (
+              <div key={item.depth} className="flex items-center justify-between text-xs py-2 border-b border-gray-50 dark:border-gray-800 last:border-0">
+                <span className="text-gray-600 dark:text-gray-400">{item.depth}</span>
+                <span className="font-medium text-gray-900 dark:text-gray-100">{item.count} 文档</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className={`${hubCard} p-4`}>
+        <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-3">高频检索文档 Top 4</h3>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs text-gray-500 border-b border-gray-100 dark:border-gray-800">
+              <th className="pb-2">文档</th>
+              <th className="pb-2">检索次数</th>
+              <th className="pb-2">平均延迟</th>
+            </tr>
+          </thead>
+          <tbody>
+            {PAGEINDEX_ANALYTICS.topDocs.map((d, i) => (
+              <tr key={d.docId} className="border-b border-gray-50 dark:border-gray-800/50">
+                <td className="py-2 text-xs text-gray-800 dark:text-gray-200">
+                  <span className="text-gray-400 mr-2">{i + 1}</span>{d.name}
+                </td>
+                <td className="py-2 text-xs text-gray-600">{d.searches}</td>
+                <td className="py-2 text-xs text-gray-600">{d.avgMs}ms</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className={`${hubCard} p-4`}>
+        <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-2">近 7 天库级树搜索量</h3>
+        <div className="flex items-end gap-1 h-16">
+          {PAGEINDEX_ANALYTICS.weeklySearches.map((v, i) => (
+            <div key={i} className="flex-1 flex flex-col items-center gap-1">
+              <div className="w-full bg-cyan-500 rounded-t-sm opacity-80" style={{ height: `${(v / maxWeekly) * 100}%`, minHeight: 4 }} />
+              <span className="text-[9px] text-gray-400">{v}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SettingsTab({ showToast }: { showToast: (m: string) => void }) {
   const [settings, setSettings] = useState(PAGEINDEX_DEFAULT_SETTINGS);
 
@@ -450,6 +731,87 @@ function SettingsTab({ showToast }: { showToast: (m: string) => void }) {
   );
 }
 
+/* ── PDF 解析预览 + bbox 高亮（§11.2.3 联动解析预览） ── */
+
+const PDF_PAGE_MOCK_LINES: Record<number, string[]> = {
+  3: [
+    '第五条 违约责任',
+    '',
+    '5.1 迟延交货',
+    '供应商迟延交货的，每迟延一日应按迟延交付货物',
+    '价值的千分之五（0.5%）向采购方支付违约金。',
+    '',
+    '5.1.1 违约金计算',
+    '累计违约金不超过合同总金额的 20%。',
+    '5.1.2 解除权触发',
+    '迟延超过 30 日采购方可解除合同。',
+  ],
+  8: [
+    '第八条 保密义务',
+    '',
+    '8.1 保密范围',
+    '技术信息、经营信息、客户名单等均属保密信息。',
+    '',
+    '8.2 保密期限',
+    '保密义务自合同生效之日起至合同终止后满五年止。',
+  ],
+};
+
+function PdfBboxPreview({
+  docName, page, bbox, nodeTitle, highlightFromSearch, onOpenParse,
+}: {
+  docName: string;
+  page: number;
+  bbox?: PageIndexBbox;
+  nodeTitle?: string;
+  highlightFromSearch?: boolean;
+  onOpenParse: () => void;
+}) {
+  const lines = PDF_PAGE_MOCK_LINES[page] ?? [
+    docName,
+    '',
+    '（mock）DeepDoc 解析页预览',
+    '点击树节点或执行树搜索后联动 bbox 高亮。',
+  ];
+
+  return (
+    <div className={`${hubCard} flex flex-col overflow-hidden h-full`}>
+      <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between gap-2 flex-shrink-0">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 truncate">解析预览</p>
+          <p className="text-[10px] text-gray-400">P{page} · DeepDoc layout</p>
+        </div>
+        <button type="button" onClick={onOpenParse} className="text-[10px] text-cyan-600 hover:underline flex-shrink-0">全屏 →</button>
+      </div>
+      <div className="flex-1 overflow-y-auto p-3 bg-gray-100/80 dark:bg-gray-800/50 min-h-[240px]">
+        <div className="relative bg-white dark:bg-gray-900 shadow-md rounded-sm mx-auto w-full max-w-[220px] min-h-[300px] p-3.5">
+          <div className="absolute top-2 right-2 text-[8px] text-gray-300">P{page}</div>
+          <div className="space-y-1.5 relative">
+            {lines.map((line, i) => (
+              <p key={i} className={`text-[8px] leading-snug ${line === '' ? 'h-1' : 'text-gray-600 dark:text-gray-400'}`}>
+                {line || '\u00A0'}
+              </p>
+            ))}
+            {bbox && (
+              <div
+                className={`absolute border-2 border-cyan-500 bg-cyan-400/25 rounded-sm pointer-events-none ${
+                  highlightFromSearch ? 'ring-2 ring-cyan-300 animate-pulse' : ''
+                }`}
+                style={{ left: `${bbox.x}%`, top: `${bbox.y}%`, width: `${bbox.w}%`, height: `${bbox.h}%` }}
+              />
+            )}
+          </div>
+        </div>
+      </div>
+      {bbox && nodeTitle && (
+        <div className="px-3 py-2 border-t border-cyan-100 dark:border-cyan-900/40 bg-cyan-50/50 dark:bg-cyan-900/10 text-[10px] text-cyan-800 dark:text-cyan-200 flex-shrink-0">
+          bbox 高亮: <strong>{nodeTitle}</strong> · P{page}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── 单文档树预览 + 树搜索调试（§11.2.3） ── */
 
 function DocDetailView({
@@ -469,6 +831,16 @@ function DocDetailView({
   const [debugExpanded, setDebugExpanded] = useState(autoFocusDebug ?? false);
 
   const selectedNode = findTreeNode(tree, selectedNodeId) ?? tree;
+  const { page: previewPage, bbox: previewBbox } = getNodePreviewBbox(selectedNode);
+
+  const openParsePreview = () => {
+    onNavigate('kb-parse', {
+      selectedKBId: 'kb-001',
+      pageIndexDocId: doc.id,
+      highlightPage: previewPage,
+      highlightNodeId: selectedNodeId,
+    });
+  };
 
   useEffect(() => {
     if (autoFocusDebug) setDebugExpanded(true);
@@ -498,7 +870,7 @@ function DocDetailView({
         </div>
         <div className="flex gap-2 flex-shrink-0">
           <BtnSecondary onClick={() => showToast('重建树任务已提交')}><RefreshCw size={12} /> 重建树</BtnSecondary>
-          <BtnSecondary onClick={() => onNavigate('kb-parse', { selectedKBId: 'kb-001' })}><Eye size={12} /> 解析预览</BtnSecondary>
+          <BtnSecondary onClick={openParsePreview}><Eye size={12} /> 解析预览</BtnSecondary>
         </div>
       </div>
 
@@ -517,8 +889,8 @@ function DocDetailView({
           </div>
         </div>
 
-        {/* 右侧：节点详情 + 树搜索调试 */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+        {/* 中间：节点详情 + 树搜索调试 */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-4 min-w-0">
           <div className={`${hubCard} p-4`}>
             <div className="flex items-center gap-2 mb-3">
               <Target size={16} className="text-cyan-600" />
@@ -542,6 +914,11 @@ function DocDetailView({
             </div>
             {selectedNode.summary && (
               <p className="text-xs text-gray-600 dark:text-gray-400 leading-relaxed bg-gray-50 dark:bg-gray-800 rounded-lg p-3">{selectedNode.summary}</p>
+            )}
+            {previewBbox && (
+              <button type="button" onClick={openParsePreview} className="mt-2 text-[10px] text-cyan-600 hover:underline flex items-center gap-1">
+                <Eye size={10} /> 在解析预览中查看 P{previewPage} bbox
+              </button>
             )}
           </div>
 
@@ -619,6 +996,30 @@ function DocDetailView({
               </div>
             )}
           </div>
+
+          {/* 窄屏下 PDF 预览折叠在搜索调试下方 */}
+          <div className="xl:hidden">
+            <PdfBboxPreview
+              docName={doc.name}
+              page={previewPage}
+              bbox={previewBbox}
+              nodeTitle={selectedNode.title}
+              highlightFromSearch={!!searchResult && searchResult.targetNodeId === selectedNodeId}
+              onOpenParse={openParsePreview}
+            />
+          </div>
+        </div>
+
+        {/* 右侧：PDF bbox 预览（大屏常驻） */}
+        <div className="hidden xl:flex w-72 flex-shrink-0 border-l border-gray-200 dark:border-gray-800 p-4 bg-white/50 dark:bg-gray-900/50">
+          <PdfBboxPreview
+            docName={doc.name}
+            page={previewPage}
+            bbox={previewBbox}
+            nodeTitle={selectedNode.title}
+            highlightFromSearch={!!searchResult && searchResult.targetNodeId === selectedNodeId}
+            onOpenParse={openParsePreview}
+          />
         </div>
       </div>
     </div>

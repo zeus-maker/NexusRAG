@@ -155,3 +155,115 @@
 - `rag3-bolt-v1.5/src/components/Layout.tsx`
 - `rag3-bolt-v1.5/src/pages/KnowledgeBase.tsx`
 - `rag3-bolt-v1.5/src/pages/Home.tsx`
+
+---
+
+## 7. 知识图谱管理 Hub 深化（对齐 §11.9 LazyGraphRAG）
+
+### 背景与目标
+
+「知识图谱」Hub 仅有 5 节点简易力导向图与 2 条社区 mock，未体现 PRD §11.9 的 LazyGraphRAG / GraphRAG 全量 / LightRAG 模式差异，以及 Local/Global/Dual 检索调试、建索引流水线、实体关系复核等能力。目标按实现方案 §11.9.1–11.9.6 重构 Hub，与 Wiki/PageIndex 双层 Hub 对齐。
+
+**用户可见变化**：Hub 标题「知识图谱管理」；六 Tab 带动态 Badge；概览可切换索引模式并对比 Lazy vs 全量成本；可视化含实体/社区筛选、关系标签、Local/Global/Dual 检索路径高亮；社区摘要表格式管理；建索引队列展示完整流水线阶段；实体复核支持关系+实体、批量确认；设置 Tab 区分 Lazy/全量选项。
+
+### 改动摘要
+
+- 新增 `data/graphRAGMock.ts`：图谱节点/边、社区、建索引队列、复核队列、检索路径 preset。
+- 重写 `GraphRAGHubPage.tsx`：六 Tab 全量实现 §11.9。
+- 面包屑/知识库卡片/Home 文案同步「知识图谱管理」。
+
+### 验证与风险
+
+- 验证：`npm run build` 通过；graphrag-hub 六 Tab 可交互；可视化检索调试可展示 Local 路径与 Global 社区卡片。
+- 风险：力导向图为 SVG mock 非 G6；与 KBExtra 旧图谱配置页未合并。
+
+### 涉及文件
+
+- `rag3-bolt-v1.5/src/data/graphRAGMock.ts`
+- `rag3-bolt-v1.5/src/pages/Hub/GraphRAGHubPage.tsx`
+- `rag3-bolt-v1.5/src/components/Layout.tsx`
+- `rag3-bolt-v1.5/src/pages/KnowledgeBase.tsx`
+- `rag3-bolt-v1.5/src/pages/Home.tsx`
+
+---
+
+## 8. 知识图谱 Hub 增加文档列表入口（文档 → 子图）
+
+### 背景与目标
+
+用户反馈知识图谱 Hub 应像 Wiki/PageIndex 一样，先展示知识库文档列表，再下钻查看该文档抽取的实体关系子图，而非直接进入库级可视化。目标：保留「概览」为默认入口，「文档列表」紧随其后，支持单文档子图调试与跳转全局图谱。
+
+**用户可见变化**：默认进入「概览」；第二 Tab「文档列表」展示每文档实体/关系数、所属社区、Lazy/全量模式与构建状态；「查看图谱」进入全宽单文档子图页（实体列表 + 力导向图 + Local 检索调试）；「在全局图谱中查看」带文档范围高亮跳转可视化 Tab。
+
+### 改动摘要
+
+- `graphRAGMock.ts`：新增 `GraphSourceDoc`、`GRAPH_SOURCE_DOCS`、`getDocSubgraph()`。
+- `GraphRAGHubPage.tsx`：`DocumentsTab`、`DocGraphDetailView`、`GraphCanvas`；Tab 顺序调整为文档列表优先；可视化 Tab 支持 `scopeNodeIds` 文档范围筛选。
+
+### 验证与风险
+
+- 验证：`npm run build` 通过；graphrag-hub 默认见文档列表；「查看图谱」进入子图；全局可视化可带文档来源横幅。
+- 风险：文档列表与建索引队列仍为独立 mock，未按 docId 强关联。
+
+### 涉及文件
+
+- `rag3-bolt-v1.5/src/data/graphRAGMock.ts`
+- `rag3-bolt-v1.5/src/pages/Hub/GraphRAGHubPage.tsx`
+
+---
+
+## 9. PageIndex 侧栏改名 + Hub 能力扩展（建树队列 / 库级检索 / 统计）
+
+### 背景与目标
+
+侧栏仍显示「树形推理索引」，与 Hub 内「PageIndex 管理」及 Wiki/知识图谱命名不一致。用户要求改为「PageIndex 管理」，并参照 Wiki/GraphRAG Hub 丰富可演示能力。目标：统一导航文案，在保留 §11.2 三 Tab 核心的基础上补齐建树流水线、库级检索调试与运营统计。
+
+**用户可见变化**：侧栏「树形推理索引」→「PageIndex 管理」；Hub 扩展为六 Tab（概览 / 文档列表 / 建树队列 / 检索调试 / 建树设置 / 统计）；建树队列展示解析→目录→建树→校验四阶段进度；检索调试支持跨已建树文档多命中与跳转单文档树；统计 Tab 含延迟分位、文档类型/深度分布、高频检索 Top 文档。
+
+### 改动摘要
+
+- `Layout.tsx`、`KnowledgeBase.tsx`：侧栏与卡片文案对齐「PageIndex 管理」。
+- `pageIndexMock.ts`：新增 `PAGEINDEX_BUILD_QUEUE`、`PAGEINDEX_ANALYTICS`、`PAGEINDEX_LIBRARY_SEARCH_PRESETS`、`runMockLibrarySearch()`。
+- `PageIndexHubPage.tsx`：新增 `BuildQueueTab`、`LibrarySearchTab`、`StatsTab`。
+
+### 验证与风险
+
+- 验证：`npm run build` 通过；pageindex-hub 六 Tab 可交互；检索调试命中可跳转单文档树搜索。
+- 风险：库级检索与单文档 preset 独立维护；建树队列与概览「进行中」卡片数据未强关联（§10 已统一）。
+
+### 涉及文件
+
+- `rag3-bolt-v1.5/src/components/Layout.tsx`
+- `rag3-bolt-v1.5/src/pages/KnowledgeBase.tsx`
+- `rag3-bolt-v1.5/src/data/pageIndexMock.ts`
+- `rag3-bolt-v1.5/src/pages/Hub/PageIndexHubPage.tsx`
+
+---
+
+## 10. PageIndex 单文档 bbox 预览 + mock 统一 + 侧栏失败 Badge
+
+### 背景与目标
+
+§11.2.3 要求单文档树搜索调试联动解析预览 bbox 高亮；概览「建树进行中」与建树队列 mock 曾各自维护（文档名不一致）；首页 Widget「PageIndex 失败 8」与侧栏无 Badge。目标：三处数据同源、详情页可演示 bbox 联动、侧栏与首页失败数一致。
+
+**用户可见变化**：单文档详情右侧（xl 常驻）展示 PDF 解析预览 mock，树节点选中/树搜索命中时 cyan bbox 高亮并可跳转全屏解析；概览「建树进行中」卡片数据来自 `PAGEINDEX_BUILD_QUEUE`（含阶段说明、可点击进文档）；侧栏「PageIndex 管理」显示红色失败数 Badge「8」。
+
+### 改动摘要
+
+- `pageIndexMock.ts`：`PageIndexBbox`、树节点 bbox 坐标、`PAGEINDEX_GLOBAL_FAILED_COUNT`、`getPageIndexActiveBuildJobs()`、`getNodePreviewBbox()`；移除独立 `buildingJobs`。
+- `PageIndexHubPage.tsx`：`PdfBboxPreview` 组件；`DocDetailView` 三栏布局；搜索 preset 增加 bbox 步骤。
+- `Layout.tsx` / `Home.tsx` / `KnowledgeBase.tsx` / `KBDetailLayout.tsx`：失败数统一引用 `PAGEINDEX_GLOBAL_FAILED_COUNT`。
+
+### 验证与风险
+
+- 验证：`npm run build` 通过；pageindex-hub 单文档详情选节点见 bbox；执行树搜索后高亮脉冲；概览进行中与建树队列 doc 3/7 一致；侧栏 Badge 为 8。
+- 风险：PDF 预览为 SVG/CSS mock 非真实 DeepDoc 渲染；`kb-parse` 全屏跳转仅传 highlight 参数未落地解析页。
+
+### 涉及文件
+
+- `rag3-bolt-v1.5/src/data/pageIndexMock.ts`
+- `rag3-bolt-v1.5/src/pages/Hub/PageIndexHubPage.tsx`
+- `rag3-bolt-v1.5/src/components/Layout.tsx`
+- `rag3-bolt-v1.5/src/pages/Home.tsx`
+- `rag3-bolt-v1.5/src/pages/KnowledgeBase.tsx`
+- `rag3-bolt-v1.5/src/components/KBDetailLayout.tsx`

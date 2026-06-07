@@ -1,5 +1,6 @@
 import { ReactNode } from 'react';
 import { mockKBs } from '../mockData';
+import { PAGEINDEX_GLOBAL_FAILED_COUNT } from '../data/pageIndexMock';
 import { KBSubNav } from './KBSubNav';
 
 interface KBDetailLayoutProps {
@@ -18,7 +19,7 @@ export function KBDetailLayout({ kbId, activeKey, onNavigate, children, badges }
       <KBSubNav
         kbId={kbId}
         activeKey={activeKey}
-        badges={badges ?? { wiki: 3, pageindex: 8 }}
+        badges={badges ?? { wiki: 3, pageindex: PAGEINDEX_GLOBAL_FAILED_COUNT }}
         onNavigate={onNavigate}
       />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">

@@ -7,6 +7,7 @@ import {
   Bell, ExternalLink, Cpu
 } from 'lucide-react';
 import { mockKBs, mockConversations, mockEvalRuns, mockABTests } from '../mockData';
+import { PAGEINDEX_GLOBAL_FAILED_COUNT } from '../data/pageIndexMock';
 
 interface HomePageProps {
   onNavigate: (page: string, extra?: any) => void;
@@ -48,7 +49,7 @@ const QUERY_FAILURES = [
 const RAG3_OPS = [
   { label: 'Wiki 编译中', value: 12, color: 'text-violet-600', bg: 'bg-violet-50 dark:bg-violet-900/20', page: 'wiki-hub' },
   { label: '待审核', value: 5, color: 'text-amber-600', bg: 'bg-amber-50 dark:bg-amber-900/20', page: 'wiki-hub' },
-  { label: 'PageIndex 失败', value: 8, color: 'text-red-600', bg: 'bg-red-50 dark:bg-red-900/20', page: 'pageindex-hub' },
+  { label: 'PageIndex 失败', value: PAGEINDEX_GLOBAL_FAILED_COUNT, color: 'text-red-600', bg: 'bg-red-50 dark:bg-red-900/20', page: 'pageindex-hub' },
   { label: '实体待复核', value: 86, color: 'text-orange-600', bg: 'bg-orange-50 dark:bg-orange-900/20', page: 'graphrag-hub' },
 ];
 
@@ -306,7 +307,7 @@ export function HomePage({ onNavigate, currentUser }: HomePageProps) {
                 {([
                   { id: 'wiki-hub', label: 'Wiki Hub', icon: BookOpen },
                   { id: 'pageindex-hub', label: 'PageIndex 管理', icon: Network },
-                  { id: 'graphrag-hub', label: 'GraphRAG Hub', icon: BarChart2 },
+                  { id: 'graphrag-hub', label: '知识图谱管理', icon: BarChart2 },
                 ] as const).map(hub => {
                   const Icon = hub.icon;
                   return (

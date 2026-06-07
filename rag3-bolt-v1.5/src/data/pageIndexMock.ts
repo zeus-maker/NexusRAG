@@ -1,6 +1,44 @@
 export type PageIndexDocStatus = 'completed' | 'building' | 'pending' | 'failed' | 'skipped';
 export type PageIndexNodeType = 'root' | 'part' | 'chapter' | 'section' | 'subsection' | 'leaf';
 export type PageIndexSearchMode = 'llm_prompt' | 'mcts_hybrid';
+export type PageIndexBuildStage = 'queued' | 'parsing' | 'toc' | 'building' | 'validating' | 'done' | 'failed';
+
+export interface PageIndexBuildJob {
+  id: string;
+  docId: string;
+  docName: string;
+  stage: PageIndexBuildStage;
+  progress: number;
+  stepLabel: string;
+  eta?: string;
+  nodesBuilt?: number;
+}
+
+export interface PageIndexLibraryHit {
+  docId: string;
+  docName: string;
+  nodeId: string;
+  nodeTitle: string;
+  pageRange: string;
+  confidence: number;
+  excerpt: string;
+}
+
+export interface PageIndexLibrarySearchResult {
+  query: string;
+  mode: PageIndexSearchMode;
+  docsSearched: number;
+  totalMs: number;
+  hits: PageIndexLibraryHit[];
+}
+
+export interface PageIndexBbox {
+  page: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
 
 export interface PageIndexTreeNode {
   id: string;
@@ -10,6 +48,7 @@ export interface PageIndexTreeNode {
   endPage?: number;
   summary?: string;
   tokenCount?: number;
+  bbox?: PageIndexBbox;
   children?: PageIndexTreeNode[];
 }
 
@@ -70,15 +109,14 @@ export const PAGEINDEX_STATS = {
     { reason: '表格结构提取失败', count: 2 },
     { reason: '页面为空/无内容', count: 1 },
   ],
-  buildingJobs: [
-    { docId: '3', name: '保密协议合集.pdf', progress: 65, eta: '约 3 分钟' },
-    { docId: '7', name: '合规审查报告.pdf', progress: 28, eta: '约 8 分钟' },
-  ],
   recentFails: [
     { docId: '4', name: '扫描件合同.pdf', reason: 'LLM 超时', time: '6/7 09:58' },
     { docId: '8', name: '供应商管理规范.docx', reason: '目录识别失败', time: '6/6 18:20' },
   ],
 };
+
+/** 跨库运营 Widget / 侧栏 Badge 统一失败数（首页 §10.2） */
+export const PAGEINDEX_GLOBAL_FAILED_COUNT = 8;
 
 export const PAGEINDEX_DOCUMENTS: PageIndexDocument[] = [
   {
@@ -158,16 +196,20 @@ export const PAGEINDEX_TREE_V5: PageIndexTreeNode = {
       id: 'ch5', title: '第五条 违约责任', nodeType: 'chapter', startPage: 3, endPage: 5,
       summary: '迟延交货、质量违约、合同解除等违约情形及违约金计算',
       tokenCount: 768,
+      bbox: { page: 3, x: 6, y: 8, w: 88, h: 10 },
       children: [
         {
           id: 'ch5-1', title: '5.1 迟延交货', nodeType: 'section', startPage: 3, endPage: 4,
           summary: '每迟延一日按货物价值千分之五计违约金，上限 20%',
           tokenCount: 512,
+          bbox: { page: 3, x: 8, y: 28, w: 84, h: 22 },
           children: [
             {
               id: 'ch5-1-1', title: '5.1.1 违约金计算', nodeType: 'leaf', startPage: 3, endPage: 3,
               summary: '供应商迟延交货的，每迟延一日应按迟延交付货物价值的千分之五向采购方支付违约金',
-              tokenCount: 256, children: [],
+              tokenCount: 256,
+              bbox: { page: 3, x: 10, y: 52, w: 80, h: 14 },
+              children: [],
             },
             { id: 'ch5-1-2', title: '5.1.2 解除权触发', nodeType: 'leaf', startPage: 4, endPage: 4, summary: '迟延超过 30 日采购方可解除合同', tokenCount: 192, children: [] },
           ],
@@ -178,9 +220,10 @@ export const PAGEINDEX_TREE_V5: PageIndexTreeNode = {
     {
       id: 'ch8', title: '第八条 保密义务', nodeType: 'chapter', startPage: 8, endPage: 9,
       summary: '商业秘密保护范围与保密期限', tokenCount: 448,
+      bbox: { page: 8, x: 6, y: 10, w: 88, h: 10 },
       children: [
-        { id: 'ch8-1', title: '8.1 保密范围', nodeType: 'section', startPage: 8, endPage: 8, summary: '技术信息、经营信息、客户名单等', tokenCount: 192, children: [] },
-        { id: 'ch8-2', title: '8.2 保密期限', nodeType: 'section', startPage: 8, endPage: 9, summary: '合同履行期间及终止后 5 年', tokenCount: 160, children: [] },
+        { id: 'ch8-1', title: '8.1 保密范围', nodeType: 'section', startPage: 8, endPage: 8, summary: '技术信息、经营信息、客户名单等', tokenCount: 192, bbox: { page: 8, x: 8, y: 30, w: 84, h: 16 }, children: [] },
+        { id: 'ch8-2', title: '8.2 保密期限', nodeType: 'section', startPage: 8, endPage: 9, summary: '合同履行期间及终止后 5 年', tokenCount: 160, bbox: { page: 8, x: 8, y: 52, w: 84, h: 12 }, children: [] },
       ],
     },
   ],
@@ -211,7 +254,8 @@ export const PAGEINDEX_SEARCH_PRESETS: Record<string, PageIndexSearchResult> = {
       { step: 1, action: '粗粒度浏览根节点', result: '识别「违约责任」章节相关', ms: 45, nodeId: 'root' },
       { step: 2, action: '推理导航 → 第五条', result: '命中「第五条 违约责任」', ms: 120, nodeId: 'ch5' },
       { step: 3, action: '下钻 5.1 迟延交货', result: '展开子节点 5.1.1 / 5.1.2', ms: 180, nodeId: 'ch5-1' },
-      { step: 4, action: '精读叶节点抽取', result: '千分之五/日，上限 20%', ms: 175, nodeId: 'ch5-1-1' },
+      { step: 4, action: '定位 P3 bbox 高亮', result: '联动解析预览矩形框', ms: 12, nodeId: 'ch5-1-1' },
+      { step: 5, action: '精读叶节点抽取', result: '千分之五/日，上限 20%', ms: 163, nodeId: 'ch5-1-1' },
     ],
     excerpt: '供应商迟延交货的，每迟延一日应按迟延交付货物价值的千分之五（0.5%）向采购方支付违约金。累计违约金不超过合同总金额的 20%。',
   },
@@ -233,6 +277,86 @@ export const PAGEINDEX_SEARCH_PRESETS: Record<string, PageIndexSearchResult> = {
   },
 };
 
+export const PAGEINDEX_PIPELINE_STEPS = ['文档解析', '目录识别', '树索引生成', '质量校验'] as const;
+
+export const BUILD_STAGE_LABEL: Record<PageIndexBuildStage, string> = {
+  queued: '排队中',
+  parsing: '文档解析',
+  toc: '目录识别',
+  building: '树索引生成',
+  validating: '质量校验',
+  done: '完成',
+  failed: '失败',
+};
+
+export const PAGEINDEX_BUILD_QUEUE: PageIndexBuildJob[] = [
+  { id: 'bq1', docId: '3', docName: '保密协议合集.pdf', stage: 'building', progress: 65, stepLabel: '生成第 3 层节点 · 32/86', eta: '约 3 分钟', nodesBuilt: 32 },
+  { id: 'bq2', docId: '7', docName: '采购管理制度.pdf', stage: 'toc', progress: 28, stepLabel: 'LLM 语义补全目录', eta: '约 8 分钟' },
+  { id: 'bq3', docId: '9', docName: '技术服务协议模板.pdf', stage: 'queued', progress: 0, stepLabel: '等待空闲 Worker' },
+  { id: 'bq4', docId: '4', docName: '扫描件合同.pdf', stage: 'failed', progress: 42, stepLabel: '树索引生成超时（>120s）' },
+  { id: 'bq5', docId: '1', docName: '供应商合同模板V5.pdf', stage: 'done', progress: 100, stepLabel: '86 节点 · 深度 6', nodesBuilt: 86 },
+];
+
+export const PAGEINDEX_ANALYTICS = {
+  searchLatencyP50: 480,
+  searchLatencyP95: 920,
+  avgHops: 3.2,
+  weeklySearches: [42, 58, 35, 71, 64, 89, 76],
+  docTypeDist: [
+    { type: '合同', count: 68, pct: 43.6 },
+    { type: '财报', count: 24, pct: 15.4 },
+    { type: '制度规范', count: 31, pct: 19.9 },
+    { type: '论文', count: 18, pct: 11.5 },
+    { type: '其他', count: 15, pct: 9.6 },
+  ],
+  vectorCompare: { vectorRecall: 52.3, pageindexRecall: 98.7, financeBench: 'FinanceBench' },
+  topDocs: [
+    { docId: '1', name: '供应商合同模板V5.pdf', searches: 128, avgMs: 510 },
+    { docId: '6', name: '2024合规审查报告.pdf', searches: 96, avgMs: 680 },
+    { docId: '2', name: '采购协议条款.pdf', searches: 74, avgMs: 420 },
+    { docId: '5', name: '财务报告Q3.xlsx', searches: 52, avgMs: 390 },
+  ],
+  depthDist: [
+    { depth: '3-4 层', count: 28 },
+    { depth: '5-6 层', count: 41 },
+    { depth: '7+ 层', count: 16 },
+  ],
+};
+
+export const PAGEINDEX_LIBRARY_SEARCH_PRESETS: Record<string, PageIndexLibrarySearchResult> = {
+  '违约金如何计算': {
+    query: '违约金如何计算',
+    mode: 'mcts_hybrid',
+    docsSearched: 5,
+    totalMs: 620,
+    hits: [
+      {
+        docId: '1', docName: '供应商合同模板V5.pdf', nodeId: 'ch5-1-1', nodeTitle: '5.1.1 违约金计算',
+        pageRange: 'P3', confidence: 0.96,
+        excerpt: '每迟延一日按迟延交付货物价值的千分之五支付违约金，累计不超过合同总金额 20%。',
+      },
+      {
+        docId: '2', docName: '采购协议条款.pdf', nodeId: 'p2', nodeTitle: '第三章 付款条款',
+        pageRange: 'P4-5', confidence: 0.71,
+        excerpt: '逾期付款方应按未付金额日万分之三承担滞纳金（相关条款）。',
+      },
+    ],
+  },
+  '保密期限': {
+    query: '保密期限',
+    mode: 'llm_prompt',
+    docsSearched: 4,
+    totalMs: 410,
+    hits: [
+      {
+        docId: '1', docName: '供应商合同模板V5.pdf', nodeId: 'ch8-2', nodeTitle: '8.2 保密期限',
+        pageRange: 'P8-9', confidence: 0.91,
+        excerpt: '保密义务自合同生效之日起至合同终止后满五年止。',
+      },
+    ],
+  },
+};
+
 export const PAGEINDEX_DEFAULT_SETTINGS = {
   tocMode: 'auto' as 'auto' | 'manual' | 'llm',
   maxDepth: 8,
@@ -247,8 +371,27 @@ export const PAGEINDEX_DEFAULT_SETTINGS = {
   semanticToc: true,
 };
 
+/** 建树队列中进行中任务（与概览「建树进行中」卡片同源） */
+export function getPageIndexActiveBuildJobs() {
+  return PAGEINDEX_BUILD_QUEUE
+    .filter(j => j.stage !== 'done' && j.stage !== 'failed')
+    .map(j => ({
+      docId: j.docId,
+      name: j.docName,
+      progress: j.progress,
+      eta: j.eta,
+      stepLabel: j.stepLabel,
+      stage: j.stage,
+    }));
+}
+
 export function getPageIndexDoc(id: string): PageIndexDocument | undefined {
   return PAGEINDEX_DOCUMENTS.find(d => d.id === id);
+}
+
+export function getNodePreviewBbox(node: PageIndexTreeNode): { page: number; bbox?: PageIndexBbox } {
+  const page = node.bbox?.page ?? node.startPage ?? 1;
+  return { page, bbox: node.bbox };
 }
 
 export function getPageIndexTree(docId: string): PageIndexTreeNode | undefined {
@@ -272,5 +415,23 @@ export function runMockTreeSearch(query: string): PageIndexSearchResult {
     query,
     confidence: 0.82,
     totalMs: 640,
+  };
+}
+
+export function runMockLibrarySearch(query: string): PageIndexLibrarySearchResult {
+  const preset = Object.entries(PAGEINDEX_LIBRARY_SEARCH_PRESETS).find(([k]) => query.includes(k) || k.includes(query))?.[1];
+  if (preset) return { ...preset, query };
+  return {
+    query,
+    mode: 'mcts_hybrid',
+    docsSearched: PAGEINDEX_DOCUMENTS.filter(d => d.treeStatus === 'completed').length,
+    totalMs: 580,
+    hits: [
+      {
+        docId: '1', docName: '供应商合同模板V5.pdf', nodeId: 'ch5-1-1', nodeTitle: '5.1.1 违约金计算',
+        pageRange: 'P3', confidence: 0.78,
+        excerpt: '（mock）在供应商合同模板中定位到最相关叶节点摘要…',
+      },
+    ],
   };
 }

@@ -5,6 +5,7 @@ import {
   ChevronRight, ChevronDown, LogOut, Sun, Moon, Search, Home,
   Bot, Lock, Cpu, BookOpen, Layers, Network, Sparkles, Route, Shuffle,
 } from 'lucide-react';
+import { PAGEINDEX_GLOBAL_FAILED_COUNT } from '../data/pageIndexMock';
 
 interface NavItem {
   key: string;
@@ -52,7 +53,7 @@ const EVAL_PAGES = ['eval-dashboard', 'eval-tasks', 'eval-ab-test', 'eval-datase
 
 const hubItems = [
   { key: 'wiki-hub', label: 'LLM Wiki 知识库', icon: <BookOpen size={15} />, page: 'wiki-hub' },
-  { key: 'pageindex-hub', label: '树形推理索引', icon: <GitBranch size={15} />, page: 'pageindex-hub' },
+  { key: 'pageindex-hub', label: 'PageIndex 管理', icon: <GitBranch size={15} />, page: 'pageindex-hub', badge: PAGEINDEX_GLOBAL_FAILED_COUNT },
   { key: 'graphrag-hub', label: '知识图谱', icon: <Network size={15} />, page: 'graphrag-hub' },
 ];
 
@@ -123,7 +124,14 @@ export function Sidebar({ collapsed, currentPage, onNavigate }: SidebarProps) {
                 }`}
               >
                 {hub.icon}
-                <span>{hub.label}</span>
+                <span className="flex-1 text-left">{hub.label}</span>
+                {'badge' in hub && hub.badge != null && hub.badge > 0 && (
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold flex-shrink-0 ${
+                    hub.page === currentPage ? 'bg-red-500/20 text-red-600 dark:text-red-300' : 'bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-300'
+                  }`}>
+                    {hub.badge}
+                  </span>
+                )}
               </button>
             ))}
           </>
@@ -196,7 +204,7 @@ const breadcrumbMap: Record<string, string[]> = {
   'kb-pageindex-manage': ['PageIndex 管理'],
   'wiki-hub': ['增强索引', 'LLM Wiki 知识库'],
   'pageindex-hub': ['增强索引', 'PageIndex 管理'],
-  'graphrag-hub': ['增强索引', '知识图谱'],
+  'graphrag-hub': ['增强索引', '知识图谱管理'],
   'chat': ['智能对话'],
   'search': ['搜索应用'],
   'agent': ['智能体编排'],
