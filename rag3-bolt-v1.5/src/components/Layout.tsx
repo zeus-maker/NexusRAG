@@ -4,6 +4,7 @@ import {
   GitBranch, FileSearch, Monitor, Bell, HelpCircle, ChevronLeft,
   ChevronRight, ChevronDown, LogOut, Sun, Moon, Search, Home,
   Bot, Lock, Cpu, BookOpen, Layers, Network, Sparkles, Route, Shuffle,
+  FileCode, HardDrive, Database as DatabaseIcon,
 } from 'lucide-react';
 import { PAGEINDEX_GLOBAL_FAILED_COUNT } from '../data/pageIndexMock';
 
@@ -36,6 +37,10 @@ const systemNavItem: NavItem = {
     { key: 'sys-generation-strategy', label: '生成策略', icon: <Sparkles size={15} />, page: 'sys-generation-strategy' },
     { key: 'sys-security', label: '安全合规', icon: <Lock size={15} />, page: 'sys-security' },
     { key: 'sys-models', label: '模型管理', icon: <Cpu size={15} />, page: 'sys-models' },
+    { key: 'sys-prompt-templates', label: 'Prompt 模板', icon: <FileCode size={15} />, page: 'sys-prompt-templates' },
+    { key: 'sys-gray-release', label: '灰度发布', icon: <GitBranch size={15} />, page: 'sys-gray-release' },
+    { key: 'sys-backup', label: '备份恢复', icon: <HardDrive size={15} />, page: 'sys-backup' },
+    { key: 'sys-vector-db', label: '向量库切换', icon: <DatabaseIcon size={15} />, page: 'sys-vector-db' },
     { key: 'sys-audit', label: '审计日志', icon: <FileSearch size={15} />, page: 'sys-audit' },
     { key: 'sys-monitor', label: '系统监控', icon: <Monitor size={15} />, page: 'sys-monitor' },
     { key: 'sys-traces', label: '链路追踪', icon: <Route size={15} />, page: 'sys-traces' },
@@ -45,7 +50,8 @@ const systemNavItem: NavItem = {
 const SYSTEM_PAGES = [
   'sys-users', 'sys-roles', 'sys-pipeline', 'sys-classifier',
   'sys-fusion', 'sys-retrieval-strategy', 'sys-generation-strategy',
-  'sys-security', 'sys-models', 'sys-audit', 'sys-monitor', 'sys-traces', 'sys-api',
+  'sys-security', 'sys-models', 'sys-prompt-templates', 'sys-gray-release', 'sys-backup', 'sys-vector-db',
+  'sys-audit', 'sys-monitor', 'sys-traces', 'sys-api',
 ];
 const HUB_PAGES = ['wiki-hub', 'pageindex-hub', 'graphrag-hub'];
 const KB_PAGES = [
@@ -233,6 +239,10 @@ const breadcrumbMap: Record<string, string[]> = {
   'sys-generation-strategy': ['系统管理', '生成策略'],
   'sys-security': ['系统管理', '安全合规'],
   'sys-models': ['系统管理', '模型管理'],
+  'sys-prompt-templates': ['系统管理', 'Prompt 模板'],
+  'sys-gray-release': ['系统管理', '灰度发布'],
+  'sys-backup': ['系统管理', '备份恢复'],
+  'sys-vector-db': ['系统管理', '向量库切换'],
   'sys-audit': ['系统管理', '审计日志'],
   'sys-monitor': ['系统管理', '系统监控'],
   'sys-traces': ['系统管理', '链路追踪'],

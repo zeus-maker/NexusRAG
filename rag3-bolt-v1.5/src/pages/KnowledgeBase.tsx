@@ -5,8 +5,10 @@ import {
   CheckCircle, AlertCircle, Loader, BookOpen, Network,
   ChevronRight, GitBranch, Edit, LayoutGrid, List,
   FlaskConical, Activity, Archive, Copy, Download,
-  ChevronLeft, AlertCircle as AlertIcon
+  ChevronLeft, AlertCircle as AlertIcon, Eye, Columns3,
 } from 'lucide-react';
+import { DocumentParsePreviewPanel } from '../components/kb/DocumentParsePreviewPanel';
+import { getPageIndexDocIdForKbDoc } from '../data/pageIndexMock';
 import { mockKBs, mockDocuments, mockChunks, mockIndexStatuses } from '../mockData';
 import type { KnowledgeBase } from '../types';
 import { KBCreateDialog, type KBCreateForm } from '../components/KBCreateDialog';
@@ -629,24 +631,35 @@ interface DocumentPageProps {
 }
 
 export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
-  const kb = mockKBs.find(k => k.kb_id === kbId) || mockKBs[0];
   const [search, setSearch] = useState('');
   const [isDragging, setIsDragging] = useState(false);
   const [selectedDocs, setSelectedDocs] = useState<string[]>([]);
+  const [previewDocId, setPreviewDocId] = useState<string | null>('doc-001');
+  const [showPreview, setShowPreview] = useState(true);
   const governedMap = Object.fromEntries(getGovernedDocuments(kbId).map(g => [g.doc_id, g]));
   const uploadQueue = getUploadQueue();
 
   const filtered = mockDocuments.filter(d => d.kb_id === kbId && d.original_name.includes(search));
+  const previewDoc = previewDocId ? mockDocuments.find(d => d.doc_id === previewDocId && d.kb_id === kbId) : null;
+  const canPreview = previewDoc && getPageIndexDocIdForKbDoc(previewDoc.doc_id) && previewDoc.parse_status === 'parsed';
 
   return (
     <KBDetailLayout kbId={kbId} activeKey="kb-documents" onNavigate={onNavigate}>
-    <div className="p-6 flex flex-col gap-4">
+    <div className="flex flex-col h-full min-h-0">
+    <div className="p-6 flex flex-col gap-4 flex-shrink-0">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h1 className="text-base font-bold text-gray-900 dark:text-gray-100">文档管理</h1>
-          <p className="text-xs text-gray-500 mt-0.5">五态流水线：上传 → 解析 → 分块 → 索引 → 已索引</p>
+          <p className="text-xs text-gray-500 mt-0.5">五态流水线 + 解析预览三栏（§3.4 PageIndex bbox 联动）</p>
         </div>
         <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setShowPreview(p => !p)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-sm border rounded-lg ${showPreview ? 'border-cyan-300 bg-cyan-50 text-cyan-700' : 'border-gray-300 hover:bg-gray-50 text-gray-700'}`}
+          >
+            <Columns3 size={14} /> 解析预览
+          </button>
           <button
             type="button"
             onClick={() => onNavigate('kb-export', { selectedKBId: kbId })}
@@ -730,7 +743,11 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
               const stage = gov ? PIPELINE_STAGE_LABELS[gov.pipeline_stage] : PIPELINE_STAGE_LABELS.indexed;
               const cert = gov ? CERT_LABELS[gov.certification_status] : CERT_LABELS.draft;
               return (
-                <tr key={doc.doc_id} className={`border-b border-gray-50 hover:bg-gray-50/70 transition-colors ${i % 2 === 0 ? '' : 'bg-gray-50/30'}`}>
+                <tr
+                  key={doc.doc_id}
+                  onClick={() => { setPreviewDocId(doc.doc_id); setShowPreview(true); }}
+                  className={`border-b border-gray-50 hover:bg-gray-50/70 transition-colors cursor-pointer ${previewDocId === doc.doc_id ? 'bg-cyan-50/60' : i % 2 === 0 ? '' : 'bg-gray-50/30'}`}
+                >
                   <td className="px-4 py-3">
                     <input
                       type="checkbox"
@@ -740,13 +757,20 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
                     />
                   </td>
                   <td className="px-4 py-3">
-                    <button
-                      onClick={() => onNavigate('kb-chunks', { selectedKBId: kbId, selectedDocId: doc.doc_id })}
-                      className="flex items-center gap-2 hover:text-blue-700 transition-colors text-left"
-                    >
+                    <div className="flex items-center gap-2">
                       <FileText size={14} className="text-gray-400 flex-shrink-0" />
-                      <span className="text-sm text-gray-800 hover:text-blue-700 font-medium">{doc.original_name}</span>
-                    </button>
+                      <span className="text-sm text-gray-800 font-medium">{doc.original_name}</span>
+                      {getPageIndexDocIdForKbDoc(doc.doc_id) && doc.parse_status === 'parsed' && (
+                        <button
+                          type="button"
+                          onClick={e => { e.stopPropagation(); setPreviewDocId(doc.doc_id); setShowPreview(true); }}
+                          className="p-0.5 text-cyan-600 hover:bg-cyan-50 rounded"
+                          title="解析预览"
+                        >
+                          <Eye size={12} />
+                        </button>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 py-3 hidden sm:table-cell">
                     <span className="px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">{doc.file_type}</span>
@@ -771,10 +795,19 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
                     ) : <span className="text-xs text-gray-400">--</span>}
                   </td>
                   <td className="px-4 py-3 text-xs text-gray-500 hidden xl:table-cell">{formatTime(doc.uploaded_at)}</td>
-                  <td className="px-4 py-3">
-                    <button className="p-1 rounded hover:bg-gray-100 text-gray-400">
-                      <MoreHorizontal size={14} />
-                    </button>
+                  <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => onNavigate('kb-chunks', { selectedKBId: kbId, selectedDocId: doc.doc_id })}
+                        className="text-[10px] px-1.5 py-0.5 border border-gray-200 rounded hover:bg-gray-50 text-gray-600"
+                      >
+                        分块
+                      </button>
+                      <button type="button" className="p-1 rounded hover:bg-gray-100 text-gray-400">
+                        <MoreHorizontal size={14} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               );
@@ -782,6 +815,21 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
           </tbody>
         </table>
       </div>
+    </div>
+
+    {showPreview && previewDoc && canPreview && (
+      <DocumentParsePreviewPanel
+        doc={previewDoc}
+        kbId={kbId}
+        governed={governedMap[previewDoc.doc_id]}
+        onNavigate={onNavigate}
+      />
+    )}
+    {showPreview && previewDoc && !canPreview && (
+      <div className="flex-1 flex items-center justify-center border-t border-gray-200 dark:border-gray-700 text-sm text-gray-500 p-6">
+        选中文档暂不支持解析预览（需已解析且已建树）
+      </div>
+    )}
     </div>
     </KBDetailLayout>
   );

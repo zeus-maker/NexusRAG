@@ -25,6 +25,7 @@ import { HomePage } from './pages/Home';
 import WikiHubPage from './pages/Hub/WikiHubPage';
 import PageIndexHubPage from './pages/Hub/PageIndexHubPage';
 import GraphRAGHubPage from './pages/Hub/GraphRAGHubPage';
+import { PromptTemplatesPage, GrayReleasePage, BackupPage, VectorDbSwitchPage } from './pages/SystemOpsPages';
 
 export default function App() {
   const { state, navigate, login, logout, toggleSidebar, toggleTheme } = useAppState();
@@ -123,6 +124,14 @@ export default function App() {
         return <SecurityPage />;
       case 'sys-models':
         return <ModelsPage />;
+      case 'sys-prompt-templates':
+        return <PromptTemplatesPage />;
+      case 'sys-gray-release':
+        return <GrayReleasePage />;
+      case 'sys-backup':
+        return <BackupPage />;
+      case 'sys-vector-db':
+        return <VectorDbSwitchPage />;
       case 'sys-audit':
         return <AuditLogPage />;
       case 'sys-monitor':

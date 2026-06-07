@@ -1,3 +1,11 @@
+import { mockKBs } from '../mockData';
+import {
+  getGovernanceSummary,
+  getKBHealthFailures,
+  getGlobalPageIndexFailureCount,
+  type FailureStage,
+} from './kbGovernanceMock';
+
 export type ServiceHealth = 'healthy' | 'degraded' | 'down';
 
 export type AlertLevel = 'P0' | 'P1' | 'P2';
@@ -131,68 +139,56 @@ export const PIPELINE_LATENCIES: Record<string, PipelineLatencyRow[]> = {
   ],
 };
 
-export const KB_INDEX_AGGREGATE: KBIndexAggregateRow[] = [
-  {
-    kbId: 'kb-001',
-    kbName: '法务合同知识库',
-    wiki: { done: 12, total: 42, pendingReview: 3 },
-    pageindex: { done: 85, total: 156, failed: 12 },
-    graph: { done: 42, total: 156 },
-    alertCount: 2,
-    alertTags: ['Wiki', 'PI'],
-  },
-  {
-    kbId: 'kb-002',
-    kbName: '财务报告知识库',
-    wiki: { done: 8, total: 20 },
-    pageindex: { done: 60, total: 89 },
-    graph: { done: 30, total: 89 },
-    alertCount: 0,
-    alertTags: [],
-  },
-  {
-    kbId: 'kb-003',
-    kbName: '研发技术文档库',
-    wiki: { done: 18, total: 56, compiling: 5 },
-    pageindex: { done: 120, total: 234 },
-    graph: null,
-    alertCount: 5,
-    alertTags: ['Wiki', 'Graph'],
-  },
-  {
-    kbId: 'kb-004',
-    kbName: '合规政策知识库',
-    wiki: { done: 6, total: 12 },
-    pageindex: { done: 38, total: 45 },
-    graph: { done: 22, total: 45, building: 3 },
-    alertCount: 1,
-    alertTags: ['Graph'],
-  },
-  {
-    kbId: 'kb-005',
-    kbName: '培训材料知识库',
-    wiki: { done: 14, total: 28 },
-    pageindex: { done: 52, total: 78 },
-    graph: { done: 18, total: 78 },
-    alertCount: 0,
-    alertTags: [],
-  },
-  {
-    kbId: 'kb-006',
-    kbName: '产品手册知识库',
-    wiki: { done: 22, total: 35, compiling: 2 },
-    pageindex: { done: 95, total: 112, failed: 3 },
-    graph: { done: 48, total: 112 },
-    alertCount: 1,
-    alertTags: ['PI'],
-  },
+const KB_INDEX_BASE: Omit<KBIndexAggregateRow, 'kbId' | 'kbName'>[] = [
+  { wiki: { done: 12, total: 42 }, pageindex: { done: 85, total: 156 }, graph: { done: 42, total: 156 }, alertCount: 0, alertTags: [] },
+  { wiki: { done: 8, total: 20 }, pageindex: { done: 60, total: 89 }, graph: { done: 30, total: 89 }, alertCount: 0, alertTags: [] },
+  { wiki: { done: 18, total: 56, compiling: 5 }, pageindex: { done: 120, total: 234 }, graph: null, alertCount: 0, alertTags: [] },
+  { wiki: { done: 6, total: 12 }, pageindex: { done: 38, total: 45 }, graph: { done: 22, total: 45, building: 3 }, alertCount: 0, alertTags: [] },
+  { wiki: { done: 14, total: 28 }, pageindex: { done: 52, total: 78 }, graph: { done: 18, total: 78 }, alertCount: 0, alertTags: [] },
+  { wiki: { done: 22, total: 35, compiling: 2 }, pageindex: { done: 95, total: 112 }, graph: { done: 48, total: 112 }, alertCount: 0, alertTags: [] },
 ];
 
+function failureTags(failures: ReturnType<typeof getKBHealthFailures>): string[] {
+  const tags: string[] = [];
+  if (failures.some(f => f.stage === 'wiki' || f.stage === 'stale')) tags.push('Wiki');
+  if (failures.some(f => f.stage === 'pageindex')) tags.push('PI');
+  if (failures.some(f => f.stage === 'graph')) tags.push('Graph');
+  return tags;
+}
+
+function enrichKBIndexRow(kbId: string, kbName: string, base: Omit<KBIndexAggregateRow, 'kbId' | 'kbName'>): KBIndexAggregateRow {
+  const failures = getKBHealthFailures(kbId);
+  const gov = getGovernanceSummary(kbId);
+  const piFailed = failures.filter(f => f.stage === 'pageindex').length;
+  const graphBuilding = failures.filter(f => f.stage === 'graph').length;
+  return {
+    kbId,
+    kbName,
+    wiki: {
+      ...base.wiki,
+      pendingReview: gov.pending_certification > 0 ? gov.pending_certification : base.wiki.pendingReview,
+    },
+    pageindex: {
+      ...base.pageindex,
+      failed: piFailed > 0 ? piFailed : base.pageindex.failed,
+    },
+    graph: base.graph
+      ? { ...base.graph, building: graphBuilding > 0 ? graphBuilding : base.graph.building }
+      : null,
+    alertCount: failures.length,
+    alertTags: failureTags(failures),
+  };
+}
+
+export const KB_INDEX_AGGREGATE: KBIndexAggregateRow[] = mockKBs.map((kb, i) =>
+  enrichKBIndexRow(kb.kb_id, kb.name, KB_INDEX_BASE[i] ?? KB_INDEX_BASE[0]),
+);
+
 export const INDEX_SUMMARY = {
-  wikiCompiling: 12,
-  wikiPendingReview: 5,
-  pageindexFailed: 8,
-  graphBuilding: 3,
+  wikiCompiling: KB_INDEX_AGGREGATE.reduce((s, r) => s + (r.wiki.compiling ?? 0), 0),
+  wikiPendingReview: mockKBs.reduce((s, kb) => s + getGovernanceSummary(kb.kb_id).pending_certification, 0),
+  pageindexFailed: getGlobalPageIndexFailureCount(),
+  graphBuilding: KB_INDEX_AGGREGATE.reduce((s, r) => s + (r.graph?.building ?? 0), 0),
   lastUpdated: '10:30',
 };
 
@@ -324,13 +320,45 @@ export const COST_BY_KB: CostByKB[] = [
   { kbId: 'kb-004', kbName: '合规政策知识库', tokens: '3.4M', cost: 39, queries: 1900 },
 ];
 
-export const INDEX_ALERT_DETAILS: IndexAlertDetail[] = [
-  { kbId: 'kb-001', type: 'wiki_pending', title: 'Wiki 待审核', count: 3, deepLinkPage: 'wiki-hub', deepLinkLabel: 'Wiki 编译队列' },
-  { kbId: 'kb-001', type: 'pi_failed', title: 'PageIndex 建树失败', count: 12, deepLinkPage: 'pageindex-hub', deepLinkLabel: '失败文档列表' },
-  { kbId: 'kb-003', type: 'wiki_failed', title: 'Wiki 编译失败', count: 2, deepLinkPage: 'wiki-hub', deepLinkLabel: '失败条目' },
-  { kbId: 'kb-003', type: 'graph_building', title: '图谱构建积压', count: 5, deepLinkPage: 'graphrag-hub', deepLinkLabel: '建索引队列' },
-  { kbId: 'kb-004', type: 'graph_building', title: '图谱构建中', count: 3, deepLinkPage: 'graphrag-hub', deepLinkLabel: '构建进度' },
-];
+const ALERT_META: Record<string, { type: IndexAlertDetail['type']; title: string; deepLinkPage: string; deepLinkLabel: string }> = {
+  stale: { type: 'wiki_pending', title: '待认证 / 陈旧', deepLinkPage: 'kb-governance-stale', deepLinkLabel: '陈旧队列' },
+  wiki: { type: 'wiki_failed', title: 'Wiki 编译失败', deepLinkPage: 'wiki-hub', deepLinkLabel: '失败条目' },
+  pageindex: { type: 'pi_failed', title: 'PageIndex 建树失败', deepLinkPage: 'pageindex-hub', deepLinkLabel: '失败文档列表' },
+  graph: { type: 'graph_building', title: '图谱构建积压', deepLinkPage: 'graphrag-hub', deepLinkLabel: '建索引队列' },
+  vector: { type: 'pi_failed', title: '向量索引失败', deepLinkPage: 'kb-index-status', deepLinkLabel: '索引状态' },
+  parse: { type: 'pi_failed', title: '解析失败', deepLinkPage: 'kb-documents', deepLinkLabel: '文档管理' },
+  acl: { type: 'wiki_pending', title: 'ACL 异常', deepLinkPage: 'kb-permissions', deepLinkLabel: '权限管理' },
+};
+
+function buildIndexAlertDetails(): IndexAlertDetail[] {
+  const grouped = new Map<string, { kbId: string; stage: FailureStage; count: number; deepLinkPage: string }>();
+  for (const kb of mockKBs) {
+    for (const f of getKBHealthFailures(kb.kb_id)) {
+      const key = `${kb.kb_id}:${f.stage}`;
+      const existing = grouped.get(key);
+      if (existing) existing.count += 1;
+      else grouped.set(key, { kbId: kb.kb_id, stage: f.stage, count: 1, deepLinkPage: f.deep_link_page });
+    }
+    const gov = getGovernanceSummary(kb.kb_id);
+    if (gov.pending_certification > 0) {
+      const key = `${kb.kb_id}:pending_cert`;
+      grouped.set(key, { kbId: kb.kb_id, stage: 'stale', count: gov.pending_certification, deepLinkPage: 'kb-governance-stale' });
+    }
+  }
+  return [...grouped.values()].map(g => {
+    const meta = ALERT_META[g.stage] ?? ALERT_META.pageindex;
+    return {
+      kbId: g.kbId,
+      type: meta.type,
+      title: meta.title,
+      count: g.count,
+      deepLinkPage: g.deepLinkPage || meta.deepLinkPage,
+      deepLinkLabel: meta.deepLinkLabel,
+    };
+  });
+}
+
+export const INDEX_ALERT_DETAILS: IndexAlertDetail[] = buildIndexAlertDetails();
 
 export const ALERT_METRIC_OPTIONS = [
   'Faithfulness 下降',

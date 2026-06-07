@@ -714,3 +714,42 @@ P0 最后一项：检索测试页需从单通道混合结果升级为 PRD §10.5
 - `rag3-bolt-v1.5/src/pages/RetrievalTestPage.tsx` — ✅/❌ 标注展示
 - `rag3-bolt-v1.5/src/store.ts` / `App.tsx` / `Layout.tsx` / `KBSubNav.tsx` — 路由与导航
 - `docs/prd/前端原型实现进度.md` — US-1.13–1.16 标 🟢
+
+---
+
+## 25. 解析预览三栏 + 治理监控同源 + 系统管理 §6.5–6.8
+
+### 背景与目标
+
+接续 §24 治理原型，补齐三项 P1：文档页接入 PageIndex bbox 三栏预览（§3.4）；监控 RAG3 Tab 与 `kbGovernanceMock` 同源，消除 PI 失败数多处不一致；系统管理落地 Prompt/灰度/备份/向量库四子页（§6.5–6.8）。
+
+**用户可见变化**：文档管理页可选中文档后展示树结构 + 元数据 + PDF bbox 预览；侧栏/首页 PI 失败 Badge 与监控 RAG3 Tab 同源；系统管理侧栏新增四入口并可交互。
+
+### 改动摘要
+
+- `PageIndexPreviewParts.tsx` + `DocumentParsePreviewPanel.tsx`：抽取 bbox/树组件；`KB_DOC_TO_PAGEINDEX` 映射；`DocumentPage` 行选中 +「解析预览」开关。
+- `kbGovernanceMock.ts`：`FAILURES_BY_KB` 分库失败；`getGlobalPageIndexFailureCount()`；`pageIndexMock.PAGEINDEX_GLOBAL_FAILED_COUNT` 改派生。
+- `monitorMock.ts`：`KB_INDEX_AGGREGATE` / `INDEX_SUMMARY` / `INDEX_ALERT_DETAILS` 由治理函数动态构建。
+- `SystemOpsPages.tsx` + `systemOpsMock.ts`：Prompt 模板编辑、灰度流量滑块、备份恢复向导、向量库四步切换。
+- 路由：`sys-prompt-templates` / `sys-gray-release` / `sys-backup` / `sys-vector-db`。
+
+### 验证与风险
+
+- 验证：`npm run build` 通过。
+- 手动：文档页选中 doc-001 见三栏；监控 RAG3 Tab PI 失败 = 3（与侧栏 Badge 一致）；系统管理四页侧栏可达。
+- 风险：`PageIndexHubPage` 仍保留内联预览组件未完全去重；灰度页与 `PipelineConfigPage` 内嵌灰度 mock 职责并存。
+
+### 反思与沉淀
+
+- 治理失败按 `kb_id` 分桶后，Monitor 抽屉「定位」与 KB 索引状态页可共用 `deep_link_page`，运营路径一致。
+- 文档预览通过 `doc_id → pageIndex id` 映射解耦两套 mock，后续 API 可返回 `page_index_doc_id` 字段替换。
+
+### 涉及文件
+
+- `rag3-bolt-v1.5/src/components/pageIndex/PageIndexPreviewParts.tsx`
+- `rag3-bolt-v1.5/src/components/kb/DocumentParsePreviewPanel.tsx`
+- `rag3-bolt-v1.5/src/pages/KnowledgeBase.tsx` — DocumentPage 三栏
+- `rag3-bolt-v1.5/src/data/pageIndexMock.ts` / `kbGovernanceMock.ts` / `monitorMock.ts`
+- `rag3-bolt-v1.5/src/pages/SystemOpsPages.tsx` / `data/systemOpsMock.ts`
+- `rag3-bolt-v1.5/src/store.ts` / `App.tsx` / `Layout.tsx`
+- `docs/prd/前端原型实现进度.md`

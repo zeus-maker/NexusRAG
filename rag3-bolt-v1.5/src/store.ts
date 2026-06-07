@@ -44,6 +44,10 @@ type Page =
   | 'sys-monitor'
   | 'sys-security'
   | 'sys-models'
+  | 'sys-prompt-templates'
+  | 'sys-gray-release'
+  | 'sys-backup'
+  | 'sys-vector-db'
   | 'sys-api'
   | 'sys-traces'
   | 'login';

@@ -1,3 +1,5 @@
+import { getGlobalPageIndexFailureCount } from './kbGovernanceMock';
+
 export type PageIndexDocStatus = 'completed' | 'building' | 'pending' | 'failed' | 'skipped';
 export type PageIndexNodeType = 'root' | 'part' | 'chapter' | 'section' | 'subsection' | 'leaf';
 export type PageIndexSearchMode = 'llm_prompt' | 'mcts_hybrid';
@@ -115,8 +117,20 @@ export const PAGEINDEX_STATS = {
   ],
 };
 
-/** 跨库运营 Widget / 侧栏 Badge 统一失败数（首页 §10.2） */
-export const PAGEINDEX_GLOBAL_FAILED_COUNT = 8;
+/** KB 文档 doc_id → PageIndex 文档 id（§3.4 解析预览三栏） */
+export const KB_DOC_TO_PAGEINDEX: Record<string, string> = {
+  'doc-001': '1',
+  'doc-002': '6',
+  'doc-003': '2',
+  'doc-005': '3',
+};
+
+export function getPageIndexDocIdForKbDoc(docId: string): string | undefined {
+  return KB_DOC_TO_PAGEINDEX[docId];
+}
+
+/** 跨库运营 Widget / 侧栏 Badge — 与 kbGovernanceMock 同源 */
+export const PAGEINDEX_GLOBAL_FAILED_COUNT = getGlobalPageIndexFailureCount();
 
 export const PAGEINDEX_DOCUMENTS: PageIndexDocument[] = [
   {

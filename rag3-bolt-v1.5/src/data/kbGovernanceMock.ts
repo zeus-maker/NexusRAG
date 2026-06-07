@@ -1,4 +1,4 @@
-import { mockDocuments, mockIndexStatuses } from '../mockData';
+import { mockDocuments, mockIndexStatuses, mockKBs } from '../mockData';
 
 export type PipelineStage = 'uploading' | 'parsing' | 'chunking' | 'indexing' | 'indexed' | 'failed';
 export type FreshnessTier = 'realtime' | 'daily' | 'weekly' | 'monthly';
@@ -146,14 +146,50 @@ export function getGovernedDocuments(kbId: string): GovernedDocument[] {
     });
 }
 
+const FAILURES_BY_KB: Record<string, KBHealthFailure[]> = {
+  'kb-001': [
+    { doc_id: 'doc-004', doc_name: '财务数据Q2.xlsx', stage: 'parse', reason: '表格解析失败', deep_link_page: 'kb-documents', deep_link_extra: { selectedKBId: 'kb-001' } },
+    { doc_id: 'doc-002', doc_name: '2024合规审查报告.pdf', stage: 'stale', reason: '超期 90 天未认证', deep_link_page: 'kb-governance-stale', deep_link_extra: { selectedKBId: 'kb-001' } },
+    { doc_id: 'doc-x1', doc_name: '复杂表格报告.pdf', stage: 'vector', reason: '嵌入请求超时', deep_link_page: 'kb-index-status', deep_link_extra: { selectedKBId: 'kb-001' } },
+    { doc_id: 'doc-x2', doc_name: '扫描件合同.pdf', stage: 'pageindex', reason: 'LLM 建树超时', deep_link_page: 'pageindex-hub', deep_link_extra: { selectedKBId: 'kb-001' } },
+    { doc_id: 'doc-x3', doc_name: '外部同步合同.pdf', stage: 'acl', reason: '源角色映射冲突', deep_link_page: 'kb-permissions', deep_link_extra: { selectedKBId: 'kb-001' } },
+  ],
+  'kb-003': [
+    { doc_id: 'doc-w1', doc_name: '架构设计 V2.md', stage: 'wiki', reason: 'Wiki 编译失败', deep_link_page: 'wiki-hub', deep_link_extra: { selectedKBId: 'kb-003' } },
+    { doc_id: 'doc-w2', doc_name: 'API 规范.md', stage: 'wiki', reason: '实体冲突未解决', deep_link_page: 'wiki-hub', deep_link_extra: { selectedKBId: 'kb-003' } },
+    { doc_id: 'doc-g1', doc_name: '微服务图谱', stage: 'graph', reason: '实体抽取积压', deep_link_page: 'graphrag-hub', deep_link_extra: { selectedKBId: 'kb-003' } },
+  ],
+  'kb-004': [
+    { doc_id: 'doc-g2', doc_name: '合规实体子图', stage: 'graph', reason: '图谱构建中', deep_link_page: 'graphrag-hub', deep_link_extra: { selectedKBId: 'kb-004' } },
+  ],
+  'kb-006': [
+    { doc_id: 'doc-p1', doc_name: '产品手册 Ch.3.pdf', stage: 'pageindex', reason: '目录识别失败', deep_link_page: 'pageindex-hub', deep_link_extra: { selectedKBId: 'kb-006' } },
+    { doc_id: 'doc-p2', doc_name: 'FAQ 合集.pdf', stage: 'pageindex', reason: 'LLM 建树超时', deep_link_page: 'pageindex-hub', deep_link_extra: { selectedKBId: 'kb-006' } },
+  ],
+};
+
 export function getKBHealthFailures(kbId: string): KBHealthFailure[] {
-  return [
-    { doc_id: 'doc-004', doc_name: '财务数据Q2.xlsx', stage: 'parse', reason: '表格解析失败', deep_link_page: 'kb-documents', deep_link_extra: { selectedKBId: kbId } },
-    { doc_id: 'doc-002', doc_name: '2024合规审查报告.pdf', stage: 'stale', reason: '超期 90 天未认证', deep_link_page: 'kb-governance-stale', deep_link_extra: { selectedKBId: kbId } },
-    { doc_id: 'doc-x1', doc_name: '复杂表格报告.pdf', stage: 'vector', reason: '嵌入请求超时', deep_link_page: 'kb-index-status', deep_link_extra: { selectedKBId: kbId } },
-    { doc_id: 'doc-x2', doc_name: '扫描件合同.pdf', stage: 'pageindex', reason: 'LLM 建树超时', deep_link_page: 'pageindex-hub', deep_link_extra: { selectedKBId: kbId } },
-    { doc_id: 'doc-x3', doc_name: '外部同步合同.pdf', stage: 'acl', reason: '源角色映射冲突', deep_link_page: 'kb-permissions', deep_link_extra: { selectedKBId: kbId } },
-  ];
+  return (FAILURES_BY_KB[kbId] ?? []).map(f => ({
+    ...f,
+    deep_link_extra: { ...f.deep_link_extra, selectedKBId: kbId },
+  }));
+}
+
+export function getGlobalFailureCountByStage(stage: FailureStage): number {
+  return mockKBs.reduce(
+    (sum, kb) => sum + getKBHealthFailures(kb.kb_id).filter(f => f.stage === stage).length,
+    0,
+  );
+}
+
+export function getGlobalPageIndexFailureCount(): number {
+  return getGlobalFailureCountByStage('pageindex');
+}
+
+export function getAllKBHealthFailures(): Array<KBHealthFailure & { kb_id: string }> {
+  return mockKBs.flatMap(kb =>
+    getKBHealthFailures(kb.kb_id).map(f => ({ ...f, kb_id: kb.kb_id })),
+  );
 }
 
 export function getStaleDocuments(_kbId: string): StaleDocument[] {
