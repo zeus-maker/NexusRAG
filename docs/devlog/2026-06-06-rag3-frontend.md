@@ -96,3 +96,38 @@
 - `.cursor/rules/devlog.mdc` — 始终应用的 Devlog 规则
 - `.cursor/skills/devlog/SKILL.md` — Agent 执行技能与模板
 - `docs/devlog/2026-06-06-rag3-frontend.md` — 本日 Devlog
+
+---
+
+## 4. 知识库管理列表页功能增强与回收站
+
+### 背景与目标
+
+原知识库列表页仅有基础卡片网格与简单筛选，缺少 PRD §3.1 要求的排序、视图切换、分页与回收站入口；卡片菜单项少且删除无确认。目标是对齐 RAGFlow Dataset 列表交互，并落地 §3.7 回收站原型页。
+
+**用户可见变化**：列表页顶栏增加「回收站」；工具栏支持排序（更新/名称/文档/Chunk）、升降序、网格/表格视图切换与分页；卡片展示分块策略、嵌入模型、索引进度条与文档/检索/索引快捷入口；⋮ 菜单扩展检索测试、导出、归档等；删除走二次确认并提示移入回收站；创建对话框增加 Reranker 与可见性，创建后跳转详情；新增回收站页支持筛选、批量恢复/清空。
+
+### 改动摘要
+
+- `KBListPage`：客户端 `useMemo` 过滤 + `sortKBs`；`PAGE_SIZE=8` 分页；`viewMode` grid/table；表格列含状态、文档、Chunk、嵌入模型、更新时间。
+- 卡片 `KBCard` 子组件：索引中状态显示进度条；底部三快捷按钮直达 `kb-documents` / `kb-retrieval-test` / `kb-index-status`。
+- 删除 `Modal` 文案说明 30 天回收站策略；Toast 反馈重建/归档/删除等原型操作。
+- 新增 `KBRecycleBinPage` + 路由 `kb-recycle-bin`（`store` / `App` / `Layout` 面包屑）；mock 三条回收记录，支持类型筛选、多选、恢复与永久删除。
+- 创建表单补全 Reranker、可见性单选；`handleCreate` 关闭弹窗并 `onNavigate('kb-detail')`。
+
+### 验证与风险
+
+- 验证：`cd rag3-bolt-v1.5 && npm run build` 通过；路径：侧栏「知识库管理」→ 切换表格视图、排序、分页；点击「回收站」→ 恢复/筛选；卡片快捷「检索」→ `kb-retrieval-test`；删除确认 → Toast。
+- 风险：列表/回收站数据均为 mock，未接 API；创建知识库固定跳转 `kb-001` 演示；工作区存在 v1.2/v1.3 目录迁移删除未纳入本次 commit。
+
+### 反思与沉淀
+
+- 表格视图与网格共用 `openMenu` state，在表格行打开菜单时网格卡片菜单也会联动关闭/打开，原型可接受；若完善需按 `kb_id` 独立或 Portal 菜单。
+- 回收站与列表删除未共享 state，删除 Toast 后回收站列表不会自动增加条目，接 API 时需统一 `recycle-bin` invalidate。
+
+### 涉及文件
+
+- `rag3-bolt-v1.5/src/pages/KnowledgeBase.tsx` — 列表增强 + `KBRecycleBinPage`
+- `rag3-bolt-v1.5/src/store.ts` — `kb-recycle-bin` 路由
+- `rag3-bolt-v1.5/src/App.tsx` — 回收站页面注册
+- `rag3-bolt-v1.5/src/components/Layout.tsx` — KB 页分组与面包屑

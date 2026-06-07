@@ -43,7 +43,7 @@ const SYSTEM_PAGES = [
 ];
 const HUB_PAGES = ['wiki-hub', 'pageindex-hub', 'graphrag-hub'];
 const KB_PAGES = [
-  'kb-list', 'kb-detail', 'kb-documents', 'kb-chunks', 'kb-index-status', 'kb-settings',
+  'kb-list', 'kb-recycle-bin', 'kb-detail', 'kb-documents', 'kb-chunks', 'kb-index-status', 'kb-settings',
   'kb-retrieval-test', 'kb-wiki', 'kb-pageindex-tree', 'kb-wiki-manage', 'kb-pageindex-manage',
   ...HUB_PAGES,
 ];
@@ -182,6 +182,7 @@ export function Sidebar({ collapsed, currentPage, onNavigate }: SidebarProps) {
 const breadcrumbMap: Record<string, string[]> = {
   'home': ['工作台'],
   'kb-list': ['知识库管理'],
+  'kb-recycle-bin': ['知识库管理', '回收站'],
   'kb-detail': ['知识库管理', '知识库详情'],
   'kb-documents': ['知识库管理', '文档管理'],
   'kb-chunks': ['知识库管理', '分块预览'],

@@ -1,7 +1,7 @@
 import { useAppState } from './store';
 import { Sidebar, TopBar, StatusBar } from './components/Layout';
 import { LoginPage } from './pages/Login';
-import { KBListPage, KBDetailPage, DocumentPage, ChunkPreviewPage, IndexStatusPage } from './pages/KnowledgeBase';
+import { KBListPage, KBRecycleBinPage, KBDetailPage, DocumentPage, ChunkPreviewPage, IndexStatusPage } from './pages/KnowledgeBase';
 import { KBSettingsPage, RetrievalTestPage, WikiPage, PageIndexTreePage, WikiManagePage, PageIndexManagePage } from './pages/KBExtra';
 import { ChatPage } from './pages/Chat';
 import { SearchPage, AgentPage } from './pages/SearchAgent';
@@ -27,6 +27,8 @@ export default function App() {
         return <HomePage onNavigate={navigate} currentUser={state.currentUser} />;
       case 'kb-list':
         return <KBListPage onNavigate={navigate} />;
+      case 'kb-recycle-bin':
+        return <KBRecycleBinPage onNavigate={navigate} />;
       case 'kb-detail':
         return <KBDetailPage kbId={state.selectedKBId || 'kb-001'} onNavigate={navigate} />;
       case 'kb-documents':

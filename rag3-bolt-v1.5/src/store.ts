@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 type Page =
   | 'home'
   | 'kb-list'
+  | 'kb-recycle-bin'
   | 'kb-detail'
   | 'kb-documents'
   | 'kb-chunks'

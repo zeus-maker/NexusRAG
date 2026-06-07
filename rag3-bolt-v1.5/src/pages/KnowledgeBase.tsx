@@ -1,11 +1,14 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   Plus, Search, MoreHorizontal, Database, FileText,
   Cpu, Clock, TrendingUp, ArrowRight, RefreshCw, Trash2,
   CheckCircle, AlertCircle, Loader, BookOpen, Network,
-  ChevronRight, GitBranch, Edit
+  ChevronRight, GitBranch, Edit, LayoutGrid, List,
+  FlaskConical, Activity, Archive, Copy, Download,
+  ChevronLeft, RotateCcw, AlertCircle as AlertIcon
 } from 'lucide-react';
 import { mockKBs, mockDocuments, mockChunks, mockIndexStatuses } from '../mockData';
+import type { KnowledgeBase } from '../types';
 
 const statusConfig = {
   active: { label: '活跃', color: 'bg-green-100 text-green-700', dot: 'bg-green-500' },
@@ -28,6 +31,28 @@ function formatTime(iso: string) {
   return Math.floor(diff / 86400000) + ' 天前';
 }
 
+const PAGE_SIZE = 8;
+const SORT_OPTIONS = [
+  { v: 'updated', l: '最近更新' },
+  { v: 'name', l: '名称' },
+  { v: 'docs', l: '文档数' },
+  { v: 'chunks', l: 'Chunk 数' },
+] as const;
+
+type SortKey = typeof SORT_OPTIONS[number]['v'];
+
+function sortKBs(list: KnowledgeBase[], sortBy: SortKey, desc: boolean) {
+  const sorted = [...list].sort((a, b) => {
+    let cmp = 0;
+    if (sortBy === 'updated') cmp = new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+    else if (sortBy === 'name') cmp = a.name.localeCompare(b.name, 'zh-CN');
+    else if (sortBy === 'docs') cmp = b.doc_count - a.doc_count;
+    else if (sortBy === 'chunks') cmp = b.chunk_count - a.chunk_count;
+    return desc ? cmp : -cmp;
+  });
+  return sorted;
+}
+
 interface KBListPageProps {
   onNavigate: (page: string, extra?: any) => void;
 }
@@ -35,240 +60,504 @@ interface KBListPageProps {
 export function KBListPage({ onNavigate }: KBListPageProps) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [sortBy, setSortBy] = useState<SortKey>('updated');
+  const [sortDesc, setSortDesc] = useState(true);
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
+  const [page, setPage] = useState(1);
   const [showCreate, setShowCreate] = useState(false);
   const [createName, setCreateName] = useState('');
   const [createDesc, setCreateDesc] = useState('');
   const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<KnowledgeBase | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
-  const filtered = mockKBs.filter(kb => {
-    const matchSearch = kb.name.includes(search) || kb.description.includes(search);
-    const matchStatus = statusFilter === 'all' || kb.status === statusFilter;
-    return matchSearch && matchStatus;
-  });
+  const filtered = useMemo(() => {
+    const list = mockKBs.filter(kb => {
+      const q = search.trim().toLowerCase();
+      const matchSearch = !q || kb.name.toLowerCase().includes(q) || kb.description.toLowerCase().includes(q);
+      const matchStatus = statusFilter === 'all' || kb.status === statusFilter;
+      return matchSearch && matchStatus;
+    });
+    return sortKBs(list, sortBy, sortDesc);
+  }, [search, statusFilter, sortBy, sortDesc]);
 
-  return (
-    <div className="p-6 flex flex-col gap-5 h-full overflow-y-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900">知识库管理</h1>
-          <p className="text-sm text-gray-500 mt-0.5">管理您的企业知识库，上传文档、配置索引策略</p>
-        </div>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors shadow-sm"
-        >
-          <Plus size={16} />
-          创建知识库
-        </button>
-      </div>
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-      {/* Stats row */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {[
-          { label: '知识库总数', value: mockKBs.length, icon: <Database size={16} className="text-blue-500" />, bg: 'bg-blue-50' },
-          { label: '文档总数', value: mockKBs.reduce((s, k) => s + k.doc_count, 0).toLocaleString(), icon: <FileText size={16} className="text-purple-500" />, bg: 'bg-purple-50' },
-          { label: 'Chunk 总数', value: mockKBs.reduce((s, k) => s + k.chunk_count, 0).toLocaleString(), icon: <Cpu size={16} className="text-orange-500" />, bg: 'bg-orange-50' },
-          { label: '存储总量', value: formatBytes(mockKBs.reduce((s, k) => s + k.total_size_bytes, 0)), icon: <TrendingUp size={16} className="text-green-500" />, bg: 'bg-green-50' },
-        ].map((s, i) => (
-          <div key={i} className="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-3">
-            <div className={`${s.bg} p-2 rounded-lg`}>{s.icon}</div>
-            <div>
-              <div className="text-lg font-bold text-gray-900">{s.value}</div>
-              <div className="text-xs text-gray-500">{s.label}</div>
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 2500);
+  };
+
+  const kbMenuActions = (kb: KnowledgeBase) => [
+    { icon: <Edit size={13} />, label: '编辑设置', action: () => onNavigate('kb-settings', { selectedKBId: kb.kb_id }) },
+    { icon: <FileText size={13} />, label: '查看文档', action: () => onNavigate('kb-documents', { selectedKBId: kb.kb_id }) },
+    { icon: <FlaskConical size={13} />, label: '检索测试', action: () => onNavigate('kb-retrieval-test', { selectedKBId: kb.kb_id }) },
+    { icon: <Activity size={13} />, label: '索引状态', action: () => onNavigate('kb-index-status', { selectedKBId: kb.kb_id }) },
+    { icon: <RefreshCw size={13} />, label: '重建索引', action: () => showToast(`已提交「${kb.name}」全量重建`) },
+    { icon: <Download size={13} />, label: '导出', action: () => showToast('导出任务已创建，可在详情页查看') },
+    { icon: <Copy size={13} />, label: '复制配置', action: () => showToast('配置已复制到剪贴板（原型）') },
+    { icon: <Archive size={13} />, label: '归档', action: () => showToast(`「${kb.name}」已标记归档`) },
+    { icon: <Trash2 size={13} />, label: '删除', action: () => setDeleteTarget(kb), danger: true },
+  ];
+
+  const handleCreate = () => {
+    if (!createName.trim()) return;
+    setShowCreate(false);
+    setCreateName('');
+    setCreateDesc('');
+    onNavigate('kb-detail', { selectedKBId: 'kb-001' });
+    showToast(`知识库「${createName}」创建成功，已进入详情`);
+  };
+
+  const KBCard = ({ kb }: { kb: KnowledgeBase }) => {
+    const sc = statusConfig[kb.status];
+    const indexPct = kb.status === 'indexing' ? 68 : 100;
+    return (
+      <div
+        className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-4 hover:border-blue-300 hover:shadow-md dark:hover:border-blue-700 cursor-pointer transition-all group relative flex flex-col"
+        onClick={() => onNavigate('kb-detail', { selectedKBId: kb.kb_id })}
+      >
+        <div className="flex items-start justify-between mb-2">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="text-2xl flex-shrink-0">{kb.icon}</div>
+            <div className="min-w-0">
+              <h3 className="font-semibold text-gray-900 dark:text-gray-100 text-sm leading-tight group-hover:text-blue-700 truncate">{kb.name}</h3>
+              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium mt-1 ${sc.color}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${sc.dot}`} />{sc.label}
+              </span>
             </div>
           </div>
-        ))}
+          <div className="relative flex-shrink-0" onClick={e => e.stopPropagation()}>
+            <button type="button" onClick={() => setOpenMenu(openMenu === kb.kb_id ? null : kb.kb_id)} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400">
+              <MoreHorizontal size={14} />
+            </button>
+            {openMenu === kb.kb_id && (
+              <div className="absolute right-0 top-6 w-40 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl z-30 overflow-hidden">
+                {kbMenuActions(kb).map((m, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => { m.action(); setOpenMenu(null); }}
+                    className={`w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors ${(m as { danger?: boolean }).danger ? 'text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+                  >
+                    {m.icon}{m.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <p className="text-xs text-gray-500 dark:text-gray-400 mb-2 line-clamp-2 leading-relaxed flex-1">{kb.description}</p>
+
+        <div className="flex flex-wrap gap-1 mb-2">
+          <span className="text-[9px] px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded">{kb.chunk_strategy}</span>
+          <span className="text-[9px] px-1.5 py-0.5 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded truncate max-w-[120px]">{kb.embedding_model}</span>
+        </div>
+
+        <div className="grid grid-cols-3 gap-1.5 mb-2">
+          {[
+            { v: kb.doc_count, l: '文档' },
+            { v: (kb.chunk_count / 1000).toFixed(1) + 'k', l: 'Chunk' },
+            { v: formatBytes(kb.total_size_bytes), l: '存储' },
+          ].map((s, i) => (
+            <div key={i} className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-1.5 text-center">
+              <div className="text-xs font-bold text-gray-900 dark:text-gray-100">{s.v}</div>
+              <div className="text-[9px] text-gray-500">{s.l}</div>
+            </div>
+          ))}
+        </div>
+
+        {kb.status === 'indexing' && (
+          <div className="mb-2">
+            <div className="flex justify-between text-[9px] text-gray-500 mb-0.5">
+              <span>索引进度</span><span>{indexPct}%</span>
+            </div>
+            <div className="h-1 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+              <div className="h-full bg-blue-500 rounded-full animate-pulse" style={{ width: `${indexPct}%` }} />
+            </div>
+          </div>
+        )}
+
+        <div className="flex items-center gap-1 pt-2 border-t border-gray-100 dark:border-gray-700" onClick={e => e.stopPropagation()}>
+          {[
+            { icon: FileText, label: '文档', page: 'kb-documents' },
+            { icon: FlaskConical, label: '检索', page: 'kb-retrieval-test' },
+            { icon: Activity, label: '索引', page: 'kb-index-status' },
+          ].map(link => {
+            const Icon = link.icon;
+            return (
+              <button
+                key={link.page}
+                type="button"
+                onClick={() => onNavigate(link.page, { selectedKBId: kb.kb_id })}
+                className="flex-1 flex items-center justify-center gap-1 py-1 text-[10px] text-gray-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"
+              >
+                <Icon size={10} />{link.label}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex items-center justify-between text-[10px] text-gray-400 mt-1.5">
+          <span>{kb.language}</span>
+          <div className="flex items-center gap-1">
+            <Clock size={10} /><span>更新 {formatTime(kb.updated_at)}</span>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="p-6 flex flex-col gap-5 h-full overflow-y-auto bg-gray-50/30 dark:bg-gray-950">
+      {toast && (
+        <div className="fixed top-16 right-6 z-50 px-4 py-2.5 bg-gray-900 text-white text-sm rounded-lg shadow-lg animate-fade-in">
+          {toast}
+        </div>
+      )}
+
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">知识库管理</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">管理企业知识库，配置解析分块与 RAG 3.0 增强索引</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onNavigate('kb-recycle-bin')}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300"
+          >
+            <Trash2 size={14} /> 回收站
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowCreate(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 shadow-sm"
+          >
+            <Plus size={16} /> 创建知识库
+          </button>
+        </div>
       </div>
 
-      {/* Filters */}
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label: '知识库总数', value: mockKBs.length, sub: `${mockKBs.filter(k => k.status === 'active').length} 活跃`, icon: Database, color: 'text-blue-500', bg: 'bg-blue-50 dark:bg-blue-900/20' },
+          { label: '文档总数', value: mockKBs.reduce((s, k) => s + k.doc_count, 0).toLocaleString(), sub: '全库合计', icon: FileText, color: 'text-purple-500', bg: 'bg-purple-50 dark:bg-purple-900/20' },
+          { label: 'Chunk 总数', value: (mockKBs.reduce((s, k) => s + k.chunk_count, 0) / 1000).toFixed(1) + 'k', sub: '已向量化', icon: Cpu, color: 'text-orange-500', bg: 'bg-orange-50 dark:bg-orange-900/20' },
+          { label: '存储总量', value: formatBytes(mockKBs.reduce((s, k) => s + k.total_size_bytes, 0)), sub: '含原始文件', icon: TrendingUp, color: 'text-green-500', bg: 'bg-green-50 dark:bg-green-900/20' },
+        ].map((s, i) => {
+          const Icon = s.icon;
+          return (
+            <div key={i} className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-4 flex items-center gap-3">
+              <div className={`${s.bg} p-2 rounded-lg`}><Icon size={16} className={s.color} /></div>
+              <div>
+                <div className="text-lg font-bold text-gray-900 dark:text-gray-100">{s.value}</div>
+                <div className="text-xs text-gray-600 dark:text-gray-400">{s.label}</div>
+                <div className="text-[10px] text-gray-400">{s.sub}</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="flex items-center gap-3 flex-wrap bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-3">
         <div className="relative flex-1 min-w-48">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={e => { setSearch(e.target.value); setPage(1); }}
             placeholder="搜索知识库名称或描述..."
-            className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+            className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-800 dark:text-gray-100"
           />
         </div>
-        <div className="flex gap-1.5">
+        <div className="flex gap-1.5 flex-wrap">
           {[{ v: 'all', l: '全部' }, { v: 'active', l: '活跃' }, { v: 'indexing', l: '索引中' }, { v: 'archived', l: '已归档' }].map(f => (
             <button
               key={f.v}
-              onClick={() => setStatusFilter(f.v)}
-              className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${statusFilter === f.v ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-200 text-gray-600 hover:bg-gray-50 bg-white'}`}
+              type="button"
+              onClick={() => { setStatusFilter(f.v); setPage(1); }}
+              className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${statusFilter === f.v ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 bg-white dark:bg-gray-900'}`}
             >
               {f.l}
             </button>
           ))}
         </div>
-      </div>
-
-      {/* KB Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {filtered.map(kb => {
-          const sc = statusConfig[kb.status];
-          return (
-            <div
-              key={kb.kb_id}
-              onClick={() => onNavigate('kb-detail', { selectedKBId: kb.kb_id })}
-              className="bg-white rounded-xl border border-gray-200 p-4 hover:border-blue-300 hover:shadow-md cursor-pointer transition-all group relative"
-            >
-              {/* Card header */}
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="text-2xl">{kb.icon}</div>
-                  <div>
-                    <h3 className="font-semibold text-gray-900 text-sm leading-tight group-hover:text-blue-700 transition-colors">{kb.name}</h3>
-                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium mt-1 ${sc.color}`}>
-                      <span className={`w-1.5 h-1.5 rounded-full ${sc.dot}`}></span>
-                      {sc.label}
-                    </span>
-                  </div>
-                </div>
-                <div className="relative" onClick={e => e.stopPropagation()}>
-                  <button
-                    onClick={() => setOpenMenu(openMenu === kb.kb_id ? null : kb.kb_id)}
-                    className="p-1 rounded hover:bg-gray-100 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    <MoreHorizontal size={14} />
-                  </button>
-                  {openMenu === kb.kb_id && (
-                    <div className="absolute right-0 top-6 w-36 bg-white border border-gray-200 rounded-lg shadow-xl z-20 overflow-hidden">
-                      {[
-                        { icon: <Edit size={13} />, label: '编辑设置', action: () => onNavigate('kb-settings', { selectedKBId: kb.kb_id }) },
-                        { icon: <ArrowRight size={13} />, label: '查看文档', action: () => onNavigate('kb-documents', { selectedKBId: kb.kb_id }) },
-                        { icon: <RefreshCw size={13} />, label: '重建索引', action: () => {} },
-                        { icon: <Trash2 size={13} />, label: '删除', action: () => {}, danger: true },
-                      ].map((m, i) => (
-                        <button
-                          key={i}
-                          onClick={() => { m.action(); setOpenMenu(null); }}
-                          className={`w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors ${(m as any).danger ? 'text-red-600 hover:bg-red-50' : 'text-gray-700 hover:bg-gray-50'}`}
-                        >
-                          {m.icon}{m.label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <p className="text-xs text-gray-500 mb-3 line-clamp-2 leading-relaxed">{kb.description}</p>
-
-              {/* Stats */}
-              <div className="grid grid-cols-2 gap-2 mb-3">
-                <div className="bg-gray-50 rounded-lg p-2 text-center">
-                  <div className="text-sm font-bold text-gray-900">{kb.doc_count}</div>
-                  <div className="text-[10px] text-gray-500">文档</div>
-                </div>
-                <div className="bg-gray-50 rounded-lg p-2 text-center">
-                  <div className="text-sm font-bold text-gray-900">{(kb.chunk_count / 1000).toFixed(1)}k</div>
-                  <div className="text-[10px] text-gray-500">Chunk</div>
-                </div>
-              </div>
-
-              {/* Footer */}
-              <div className="flex items-center justify-between text-[10px] text-gray-400 pt-2 border-t border-gray-50">
-                <span>{formatBytes(kb.total_size_bytes)}</span>
-                <div className="flex items-center gap-1">
-                  <Clock size={10} />
-                  <span>更新 {formatTime(kb.updated_at)}</span>
-                </div>
-              </div>
-
-              {/* Hover arrow */}
-              <div className="absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                <ArrowRight size={14} className="text-blue-500" />
-              </div>
-            </div>
-          );
-        })}
-
-        {/* Add new card */}
-        <div
-          onClick={() => setShowCreate(true)}
-          className="bg-white rounded-xl border-2 border-dashed border-gray-200 p-4 flex flex-col items-center justify-center gap-2 hover:border-blue-400 hover:bg-blue-50/30 cursor-pointer transition-all group min-h-48"
+        <select
+          value={sortBy}
+          onChange={e => setSortBy(e.target.value as SortKey)}
+          className="px-2.5 py-1.5 text-xs border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 dark:text-gray-200"
         >
-          <div className="w-10 h-10 rounded-full bg-gray-100 group-hover:bg-blue-100 flex items-center justify-center transition-colors">
-            <Plus size={20} className="text-gray-400 group-hover:text-blue-600 transition-colors" />
-          </div>
-          <span className="text-sm text-gray-500 group-hover:text-blue-700 font-medium transition-colors">创建新知识库</span>
+          {SORT_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
+        </select>
+        <button
+          type="button"
+          onClick={() => setSortDesc(d => !d)}
+          className="px-2.5 py-1.5 text-xs border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300"
+        >
+          {sortDesc ? '↓ 降序' : '↑ 升序'}
+        </button>
+        <div className="flex border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden">
+          <button type="button" onClick={() => setViewMode('grid')} className={`p-2 ${viewMode === 'grid' ? 'bg-blue-600 text-white' : 'bg-white dark:bg-gray-800 text-gray-500'}`}><LayoutGrid size={14} /></button>
+          <button type="button" onClick={() => setViewMode('table')} className={`p-2 ${viewMode === 'table' ? 'bg-blue-600 text-white' : 'bg-white dark:bg-gray-800 text-gray-500'}`}><List size={14} /></button>
         </div>
       </div>
 
-      {/* Create Dialog */}
+      {filtered.length === 0 ? (
+        <div className="bg-white dark:bg-gray-900 rounded-xl border border-dashed border-gray-300 dark:border-gray-600 p-12 text-center">
+          <Database size={40} className="mx-auto text-gray-300 mb-3" />
+          <p className="text-sm text-gray-600 dark:text-gray-400">未找到匹配的知识库</p>
+          <button type="button" onClick={() => { setSearch(''); setStatusFilter('all'); }} className="mt-2 text-xs text-blue-600 hover:underline">清除筛选</button>
+        </div>
+      ) : viewMode === 'grid' ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {paged.map(kb => <KBCard key={kb.kb_id} kb={kb} />)}
+          <div
+            onClick={() => setShowCreate(true)}
+            className="bg-white dark:bg-gray-900 rounded-xl border-2 border-dashed border-gray-200 dark:border-gray-600 p-4 flex flex-col items-center justify-center gap-2 hover:border-blue-400 hover:bg-blue-50/30 dark:hover:bg-blue-900/10 cursor-pointer min-h-[200px]"
+          >
+            <Plus size={20} className="text-gray-400" />
+            <span className="text-sm text-gray-500">创建新知识库</span>
+          </div>
+        </div>
+      ) : (
+        <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-400">知识库</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 hidden md:table-cell">状态</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 dark:text-gray-400">文档</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 dark:text-gray-400 hidden sm:table-cell">Chunk</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 hidden lg:table-cell">嵌入模型</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-400 hidden xl:table-cell">更新时间</th>
+                <th className="w-10" />
+              </tr>
+            </thead>
+            <tbody>
+              {paged.map(kb => {
+                const sc = statusConfig[kb.status];
+                return (
+                  <tr key={kb.kb_id} className="border-b border-gray-50 dark:border-gray-800 hover:bg-gray-50/80 dark:hover:bg-gray-800/50 cursor-pointer" onClick={() => onNavigate('kb-detail', { selectedKBId: kb.kb_id })}>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">{kb.icon}</span>
+                        <div>
+                          <div className="font-medium text-gray-900 dark:text-gray-100 text-sm">{kb.name}</div>
+                          <div className="text-[10px] text-gray-500 truncate max-w-[200px]">{kb.chunk_strategy}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 hidden md:table-cell">
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] ${sc.color}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${sc.dot}`} />{sc.label}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right text-gray-800 dark:text-gray-200">{kb.doc_count}</td>
+                    <td className="px-4 py-3 text-right text-gray-600 dark:text-gray-400 hidden sm:table-cell">{(kb.chunk_count / 1000).toFixed(1)}k</td>
+                    <td className="px-4 py-3 text-xs text-gray-500 hidden lg:table-cell truncate max-w-[140px]">{kb.embedding_model}</td>
+                    <td className="px-4 py-3 text-xs text-gray-500 hidden xl:table-cell">{formatTime(kb.updated_at)}</td>
+                    <td className="px-2 py-3" onClick={e => e.stopPropagation()}>
+                      <button type="button" onClick={() => setOpenMenu(openMenu === kb.kb_id ? null : kb.kb_id)} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400">
+                        <MoreHorizontal size={14} />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {filtered.length > 0 && (
+        <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+          <span>共 {filtered.length} 个知识库，第 {page} / {totalPages} 页</span>
+          <div className="flex items-center gap-1">
+            <button type="button" disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="p-1.5 rounded border border-gray-200 dark:border-gray-600 disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-800"><ChevronLeft size={14} /></button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map(n => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setPage(n)}
+                className={`w-7 h-7 rounded text-xs ${page === n ? 'bg-blue-600 text-white' : 'border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800'}`}
+              >
+                {n}
+              </button>
+            ))}
+            <button type="button" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} className="p-1.5 rounded border border-gray-200 dark:border-gray-600 disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-800"><ChevronRight size={14} /></button>
+          </div>
+        </div>
+      )}
+
       {showCreate && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
-            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-              <h2 className="text-base font-bold text-gray-900">创建知识库</h2>
-              <button onClick={() => setShowCreate(false)} className="p-1 rounded hover:bg-gray-100 text-gray-500">✕</button>
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
+              <h2 className="text-base font-bold text-gray-900 dark:text-gray-100">创建知识库</h2>
+              <button type="button" onClick={() => setShowCreate(false)} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500">✕</button>
             </div>
             <div className="px-6 py-4 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">知识库名称 <span className="text-red-500">*</span></label>
-                <input
-                  value={createName}
-                  onChange={e => setCreateName(e.target.value)}
-                  placeholder="输入知识库名称（2-50字符）"
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">知识库名称 <span className="text-red-500">*</span></label>
+                <input value={createName} onChange={e => setCreateName(e.target.value)} placeholder="2-50 字符" className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-gray-100" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">描述</label>
-                <textarea
-                  value={createDesc}
-                  onChange={e => setCreateDesc(e.target.value)}
-                  placeholder="输入描述（选填，最多200字符）"
-                  rows={2}
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                />
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">描述</label>
+                <textarea value={createDesc} onChange={e => setCreateDesc(e.target.value)} placeholder="选填，最多 200 字符" rows={2} className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none dark:bg-gray-800 dark:text-gray-100" />
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">默认语言</label>
-                  <select className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none">
-                    <option>中文</option>
-                    <option>English</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">分块策略</label>
-                  <select className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none">
-                    <option>通用分块</option>
-                    <option>表格优先</option>
-                    <option>代码感知</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">嵌入模型</label>
-                  <select className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none">
-                    <option>BAAI/bge-m3</option>
-                    <option>BCE-Embedding</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">LLM 模型</label>
-                  <select className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none">
-                    <option>DeepSeek-v4</option>
-                    <option>Qwen3-72B</option>
-                    <option>Claude-4</option>
-                  </select>
+                <div><label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">默认语言</label>
+                  <select className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-gray-100"><option>中文</option><option>English</option></select></div>
+                <div><label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">分块策略</label>
+                  <select className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-gray-100"><option>通用分块</option><option>表格优先</option><option>代码感知</option></select></div>
+                <div><label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">嵌入模型</label>
+                  <select className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-gray-100"><option>BAAI/bge-m3</option><option>BCE-Embedding</option></select></div>
+                <div><label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">LLM 模型</label>
+                  <select className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-gray-100"><option>DeepSeek-v4</option><option>Qwen3-72B</option></select></div>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Reranker 模型</label>
+                <select className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-gray-100"><option>bge-reranker-v2-m3</option><option>bce-reranker</option></select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">可见性</label>
+                <div className="flex gap-4">
+                  {['仅我', '团队'].map(v => (
+                    <label key={v} className="flex items-center gap-1.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+                      <input type="radio" name="visibility" defaultChecked={v === '团队'} className="text-blue-600" />{v}
+                    </label>
+                  ))}
                 </div>
               </div>
             </div>
-            <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
-              <button onClick={() => setShowCreate(false)} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700">取消</button>
-              <button
-                onClick={() => setShowCreate(false)}
-                disabled={!createName}
-                className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                创建
-              </button>
+            <div className="px-6 py-4 border-t border-gray-100 dark:border-gray-700 flex justify-end gap-3">
+              <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300">取消</button>
+              <button type="button" onClick={handleCreate} disabled={!createName.trim()} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-40">创建</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {deleteTarget && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-full max-w-sm p-6">
+            <div className="flex items-center gap-2 text-red-600 mb-3"><AlertIcon size={20} /> 删除知识库</div>
+            <p className="text-sm text-gray-700 dark:text-gray-300 mb-1">确定删除「{deleteTarget.name}」？</p>
+            <p className="text-xs text-gray-500 mb-4">将移入回收站，保留 30 天可恢复。</p>
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setDeleteTarget(null)} className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg">取消</button>
+              <button type="button" onClick={() => { showToast(`「${deleteTarget.name}」已移入回收站`); setDeleteTarget(null); }} className="px-3 py-1.5 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700">移入回收站</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const RECYCLE_BIN_MOCK = [
+  { id: 'rb-1', name: '供应商合同V4.pdf', type: '文档', kb: '法务合同知识库', deletedAt: '2026-06-04T14:20:00Z', daysLeft: 28 },
+  { id: 'rb-2', name: '旧版合规政策库', type: '知识库', kb: '—', deletedAt: '2026-06-02T09:15:00Z', daysLeft: 26 },
+  { id: 'rb-3', name: '财务Q1报告.docx', type: '文档', kb: '财务报告知识库', deletedAt: '2026-05-28T10:00:00Z', daysLeft: 22 },
+];
+
+interface KBRecycleBinPageProps {
+  onNavigate: (page: string, extra?: any) => void;
+}
+
+export function KBRecycleBinPage({ onNavigate }: KBRecycleBinPageProps) {
+  const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [selected, setSelected] = useState<string[]>([]);
+  const [items, setItems] = useState(RECYCLE_BIN_MOCK);
+  const [toast, setToast] = useState<string | null>(null);
+
+  const filtered = items.filter(it => {
+    const matchSearch = it.name.includes(search);
+    const matchType = typeFilter === 'all' || (typeFilter === 'kb' ? it.type === '知识库' : it.type === '文档');
+    return matchSearch && matchType;
+  });
+
+  const toggleSelect = (id: string) => setSelected(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
+  const toggleAll = () => setSelected(p => p.length === filtered.length ? [] : filtered.map(f => f.id));
+
+  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
+
+  return (
+    <div className="p-6 flex flex-col gap-4 h-full overflow-y-auto">
+      {toast && <div className="fixed top-16 right-6 z-50 px-4 py-2.5 bg-gray-900 text-white text-sm rounded-lg shadow-lg">{toast}</div>}
+
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={() => onNavigate('kb-list')} className="text-gray-500 hover:text-gray-700 text-sm">← 返回列表</button>
+          <h1 className="text-lg font-bold text-gray-900 dark:text-gray-100">回收站</h1>
+        </div>
+        <div className="flex gap-2">
+          <button type="button" onClick={() => { setItems([]); showToast('回收站已清空'); }} className="px-3 py-1.5 text-xs border border-red-200 text-red-600 rounded-lg hover:bg-red-50">清空回收站</button>
+          <button type="button" disabled={selected.length === 0} onClick={() => { setItems(p => p.filter(i => !selected.includes(i.id))); showToast(`已恢复 ${selected.length} 项`); setSelected([]); }} className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg disabled:opacity-40 flex items-center gap-1"><RotateCcw size={12} /> 批量恢复</button>
+        </div>
+      </div>
+
+      <p className="text-xs text-amber-700 bg-amber-50 dark:bg-amber-900/20 dark:text-amber-300 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2">
+        回收站内容保留 30 天，到期自动永久删除。
+      </p>
+
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative flex-1 min-w-40">
+          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="搜索名称..." className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-200 dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-gray-100" />
+        </div>
+        <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} className="px-2.5 py-1.5 text-xs border border-gray-200 dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-gray-200">
+          <option value="all">全部类型</option>
+          <option value="kb">知识库</option>
+          <option value="doc">文档</option>
+        </select>
+      </div>
+
+      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+            <tr>
+              <th className="w-10 px-4 py-3"><input type="checkbox" checked={selected.length === filtered.length && filtered.length > 0} onChange={toggleAll} className="rounded" /></th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">名称</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">类型</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 hidden sm:table-cell">原属知识库</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">删除时间</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">剩余</th>
+              <th className="w-24" />
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.length === 0 ? (
+              <tr><td colSpan={7} className="px-4 py-12 text-center text-sm text-gray-500">回收站为空</td></tr>
+            ) : filtered.map(it => (
+              <tr key={it.id} className="border-b border-gray-50 dark:border-gray-800 hover:bg-gray-50/50">
+                <td className="px-4 py-3"><input type="checkbox" checked={selected.includes(it.id)} onChange={() => toggleSelect(it.id)} className="rounded" /></td>
+                <td className="px-4 py-3 font-medium text-gray-800 dark:text-gray-200">{it.name}</td>
+                <td className="px-4 py-3"><span className="text-xs px-2 py-0.5 bg-gray-100 dark:bg-gray-800 rounded">{it.type}</span></td>
+                <td className="px-4 py-3 text-xs text-gray-500 hidden sm:table-cell">{it.kb}</td>
+                <td className="px-4 py-3 text-xs text-gray-500">{formatTime(it.deletedAt)}</td>
+                <td className="px-4 py-3 text-xs text-amber-600">{it.daysLeft} 天</td>
+                <td className="px-4 py-3">
+                  <div className="flex gap-1">
+                    <button type="button" onClick={() => { setItems(p => p.filter(x => x.id !== it.id)); showToast(`已恢复「${it.name}」`); }} className="text-[10px] px-2 py-1 bg-blue-50 text-blue-600 rounded hover:bg-blue-100">恢复</button>
+                    <button type="button" onClick={() => setItems(p => p.filter(x => x.id !== it.id))} className="text-[10px] px-2 py-1 text-red-600 hover:bg-red-50 rounded">永久删除</button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {selected.length > 0 && (
+        <div className="sticky bottom-4 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg px-4 py-3 flex items-center justify-between">
+          <span className="text-xs text-gray-600">已选 {selected.length} 项</span>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => { setItems(p => p.filter(i => !selected.includes(i.id))); showToast('批量恢复完成'); setSelected([]); }} className="text-xs px-3 py-1.5 bg-blue-600 text-white rounded-lg">恢复</button>
+            <button type="button" onClick={() => { setItems(p => p.filter(i => !selected.includes(i.id))); setSelected([]); }} className="text-xs px-3 py-1.5 border border-red-200 text-red-600 rounded-lg">永久删除</button>
           </div>
         </div>
       )}
