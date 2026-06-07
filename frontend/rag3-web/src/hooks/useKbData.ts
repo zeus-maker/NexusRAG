@@ -16,6 +16,7 @@ function useAsyncData<T>(
   fetcher: () => Promise<T>,
   fallback: T,
   deps: unknown[],
+  options?: { clearOnRefetch?: boolean },
 ): AsyncState<T> {
   const [data, setData] = useState<T>(fallback);
   const [loading, setLoading] = useState(useRealApi);
@@ -35,7 +36,7 @@ function useAsyncData<T>(
     let cancelled = false;
     setLoading(true);
     setError(null);
-    setData(fallback);
+    if (options?.clearOnRefetch) setData(fallback);
 
     fetcher()
       .then(result => {
@@ -163,6 +164,7 @@ export function useChunks(
     },
     fallback,
     [kbId, docId, page, pageSize, opts?.keywords],
+    { clearOnRefetch: true },
   );
 }
 

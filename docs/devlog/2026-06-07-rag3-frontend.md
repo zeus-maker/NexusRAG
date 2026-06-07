@@ -1233,3 +1233,32 @@ P0 最后一项：检索测试页需从单通道混合结果升级为 PRD §10.5
 - `frontend/rag3-web/src/components/kb/DocumentScrollFrame.tsx` — 高度链 `max-h-full`
 - `frontend/rag3-web/src/hooks/useKbData.ts` — refetch 时清空陈旧 data
 - `frontend/rag3-web/src/utils/documentUtil.ts` — 页码归一化
+
+---
+
+## 42. 修复 PDF 预览空白并对齐 RAGFlow 滚动多页方案
+
+### 背景与目标
+
+§41 单页模式引入致命死锁：canvas 仅在 `pageLayout.width > 0` 后才挂载，而 `pageLayout` 又依赖 canvas 绘制，导致所有 PDF 预览空白。用户要求参考 RAGFlow 实现。目标恢复可见预览，并在固定高度容器内纵向滚动浏览全部页面，选中分块时滚至对应页高亮。
+
+### 改动摘要
+
+- `PdfPreviewWithHighlights`：改回**多页纵向堆叠 + 容器内 `overflow-y-auto`**（对齐 RAGFlow `PdfHighlighter` 行为）；canvas 在 PDF 加载完成后即挂载；`ResizeObserver` 按容器宽度缩放；选中分块 `scrollTo` 定位高亮区。
+- 修复 §41 canvas 条件渲染死锁；`useLayoutEffect` + `renderTick` 确保 ref 就绪后再绘制。
+- `useAsyncData`：`clearOnRefetch` 仅对 `useChunks` 开启，避免文档列表 refetch 时被误清空。
+
+### 验证与风险
+
+- `npm run build` 通过。
+- 路径：解析预览 / 分块页 → PDF 应正常显示全部页，在左栏固定高度内滚动；点分块滚至高亮。
+- 风险：页数极多的 PDF 会一次性渲染全部 canvas，可能较慢；后续可按视口懒加载优化。
+
+### 反思与沉淀
+
+RAGFlow 用 `react-pdf-highlighter` 的本质是「外层 `h-full min-h-0 overflow-auto` + 内层连续页面滚动」，而非压缩为单页。单页方案除省 DOM 外还要保证 canvas 与 layout 状态不互相依赖。UI 条件渲染 (`{pageLayout.width > 0 && <canvas/>}`) 参与渲染管线时需格外警惕循环依赖。
+
+### 涉及文件
+
+- `frontend/rag3-web/src/components/kb/PdfPreviewWithHighlights.tsx` — 多页滚动预览
+- `frontend/rag3-web/src/hooks/useKbData.ts` — 分块 refetch 才清空 data
