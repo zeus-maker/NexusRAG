@@ -4,10 +4,12 @@ import {
   GitBranch, Search, BookOpen, TreePine, Settings,
   Plus, Trash2, RotateCcw, FileText, Network, Clock,
   CheckCircle, AlertTriangle, BarChart2, Database, Layers,
-  Eye, Edit2, XCircle, Zap, ArrowRight
+  Eye, Edit2, XCircle, Zap, ArrowRight, Loader
 } from 'lucide-react';
 import { mockKBs } from '../mockData';
 import { KBDetailLayout } from '../components/KBDetailLayout';
+import { useKnowledgeBase, updateKnowledgeBase } from '../hooks/useKbData';
+import { useRealApi } from '../services/http';
 import type { KBSettingsTab } from '../store';
 
 /* ──────────────────────────────────────────────
@@ -42,8 +44,14 @@ interface KBSettingsPageProps {
 }
 
 export function KBSettingsPage({ kbId, onNavigate, initialTab = 'parsing' }: KBSettingsPageProps) {
-  const kb = mockKBs.find(k => k.kb_id === kbId) || mockKBs[0];
+  const { data: apiKb, refresh: refreshKb } = useKnowledgeBase(kbId);
+  const kb = useRealApi ? apiKb : (mockKBs.find(k => k.kb_id === kbId) || mockKBs[0]);
   const [tab, setTab] = useState<KBSettingsTab>(initialTab);
+  const [name, setName] = useState(kb.name);
+  const [description, setDescription] = useState(kb.description);
+  const [permission, setPermission] = useState<'me' | 'team'>('team');
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [chunkMethod, setChunkMethod] = useState('General（通用）');
   const [graphragEnabled, setGraphragEnabled] = useState(true);
   const [graphragMode, setGraphragMode] = useState('LazyGraphRAG');
@@ -63,13 +71,33 @@ export function KBSettingsPage({ kbId, onNavigate, initialTab = 'parsing' }: KBS
     setTab(initialTab);
   }, [initialTab]);
 
+  useEffect(() => {
+    setName(kb.name);
+    setDescription(kb.description);
+  }, [kb.name, kb.description]);
+
   const subNavKey = tab === 'datasource' ? 'kb-data-sources' : 'kb-settings';
 
   const toggleIndex = (key: string) => {
     setIndexOptions(prev => prev.map(o => (o.key === key && !o.locked ? { ...o, enabled: !o.enabled } : o)));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (useRealApi) {
+      setSaving(true);
+      setSaveError(null);
+      try {
+        await updateKnowledgeBase(kbId, { name, description, permission });
+        refreshKb();
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2000);
+      } catch (e) {
+        setSaveError(e instanceof Error ? e.message : '保存失败');
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
@@ -98,10 +126,11 @@ export function KBSettingsPage({ kbId, onNavigate, initialTab = 'parsing' }: KBS
         </div>
         <button
           type="button"
-          onClick={handleSave}
-          className={`flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg font-medium transition-all ${saved ? 'bg-green-600 text-white' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+          onClick={() => void handleSave()}
+          disabled={saving}
+          className={`flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg font-medium transition-all ${saved ? 'bg-green-600 text-white' : 'bg-blue-600 text-white hover:bg-blue-700'} disabled:opacity-60`}
         >
-          {saved ? <><RefreshCw size={14} className="animate-spin" /> 已保存</> : <><Save size={14} /> 保存配置</>}
+          {saved ? <><RefreshCw size={14} className="animate-spin" /> 已保存</> : saving ? <><Loader size={14} className="animate-spin" /> 保存中…</> : <><Save size={14} /> 保存配置</>}
         </button>
       </div>
 
@@ -124,12 +153,16 @@ export function KBSettingsPage({ kbId, onNavigate, initialTab = 'parsing' }: KBS
         ))}
       </div>
 
+      {saveError && (
+        <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{saveError}</div>
+      )}
+
       {tab === 'basic' && (
         <div className="space-y-4 max-w-2xl">
           <div><label className="block text-xs font-semibold text-gray-700 mb-1.5">知识库名称</label>
-            <input defaultValue={kb.name} className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-600" /></div>
+            <input value={name} onChange={e => setName(e.target.value)} className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-600" /></div>
           <div><label className="block text-xs font-semibold text-gray-700 mb-1.5">描述</label>
-            <textarea defaultValue={kb.description} rows={3} className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none dark:bg-gray-800 dark:border-gray-600" /></div>
+            <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none dark:bg-gray-800 dark:border-gray-600" /></div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div><label className="block text-xs text-gray-600 mb-1">默认语言</label>
               <select className="w-full px-2.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none dark:bg-gray-800 dark:border-gray-600">
@@ -139,7 +172,7 @@ export function KBSettingsPage({ kbId, onNavigate, initialTab = 'parsing' }: KBS
               <div className="flex gap-4 pt-1">
                 {[{ v: 'me', l: '仅我' }, { v: 'team', l: '团队' }].map(o => (
                   <label key={o.v} className="flex items-center gap-1.5 cursor-pointer">
-                    <input type="radio" name="visibility" defaultChecked={o.v === 'team'} className="text-blue-600" />
+                    <input type="radio" name="visibility" checked={permission === o.v} onChange={() => setPermission(o.v as 'me' | 'team')} className="text-blue-600" />
                     <span className="text-sm text-gray-700 dark:text-gray-300">{o.l}</span>
                   </label>
                 ))}

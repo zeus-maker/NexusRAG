@@ -14,6 +14,8 @@ import {
   type ChannelResult,
   type FusionHit,
 } from '../data/retrievalTestMock';
+import { useRealApi } from '../services/http';
+import { searchKb } from '../hooks/useKbData';
 
 interface RetrievalTestPageProps {
   kbId: string;
@@ -50,21 +52,61 @@ export function RetrievalTestPage({ kbId, onNavigate }: RetrievalTestPageProps) 
     });
   };
 
-  const handleTest = () => {
+  const handleTest = async () => {
     if (!query.trim() || enabledChannels.size === 0) return;
     setLoading(true);
     setResult(null);
-    setTimeout(() => {
-      const res = runMockFullChannelRetrieval(query.trim(), {
-        enabledChannels: [...enabledChannels],
-        useRerank,
-        threshold,
-      });
-      setResult(res);
-      const first = res.channels[0]?.channel ?? 'vector';
-      setChannelTab(first);
+    try {
+      if (useRealApi) {
+        const apiRes = await searchKb(kbId, query.trim(), {
+          similarity_threshold: threshold,
+          top_k: 10,
+        });
+        const hits: FusionHit[] = apiRes.hits.map(h => ({
+          rank: h.rank,
+          doc: h.doc_name,
+          wrrfScore: h.score,
+          snippet: h.snippet,
+          chunkId: h.chunk_id,
+          sources: ['vector'],
+        }));
+        const channel: ChannelResult = {
+          channel: 'vector',
+          label: '向量',
+          latencyMs: 0,
+          hits: hits.map(h => ({
+            rank: h.rank,
+            doc: h.doc,
+            score: h.wrrfScore,
+            snippet: h.snippet,
+            chunkId: h.chunkId,
+          })),
+        };
+        const res: FullRetrievalResult = {
+          query: query.trim(),
+          channels: [channel],
+          fusion: hits,
+          fusionReranked: useRerank ? hits : [],
+          totalLatencyMs: 0,
+          rrfK: 60,
+        };
+        setResult(res);
+        setChannelTab('vector');
+      } else {
+        await new Promise(r => setTimeout(r, 1100));
+        const res = runMockFullChannelRetrieval(query.trim(), {
+          enabledChannels: [...enabledChannels],
+          useRerank,
+          threshold,
+        });
+        setResult(res);
+        setChannelTab(res.channels[0]?.channel ?? 'vector');
+      }
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : '检索失败');
+    } finally {
       setLoading(false);
-    }, 1100);
+    }
   };
 
   const activeChannel = result?.channels.find(c => c.channel === channelTab);
@@ -78,7 +120,7 @@ export function RetrievalTestPage({ kbId, onNavigate }: RetrievalTestPageProps) 
         <div className="px-6 py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 flex items-center justify-between flex-shrink-0">
           <div>
             <h2 className="text-base font-bold text-gray-900 dark:text-gray-100">检索测试</h2>
-            <p className="text-xs text-gray-500 dark:text-gray-400">五通道分路 + Weighted RRF 融合对比（§10.5）</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">{useRealApi ? 'RAGFlow POST /datasets/:id/search' : '五通道分路 + Weighted RRF 融合对比（§10.5）'}</p>
           </div>
           <button
             type="button"

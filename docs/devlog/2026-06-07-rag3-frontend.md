@@ -882,3 +882,38 @@ P0 最后一项：检索测试页需从单通道混合结果升级为 PRD §10.5
 - `backend/ragflow_rag30/memory/` — 从上游补全 Memory 功能 Python 包
 - `backend/ragflow_rag30/common/constants.py` 等 14 文件 — StrEnum 标准库迁移
 - `backend/ragflow_rag30/pyproject.toml`、`uv.lock`、`scripts/*.sh` — uv 本地环境与启动
+
+---
+
+## 30. 知识库全量 API 对接：文档管理深化 + 分块/检索/日志
+
+### 背景与目标
+
+§27 仅完成 KB 列表/创建/删除与文档列表/上传。用户要求优化文档管理并接入知识库剩余可对接能力。目标是在 `VITE_USE_REAL_API=true` 下，将 RAGFlow `/api/v1/datasets/*` 与文档/chunk/search/ingestions 端点贯通，mock 仅保留无后端契约的 RAG3 治理与增强索引 Hub。
+
+### 改动摘要
+
+- **`kbApi` 扩展**：删文档、解析/停止、URL 导入、chunks 列表、dataset search、ingestions、index trace/run、预览 blob、KB update。
+- **`useKbData` 扩展**：`useChunks`、`useIngestionLogs`、`useIndexTrace` 及文档/检索/设置 action 函数。
+- **文档管理页**：API 模式表格列改为解析状态/Chunk/上传者；支持批量删除、批量解析、单文档菜单（解析/停止/下载/删除）、URL 导入弹窗；上传后自动提交 parse；解析队列由待解析/解析中文档派生。
+- **分块预览**：`useChunks` 拉真实 chunks；重新分块走 re-parse。
+- **解析预览面板**：API 模式左侧 chunk 列表 + iframe 原始文件预览（`fetchDocumentPreview`）。
+- **索引状态**：由文档解析统计 + `traceIndex(graph/raptor)` 派生卡片；失败文档可重试 parse。
+- **KB 概览**：API 模式隐藏治理 mock，展示运行状态入口；最近上传来自文档 API。
+- **KB 配置**：基础信息（名称/描述/permission）`PUT /datasets/:id`。
+- **检索测试**：`POST /datasets/:id/search` 替代五通道 mock。
+- **处理日志**：`GET /datasets/:id/ingestions`；陈旧治理页 API 模式显示说明。
+
+### 验证与风险
+
+- `npm run build` 通过。
+- 下载/预览须带 `Authorization`；外链 `downloadUrl` 不可用，已改为 blob 下载。
+- GraphRAG/PageIndex/Wiki Hub、权限/数据源/导出仍为 mock，需在 UI 标注或后续接 RAG3 专用 API。
+
+### 涉及文件
+
+- `frontend/rag3-web/src/services/kbApi.ts`、`kbMappers.ts`
+- `frontend/rag3-web/src/hooks/useKbData.ts`
+- `frontend/rag3-web/src/pages/KnowledgeBase.tsx`、`KBExtra.tsx`、`KBGovernancePages.tsx`、`RetrievalTestPage.tsx`
+- `frontend/rag3-web/src/components/kb/DocumentParsePreviewPanel.tsx`
+- `frontend/rag3-web/README.md`

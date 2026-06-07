@@ -8,6 +8,8 @@ import {
   CERT_LABELS,
   type FreshnessTier,
 } from '../data/kbGovernanceMock';
+import { useRealApi } from '../services/http';
+import { useIngestionLogs } from '../hooks/useKbData';
 
 interface Props {
   kbId: string;
@@ -18,6 +20,16 @@ export function KBStaleGovernancePage({ kbId, onNavigate }: Props) {
   const [tierFilter, setTierFilter] = useState<FreshnessTier | 'all'>('all');
   const [toast, setToast] = useState<string | null>(null);
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
+
+  if (useRealApi) {
+    return (
+      <KBDetailLayout kbId={kbId} activeKey="kb-detail" onNavigate={onNavigate}>
+        <div className="p-6 text-sm text-gray-600">
+          陈旧文档治理为 RAG3 原型能力，尚无对应 RAGFlow API。请使用「文档管理」查看解析状态，或关闭 API 模式体验 mock 治理流程。
+        </div>
+      </KBDetailLayout>
+    );
+  }
 
   const docs = getStaleDocuments(kbId).filter(d => tierFilter === 'all' || d.tier === tierFilter);
 
@@ -97,7 +109,8 @@ export function KBStaleGovernancePage({ kbId, onNavigate }: Props) {
 }
 
 export function KBProcessingLogsPage({ kbId, onNavigate }: Props) {
-  const logs = getProcessingLogs(kbId);
+  const { data: apiLogs, loading, error, refresh } = useIngestionLogs(kbId);
+  const logs = useRealApi ? apiLogs.items : getProcessingLogs(kbId);
 
   return (
     <KBDetailLayout kbId={kbId} activeKey="kb-logs" onNavigate={onNavigate}>
@@ -107,11 +120,11 @@ export function KBProcessingLogsPage({ kbId, onNavigate }: Props) {
             <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
               <ScrollText size={18} className="text-blue-600" /> 处理日志
             </h2>
-            <p className="text-sm text-gray-500 mt-0.5">入库 / 同步 / 索引 / ACL 审计（§10.10.2）</p>
+            <p className="text-sm text-gray-500 mt-0.5">{useRealApi ? 'RAGFlow GET /datasets/:id/ingestions' : '入库 / 同步 / 索引 / ACL 审计（§10.10.2）'}</p>
           </div>
           <div className="flex gap-2">
-            <button type="button" className="flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
-              <RefreshCw size={14} /> 刷新
+            <button type="button" onClick={() => refresh()} className="flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
+              <RefreshCw size={14} /> 刷新{loading ? '…' : ''}
             </button>
             <button type="button" className="flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
               <Download size={14} /> 导出 CSV
@@ -119,21 +132,45 @@ export function KBProcessingLogsPage({ kbId, onNavigate }: Props) {
           </div>
         </div>
 
+        {error && useRealApi && (
+          <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>
+        )}
+
         <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 overflow-x-auto">
           <table className="w-full text-xs min-w-[720px]">
             <thead className="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
               <tr>
-                <th className="px-3 py-2 text-left font-semibold text-gray-600">时间</th>
-                <th className="px-3 py-2 text-left font-semibold text-gray-600">级别</th>
-                <th className="px-3 py-2 text-left font-semibold text-gray-600">类型</th>
-                <th className="px-3 py-2 text-left font-semibold text-gray-600">source_id</th>
-                <th className="px-3 py-2 text-left font-semibold text-gray-600">chunk_ids</th>
-                <th className="px-3 py-2 text-left font-semibold text-gray-600">acl_ver</th>
-                <th className="px-3 py-2 text-left font-semibold text-gray-600">摘要</th>
+                {useRealApi ? (
+                  <>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-600">时间</th>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-600">文档</th>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-600">状态</th>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-600">进度</th>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-600">消息</th>
+                  </>
+                ) : (
+                  <>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-600">时间</th>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-600">级别</th>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-600">类型</th>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-600">source_id</th>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-600">chunk_ids</th>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-600">acl_ver</th>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-600">摘要</th>
+                  </>
+                )}
               </tr>
             </thead>
             <tbody>
-              {logs.map(log => (
+              {useRealApi ? logs.map((log: { id: string; time: string; name: string; status: string; statusColor: string; progress: number; message: string }) => (
+                <tr key={log.id} className="border-b border-gray-50 dark:border-gray-800 hover:bg-gray-50/50">
+                  <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{log.time}</td>
+                  <td className="px-3 py-2 text-gray-700">{log.name}</td>
+                  <td className="px-3 py-2"><span className={`font-medium ${log.statusColor}`}>{log.status}</span></td>
+                  <td className="px-3 py-2 text-gray-600">{log.progress}%</td>
+                  <td className="px-3 py-2 text-gray-700">{log.message}</td>
+                </tr>
+              )) : logs.map(log => (
                 <tr key={log.id} className="border-b border-gray-50 dark:border-gray-800 hover:bg-gray-50/50">
                   <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{log.time}</td>
                   <td className="px-3 py-2">
@@ -151,7 +188,7 @@ export function KBProcessingLogsPage({ kbId, onNavigate }: Props) {
         </div>
 
         <p className="text-[10px] text-gray-400 flex items-center gap-1">
-          <ShieldCheck size={12} /> 导出 CSV 含 policy_version、sync_timestamp（mock）
+          <ShieldCheck size={12} /> {useRealApi ? '数据来自 RAGFlow 摄取日志 API' : '导出 CSV 含 policy_version、sync_timestamp（mock）'}
         </p>
       </div>
     </KBDetailLayout>

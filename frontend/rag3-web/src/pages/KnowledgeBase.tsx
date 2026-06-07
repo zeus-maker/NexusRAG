@@ -15,11 +15,20 @@ import {
   useKnowledgeBaseList,
   useKnowledgeBase,
   useDocuments,
+  useChunks,
+  useIndexTrace,
+  useIngestionLogs,
   createKnowledgeBase,
   deleteKnowledgeBase,
   uploadKbDocuments,
+  uploadKbFromUrl,
+  deleteKbDocuments,
+  parseKbDocuments,
+  stopKbDocuments,
 } from '../hooks/useKbData';
 import { useRealApi } from '../services/http';
+import { PARSE_STATUS_UI } from '../services/kbMappers';
+import { kbApi } from '../services/kbApi';
 import { KBCreateDialog, type KBCreateForm } from '../components/KBCreateDialog';
 import { addToRecycleBin, getRecycleBinCount } from '../data/kbRecycleBin';
 import { PAGEINDEX_GLOBAL_FAILED_COUNT } from '../data/pageIndexMock';
@@ -526,8 +535,11 @@ interface KBDetailPageProps {
 
 export function KBDetailPage({ kbId, onNavigate }: KBDetailPageProps) {
   const { data: kb, loading: kbLoading, error: kbError } = useKnowledgeBase(kbId);
-  const governance = getGovernanceSummary(kbId);
-  const health = getKBHealthScore(kbId);
+  const { data: recentDocs } = useDocuments(kbId);
+  const governance = useRealApi ? null : getGovernanceSummary(kbId);
+  const health = useRealApi
+    ? { overall: Math.min(100, Math.round((kb.chunk_count > 0 ? 85 : 60) + (kb.doc_count > 0 ? 10 : 0))) }
+    : getKBHealthScore(kbId);
 
   return (
     <KBDetailLayout kbId={kbId} activeKey="kb-detail" onNavigate={onNavigate} kbOverride={kb}>
@@ -568,27 +580,49 @@ export function KBDetailPage({ kbId, onNavigate }: KBDetailPageProps) {
         ))}
       </div>
 
-      {/* 治理摘要 US-1.13 / US-1.15 */}
-      <div className="bg-amber-50/80 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4">
-        <h3 className="text-sm font-semibold text-amber-900 dark:text-amber-200 mb-2">治理摘要</h3>
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-amber-800 dark:text-amber-300 mb-3">
-          <span>⚠ 陈旧 <strong>{governance.stale_count}</strong></span>
-          <span>待认证 <strong>{governance.pending_certification}</strong></span>
-          <span>解析待复核 <strong>{governance.parse_review_count}</strong></span>
-          <span>ACL 异常 <strong>{governance.acl_anomaly_count}</strong></span>
+      {useRealApi ? (
+        <div className="bg-blue-50/80 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
+          <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-200 mb-2">运行状态</h3>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-blue-800 dark:text-blue-300 mb-3">
+            <span>文档 <strong>{kb.doc_count}</strong></span>
+            <span>Chunk <strong>{kb.chunk_count.toLocaleString()}</strong></span>
+            <span>嵌入模型 <strong>{kb.embedding_model}</strong></span>
+            <span>分块策略 <strong>{kb.chunk_strategy}</strong></span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => onNavigate('kb-index-status', { selectedKBId: kbId })} className="text-xs px-2.5 py-1 bg-white dark:bg-gray-900 border border-blue-300 rounded-lg hover:bg-blue-100 text-blue-900">
+              索引状态
+            </button>
+            <button type="button" onClick={() => onNavigate('kb-logs', { selectedKBId: kbId })} className="text-xs px-2.5 py-1 bg-white dark:bg-gray-900 border border-blue-300 rounded-lg hover:bg-blue-100 text-blue-900">
+              摄取日志
+            </button>
+            <button type="button" onClick={() => onNavigate('kb-retrieval-test', { selectedKBId: kbId })} className="text-xs px-2.5 py-1 bg-white dark:bg-gray-900 border border-blue-300 rounded-lg hover:bg-blue-100 text-blue-900">
+              检索测试
+            </button>
+          </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={() => onNavigate('kb-governance-stale', { selectedKBId: kbId })} className="text-xs px-2.5 py-1 bg-white dark:bg-gray-900 border border-amber-300 rounded-lg hover:bg-amber-100 text-amber-900">
-            查看陈旧队列
-          </button>
-          <button type="button" onClick={() => onNavigate('kb-index-status', { selectedKBId: kbId })} className="text-xs px-2.5 py-1 bg-white dark:bg-gray-900 border border-amber-300 rounded-lg hover:bg-amber-100 text-amber-900">
-            失败归因 → 索引状态
-          </button>
-          <button type="button" onClick={() => onNavigate('kb-logs', { selectedKBId: kbId })} className="text-xs px-2.5 py-1 bg-white dark:bg-gray-900 border border-amber-300 rounded-lg hover:bg-amber-100 text-amber-900">
-            处理日志
-          </button>
+      ) : (
+        <div className="bg-amber-50/80 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4">
+          <h3 className="text-sm font-semibold text-amber-900 dark:text-amber-200 mb-2">治理摘要</h3>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-amber-800 dark:text-amber-300 mb-3">
+            <span>⚠ 陈旧 <strong>{governance!.stale_count}</strong></span>
+            <span>待认证 <strong>{governance!.pending_certification}</strong></span>
+            <span>解析待复核 <strong>{governance!.parse_review_count}</strong></span>
+            <span>ACL 异常 <strong>{governance!.acl_anomaly_count}</strong></span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => onNavigate('kb-governance-stale', { selectedKBId: kbId })} className="text-xs px-2.5 py-1 bg-white dark:bg-gray-900 border border-amber-300 rounded-lg hover:bg-amber-100 text-amber-900">
+              查看陈旧队列
+            </button>
+            <button type="button" onClick={() => onNavigate('kb-index-status', { selectedKBId: kbId })} className="text-xs px-2.5 py-1 bg-white dark:bg-gray-900 border border-amber-300 rounded-lg hover:bg-amber-100 text-amber-900">
+              失败归因 → 索引状态
+            </button>
+            <button type="button" onClick={() => onNavigate('kb-logs', { selectedKBId: kbId })} className="text-xs px-2.5 py-1 bg-white dark:bg-gray-900 border border-amber-300 rounded-lg hover:bg-amber-100 text-amber-900">
+              处理日志
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* 增强索引 Hub 入口 */}
       <div>
@@ -668,18 +702,18 @@ export function KBDetailPage({ kbId, onNavigate }: KBDetailPageProps) {
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <h3 className="text-sm font-semibold text-gray-800 mb-3">最近上传</h3>
           <div className="space-y-2">
-            {[
-              { name: '合同模板V6.pdf', time: '2小时前', type: 'PDF' },
-              { name: '审计报告.pdf', time: '1天前', type: 'PDF' },
-              { name: '财务数据.xlsx', time: '2天前', type: 'XLSX' },
-            ].map((f, i) => (
+            {(useRealApi ? recentDocs.slice(0, 3) : [
+              { original_name: '合同模板V6.pdf', uploaded_at: new Date(Date.now() - 7200000).toISOString(), file_type: 'PDF' },
+              { original_name: '审计报告.pdf', uploaded_at: new Date(Date.now() - 86400000).toISOString(), file_type: 'PDF' },
+              { original_name: '财务数据.xlsx', uploaded_at: new Date(Date.now() - 172800000).toISOString(), file_type: 'XLSX' },
+            ]).map((f, i) => (
               <div key={i} className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50">
                 <div className="w-7 h-7 bg-red-50 rounded-lg flex items-center justify-center">
                   <FileText size={13} className="text-red-500" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs font-medium text-gray-800 truncate">{f.name}</div>
-                  <div className="text-[10px] text-gray-400">{f.type} · {f.time}</div>
+                  <div className="text-xs font-medium text-gray-800 truncate">{'original_name' in f ? f.original_name : (f as { name: string }).name}</div>
+                  <div className="text-[10px] text-gray-400">{'file_type' in f ? f.file_type : (f as { type: string }).type} · {formatTime('uploaded_at' in f ? f.uploaded_at : new Date().toISOString())}</div>
                 </div>
               </div>
             ))}
@@ -723,37 +757,132 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
   const [previewDocId, setPreviewDocId] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [showUrlImport, setShowUrlImport] = useState(false);
+  const [urlName, setUrlName] = useState('');
+  const [urlValue, setUrlValue] = useState('');
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: documents, loading: docsLoading, error: docsError, refresh: refreshDocs } = useDocuments(kbId, search);
-  const governedMap = Object.fromEntries(getGovernedDocuments(kbId).map(g => [g.doc_id, g]));
-  const uploadQueue = getUploadQueue();
+  const governedMap = useRealApi ? {} : Object.fromEntries(getGovernedDocuments(kbId).map(g => [g.doc_id, g]));
+  const uploadQueue = useRealApi
+    ? documents.filter(d => d.parse_status === 'parsing' || d.parse_status === 'pending').map(d => ({
+        name: d.original_name,
+        size: formatBytes(d.file_size),
+        progress: d.parse_status === 'parsing' ? 50 : 10,
+        stage: d.parse_status === 'parsing' ? 'parsing' as const : 'uploading' as const,
+      }))
+    : getUploadQueue();
 
   const filtered = useRealApi
     ? documents
     : mockDocuments.filter(d => d.kb_id === kbId && d.original_name.includes(search));
   const previewDoc = previewDocId ? filtered.find(d => d.doc_id === previewDocId) : filtered[0] ?? null;
 
+  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2800); };
+
   const handleFiles = async (files: FileList | File[]) => {
     const list = Array.from(files);
     if (!list.length) return;
     if (!useRealApi) {
-      setToast('演示模式：上传已模拟');
+      showToast('演示模式：上传已模拟');
       return;
     }
     setUploading(true);
     try {
-      await uploadKbDocuments(kbId, list);
+      const uploaded = await uploadKbDocuments(kbId, list);
       refreshDocs();
-      setToast(`已上传 ${list.length} 个文件`);
+      showToast(`已上传 ${list.length} 个文件`);
+      if (uploaded.length && !previewDocId) setPreviewDocId(uploaded[0].doc_id);
+      const ids = uploaded.map(d => d.doc_id);
+      if (ids.length) {
+        await parseKbDocuments(kbId, ids);
+        showToast('已提交解析任务');
+        refreshDocs();
+      }
     } catch (e) {
-      setToast(e instanceof Error ? e.message : '上传失败');
+      showToast(e instanceof Error ? e.message : '上传失败');
     } finally {
       setUploading(false);
     }
   };
-  const canPreview = previewDoc && getPageIndexDocIdForKbDoc(previewDoc.doc_id) && previewDoc.parse_status === 'parsed';
+
+  const handleDeleteSelected = async () => {
+    if (!selectedDocs.length) return;
+    if (!useRealApi) { showToast('演示模式'); return; }
+    if (!confirm(`确定删除 ${selectedDocs.length} 个文档？`)) return;
+    setActionLoading(true);
+    try {
+      await deleteKbDocuments(kbId, selectedDocs);
+      setSelectedDocs([]);
+      refreshDocs();
+      showToast('已删除');
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : '删除失败');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDocAction = async (docId: string, action: 'parse' | 'stop' | 'delete' | 'download') => {
+    setOpenMenu(null);
+    if (!useRealApi) { showToast('演示模式'); return; }
+    setActionLoading(true);
+    try {
+      if (action === 'parse') {
+        await parseKbDocuments(kbId, [docId]);
+        showToast('已提交解析');
+      } else if (action === 'stop') {
+        await stopKbDocuments(kbId, [docId]);
+        showToast('已停止解析');
+      } else if (action === 'delete') {
+        if (!confirm('确定删除该文档？')) return;
+        await deleteKbDocuments(kbId, [docId]);
+        showToast('已删除');
+      } else if (action === 'download') {
+        const blob = await kbApi.fetchDocumentPreview(docId);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filtered.find(d => d.doc_id === docId)?.original_name || 'document';
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+      refreshDocs();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : '操作失败');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleUrlImport = async () => {
+    if (!urlName.trim() || !urlValue.trim()) return;
+    setUploading(true);
+    try {
+      const doc = await uploadKbFromUrl(kbId, urlName.trim(), urlValue.trim());
+      setShowUrlImport(false);
+      setUrlName('');
+      setUrlValue('');
+      refreshDocs();
+      setPreviewDocId(doc.doc_id);
+      await parseKbDocuments(kbId, [doc.doc_id]);
+      showToast('URL 导入成功，已提交解析');
+      refreshDocs();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'URL 导入失败');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const canPreview = previewDoc && (
+    useRealApi
+      ? previewDoc.parse_status === 'parsed'
+      : getPageIndexDocIdForKbDoc(previewDoc.doc_id) && previewDoc.parse_status === 'parsed'
+  );
 
   return (
     <KBDetailLayout kbId={kbId} activeKey="kb-documents" onNavigate={onNavigate}>
@@ -778,7 +907,7 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
           <h1 className="text-base font-bold text-gray-900 dark:text-gray-100">
             文档管理{docsLoading && useRealApi ? '（加载中）' : ''}
           </h1>
-          <p className="text-xs text-gray-500 mt-0.5">五态流水线 + 解析预览三栏（§3.4 PageIndex bbox 联动）</p>
+          <p className="text-xs text-gray-500 mt-0.5">{useRealApi ? 'RAGFlow 文档 API：上传 / 解析 / 删除 / 预览' : '五态流水线 + 解析预览三栏（§3.4 PageIndex bbox 联动）'}</p>
         </div>
         <div className="flex gap-2">
           <button
@@ -795,7 +924,12 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
           >
             <Download size={14} /> 导出
           </button>
-          <button className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700">
+          <button
+            type="button"
+            onClick={() => setShowUrlImport(true)}
+            disabled={!useRealApi}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700 disabled:opacity-50"
+          >
             🔗 URL导入
           </button>
           <button
@@ -823,25 +957,32 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
         <p className="text-xs text-gray-500 mt-1">支持 PDF / DOCX / PPTX / XLSX / CSV / TXT / MD / HTML 等16+格式 · 单文件上限 100MB · 批量上传最多100个</p>
       </div>
 
-      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-        <div className="px-4 py-2.5 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
-          <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">上传队列 ({uploadQueue.filter(f => f.stage !== 'indexed').length}/{uploadQueue.length})</span>
-          <button type="button" className="text-xs text-gray-500 hover:text-gray-700">清空已完成</button>
-        </div>
-        {uploadQueue.map((f, i) => {
-          const st = PIPELINE_STAGE_LABELS[f.stage];
-          return (
-          <div key={i} className="px-4 py-2.5 flex items-center gap-3 border-b border-gray-50 dark:border-gray-800 last:border-0">
-            <FileText size={14} className="text-gray-400 flex-shrink-0" />
-            <span className="text-xs text-gray-700 dark:text-gray-300 flex-1 truncate">{f.name}</span>
-            <span className="text-[10px] text-gray-400 flex-shrink-0">{f.size}</span>
-            <div className="w-24 h-1.5 bg-gray-100 rounded-full overflow-hidden flex-shrink-0">
-              <div className={`h-full rounded-full transition-all ${f.stage === 'indexed' ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${f.progress}%` }}></div>
-            </div>
-            <span className={`text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0 ${st.color}`}>{st.label}</span>
+      {uploadQueue.length > 0 && (
+        <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
+            <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">
+              {useRealApi ? '解析队列' : '上传队列'} ({uploadQueue.filter(f => f.stage !== 'indexed').length}/{uploadQueue.length})
+            </span>
+            {useRealApi && (
+              <button type="button" onClick={() => refreshDocs()} className="text-xs text-gray-500 hover:text-gray-700">刷新</button>
+            )}
           </div>
-        );})}
-      </div>
+          {uploadQueue.map((f, i) => {
+            const st = PIPELINE_STAGE_LABELS[f.stage] ?? PIPELINE_STAGE_LABELS.parsing;
+            return (
+              <div key={i} className="px-4 py-2.5 flex items-center gap-3 border-b border-gray-50 dark:border-gray-800 last:border-0">
+                <FileText size={14} className="text-gray-400 flex-shrink-0" />
+                <span className="text-xs text-gray-700 dark:text-gray-300 flex-1 truncate">{f.name}</span>
+                <span className="text-[10px] text-gray-400 flex-shrink-0">{f.size}</span>
+                <div className="w-24 h-1.5 bg-gray-100 rounded-full overflow-hidden flex-shrink-0">
+                  <div className={`h-full rounded-full transition-all ${f.stage === 'indexed' ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${f.progress}%` }}></div>
+                </div>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0 ${st.color}`}>{st.label}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex items-center gap-3 flex-wrap">
@@ -850,8 +991,32 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="搜索文档名称..." className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
         </div>
         {selectedDocs.length > 0 && (
-          <button className="px-3 py-1.5 text-xs border border-red-200 text-red-600 rounded-lg hover:bg-red-50 flex items-center gap-1">
+          <button
+            type="button"
+            disabled={actionLoading}
+            onClick={() => void handleDeleteSelected()}
+            className="px-3 py-1.5 text-xs border border-red-200 text-red-600 rounded-lg hover:bg-red-50 flex items-center gap-1 disabled:opacity-50"
+          >
             <Trash2 size={12} /> 删除选中 ({selectedDocs.length})
+          </button>
+        )}
+        {useRealApi && filtered.some(d => d.parse_status === 'pending' || d.parse_status === 'failed') && (
+          <button
+            type="button"
+            disabled={actionLoading}
+            onClick={async () => {
+              const ids = filtered.filter(d => d.parse_status === 'pending' || d.parse_status === 'failed').map(d => d.doc_id);
+              try {
+                await parseKbDocuments(kbId, ids);
+                refreshDocs();
+                showToast(`已提交 ${ids.length} 个文档解析`);
+              } catch (e) {
+                showToast(e instanceof Error ? e.message : '解析失败');
+              }
+            }}
+            className="px-3 py-1.5 text-xs border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 flex items-center gap-1"
+          >
+            <RefreshCw size={12} /> 批量解析
           </button>
         )}
       </div>
@@ -865,9 +1030,9 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">文件名</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 hidden sm:table-cell">类型</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 hidden md:table-cell">大小</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">流水线</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 hidden lg:table-cell">认证</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 hidden lg:table-cell">质量</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">{useRealApi ? '解析状态' : '流水线'}</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 hidden lg:table-cell">{useRealApi ? 'Chunk' : '认证'}</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 hidden lg:table-cell">{useRealApi ? '上传者' : '质量'}</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 hidden xl:table-cell">上传时间</th>
               <th className="w-10"></th>
             </tr>
@@ -877,6 +1042,7 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
               const gov = governedMap[doc.doc_id];
               const stage = gov ? PIPELINE_STAGE_LABELS[gov.pipeline_stage] : PIPELINE_STAGE_LABELS.indexed;
               const cert = gov ? CERT_LABELS[gov.certification_status] : CERT_LABELS.draft;
+              const parseUi = PARSE_STATUS_UI[doc.parse_status];
               return (
                 <tr
                   key={doc.doc_id}
@@ -912,15 +1078,28 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
                   </td>
                   <td className="px-4 py-3 text-xs text-gray-500 hidden md:table-cell">{formatBytes(doc.file_size)}</td>
                   <td className="px-4 py-3">
-                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${stage.color}`}>
-                      {gov?.is_stale && <AlertIcon size={10} />}{stage.label}
-                    </span>
+                    {useRealApi ? (
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${parseUi.color}`}>
+                        {doc.parse_status === 'parsing' && <Loader size={10} className="animate-spin" />}
+                        {parseUi.label}
+                      </span>
+                    ) : (
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${stage.color}`}>
+                        {gov?.is_stale && <AlertIcon size={10} />}{stage.label}
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3 hidden lg:table-cell">
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${cert.color}`}>{cert.label}</span>
+                    {useRealApi ? (
+                      <span className="text-xs text-gray-600">{doc.chunk_count}</span>
+                    ) : (
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${cert.color}`}>{cert.label}</span>
+                    )}
                   </td>
                   <td className="px-4 py-3 hidden lg:table-cell">
-                    {doc.parse_quality_score > 0 ? (
+                    {useRealApi ? (
+                      <span className="text-xs text-gray-500">{doc.uploaded_by}</span>
+                    ) : doc.parse_quality_score > 0 ? (
                       <div className="flex items-center gap-1.5">
                         <div className="w-12 h-1.5 bg-gray-100 rounded-full overflow-hidden">
                           <div className={`h-full rounded-full ${doc.parse_quality_score >= 90 ? 'bg-green-500' : doc.parse_quality_score >= 70 ? 'bg-yellow-500' : 'bg-red-500'}`} style={{ width: `${doc.parse_quality_score}%` }}></div>
@@ -939,9 +1118,27 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
                       >
                         分块
                       </button>
-                      <button type="button" className="p-1 rounded hover:bg-gray-100 text-gray-400">
-                        <MoreHorizontal size={14} />
-                      </button>
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setOpenMenu(openMenu === doc.doc_id ? null : doc.doc_id)}
+                          className="p-1 rounded hover:bg-gray-100 text-gray-400"
+                        >
+                          <MoreHorizontal size={14} />
+                        </button>
+                        {openMenu === doc.doc_id && (
+                          <div className="absolute right-0 top-6 z-20 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[120px]">
+                            {(doc.parse_status === 'pending' || doc.parse_status === 'failed') && (
+                              <button type="button" onClick={() => void handleDocAction(doc.doc_id, 'parse')} className="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50">解析</button>
+                            )}
+                            {doc.parse_status === 'parsing' && (
+                              <button type="button" onClick={() => void handleDocAction(doc.doc_id, 'stop')} className="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50">停止</button>
+                            )}
+                            <button type="button" onClick={() => void handleDocAction(doc.doc_id, 'download')} className="w-full text-left px-3 py-1.5 text-xs hover:bg-gray-50">下载</button>
+                            <button type="button" onClick={() => void handleDocAction(doc.doc_id, 'delete')} className="w-full text-left px-3 py-1.5 text-xs text-red-600 hover:bg-red-50">删除</button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </td>
                 </tr>
@@ -962,7 +1159,24 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
     )}
     {showPreview && previewDoc && !canPreview && (
       <div className="flex-1 flex items-center justify-center border-t border-gray-200 dark:border-gray-700 text-sm text-gray-500 p-6">
-        选中文档暂不支持解析预览（需已解析且已建树）
+        {useRealApi ? '文档尚未解析完成，无法预览' : '选中文档暂不支持解析预览（需已解析且已建树）'}
+      </div>
+    )}
+
+    {showUrlImport && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl w-full max-w-md p-5 space-y-4">
+          <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">URL 导入</h3>
+          <p className="text-xs text-gray-500">将网页转为 PDF 并入库（RAGFlow web 上传）</p>
+          <input value={urlName} onChange={e => setUrlName(e.target.value)} placeholder="文档名称" className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg dark:bg-gray-800" />
+          <input value={urlValue} onChange={e => setUrlValue(e.target.value)} placeholder="https://..." className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg dark:bg-gray-800" />
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setShowUrlImport(false)} className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg">取消</button>
+            <button type="button" disabled={uploading} onClick={() => void handleUrlImport()} className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg disabled:opacity-50">
+              {uploading ? '导入中…' : '导入'}
+            </button>
+          </div>
+        </div>
       </div>
     )}
     </div>
@@ -977,13 +1191,17 @@ interface ChunkPreviewPageProps {
 }
 
 export function ChunkPreviewPage({ kbId, docId, onNavigate }: ChunkPreviewPageProps) {
-  const doc = mockDocuments.find(d => d.doc_id === docId) || mockDocuments[0];
+  const { data: docList } = useDocuments(kbId);
+  const doc = (useRealApi ? docList : mockDocuments).find(d => d.doc_id === docId)
+    || (useRealApi ? docList[0] : mockDocuments[0]);
+  const { data: chunkResult, loading: chunksLoading, error: chunksError, refresh: refreshChunks } = useChunks(kbId, doc?.doc_id || docId);
+  const chunks = useRealApi ? chunkResult.items : mockChunks;
   const [strategy, setStrategy] = useState('通用分块');
   const [chunkSize, setChunkSize] = useState('512');
   const [toast, setToast] = useState<string | null>(null);
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
-  const qualityMap = Object.fromEntries(getAllChunkQuality().map(q => [q.chunk_id, q]));
+  const qualityMap = useRealApi ? {} : Object.fromEntries(getAllChunkQuality().map(q => [q.chunk_id, q]));
 
   const contentTypeConfig = {
     text: { label: '文本', color: 'bg-gray-100 text-gray-600', icon: '📄' },
@@ -1008,8 +1226,8 @@ export function ChunkPreviewPage({ kbId, docId, onNavigate }: ChunkPreviewPagePr
     <div className="p-6 flex flex-col gap-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
-          <h1 className="text-base font-bold text-gray-900 dark:text-gray-100 truncate max-w-md">{doc.original_name} · 分块预览</h1>
-          <p className="text-xs text-gray-500 mt-0.5">主题纯度 / 跨节 / 重叠 · 排除块不参与检索（US-1.14）</p>
+          <h1 className="text-base font-bold text-gray-900 dark:text-gray-100 truncate max-w-md">{doc?.original_name ?? '—'} · 分块预览{chunksLoading && useRealApi ? '（加载中）' : ''}</h1>
+          <p className="text-xs text-gray-500 mt-0.5">{useRealApi ? `共 ${chunkResult.total} 块 · RAGFlow chunks API` : '主题纯度 / 跨节 / 重叠 · 排除块不参与检索（US-1.14）'}</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -1019,7 +1237,21 @@ export function ChunkPreviewPage({ kbId, docId, onNavigate }: ChunkPreviewPagePr
           >
             <FlaskConical size={13} /> 检索测试
           </button>
-          <button type="button" onClick={() => showToast('重新分块任务已提交（原型）')} className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-1.5 text-gray-700">
+          <button
+            type="button"
+            onClick={async () => {
+              if (!useRealApi) { showToast('重新分块任务已提交（原型）'); return; }
+              if (!doc) return;
+              try {
+                await parseKbDocuments(kbId, [doc.doc_id]);
+                showToast('已提交重新解析');
+                refreshChunks();
+              } catch (e) {
+                showToast(e instanceof Error ? e.message : '操作失败');
+              }
+            }}
+            className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-1.5 text-gray-700"
+          >
             <RefreshCw size={13} /> 重新分块
           </button>
         </div>
@@ -1044,16 +1276,24 @@ export function ChunkPreviewPage({ kbId, docId, onNavigate }: ChunkPreviewPagePr
         </div>
         <div className="h-4 w-px bg-gray-200 hidden sm:block"></div>
         <div className="flex items-center gap-3 text-xs text-gray-500 flex-wrap">
-          <span><strong className="text-gray-800">5</strong> 块</span>
-          <span>平均 <strong className="text-gray-800">412</strong> Token</span>
-          <span>最大 <strong className="text-gray-800">512</strong></span>
-          <span>最小 <strong className="text-gray-800">256</strong></span>
+          <span><strong className="text-gray-800">{chunks.length}</strong> 块</span>
+          {chunks.length > 0 && (
+            <>
+              <span>平均 <strong className="text-gray-800">{Math.round(chunks.reduce((s, c) => s + c.token_count, 0) / chunks.length)}</strong> Token</span>
+              <span>最大 <strong className="text-gray-800">{Math.max(...chunks.map(c => c.token_count))}</strong></span>
+              <span>最小 <strong className="text-gray-800">{Math.min(...chunks.map(c => c.token_count))}</strong></span>
+            </>
+          )}
         </div>
       </div>
 
+      {chunksError && useRealApi && (
+        <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{chunksError}</div>
+      )}
+
       {/* Chunks list */}
       <div className="space-y-3">
-        {mockChunks.map(chunk => {
+        {chunks.map(chunk => {
           const tc = contentTypeConfig[chunk.content_type];
           const q = qualityMap[chunk.chunk_id];
           const isExcluded = excluded.has(chunk.chunk_id) || q?.excluded_from_retrieval;
@@ -1135,8 +1375,29 @@ interface IndexStatusPageProps {
 }
 
 export function IndexStatusPage({ kbId, onNavigate }: IndexStatusPageProps) {
-  const health = getKBHealthScore(kbId);
-  const failures = getKBHealthFailures(kbId);
+  const { data: kb } = useKnowledgeBase(kbId);
+  const { data: docs, refresh: refreshDocs } = useDocuments(kbId);
+  const { data: graphTrace } = useIndexTrace(kbId, 'graph');
+  const { data: raptorTrace } = useIndexTrace(kbId, 'raptor');
+  const health = useRealApi
+    ? { overall: Math.min(100, 70 + Math.round((docs.filter(d => d.parse_status === 'parsed').length / Math.max(docs.length, 1)) * 30)), dimensions: { vector: 90, parse: 85, graph: 60, wiki: 0, pageindex: 0 } }
+    : getKBHealthScore(kbId);
+  const failures = useRealApi
+    ? docs.filter(d => d.parse_status === 'failed').map(d => ({
+        doc_name: d.original_name,
+        stage: 'parse' as const,
+        reason: '解析失败',
+        deep_link_page: 'kb-documents',
+        deep_link_extra: { selectedKBId: kbId, selectedDocId: d.doc_id },
+      }))
+    : getKBHealthFailures(kbId);
+
+  const apiIndexCards = useRealApi ? [
+    { pipeline: 'vector', label: '向量索引', indexed: docs.filter(d => d.parse_status === 'parsed').length, total: docs.length || 1, health: 90, status: docs.some(d => d.parse_status === 'parsing') ? 'running' as const : 'completed' as const, last_updated: '实时', failed_count: docs.filter(d => d.parse_status === 'failed').length },
+    { pipeline: 'graph', label: 'GraphRAG', indexed: Number((graphTrace as { progress?: number })?.progress ?? 0), total: 100, health: 70, status: ((graphTrace as { status?: string })?.status === 'running' ? 'running' : 'not_started') as 'running' | 'not_started', last_updated: '—', failed_count: 0 },
+    { pipeline: 'raptor', label: 'RAPTOR', indexed: Number((raptorTrace as { progress?: number })?.progress ?? 0), total: 100, health: 65, status: ((raptorTrace as { status?: string })?.status === 'running' ? 'running' : 'not_started') as 'running' | 'not_started', last_updated: '—', failed_count: 0 },
+  ] : mockIndexStatuses;
+
   const statusConfig2 = {
     running: { label: '索引中', color: 'text-blue-600', bg: 'bg-blue-50', dot: 'bg-blue-500 animate-pulse' },
     completed: { label: '已完成', color: 'text-green-600', bg: 'bg-green-50', dot: 'bg-green-500' },
@@ -1155,8 +1416,19 @@ export function IndexStatusPage({ kbId, onNavigate }: IndexStatusPageProps) {
           <h1 className="text-base font-bold text-gray-900 dark:text-gray-100">索引状态</h1>
           <p className="text-xs text-gray-500 mt-0.5">五维健康分 + 失败归因深链（US-1.15）</p>
         </div>
-        <button type="button" className="px-3 py-1.5 text-sm bg-orange-500 text-white rounded-lg hover:bg-orange-600 flex items-center gap-1.5">
-          <RefreshCw size={13} /> 全部重建索引
+        <button
+          type="button"
+          onClick={async () => {
+            if (!useRealApi) return;
+            const pending = docs.filter(d => d.parse_status === 'pending' || d.parse_status === 'failed').map(d => d.doc_id);
+            if (pending.length) {
+              await parseKbDocuments(kbId, pending);
+              refreshDocs();
+            }
+          }}
+          className="px-3 py-1.5 text-sm bg-orange-500 text-white rounded-lg hover:bg-orange-600 flex items-center gap-1.5"
+        >
+          <RefreshCw size={13} /> {useRealApi ? '重试失败解析' : '全部重建索引'}
         </button>
       </div>
 
@@ -1177,7 +1449,7 @@ export function IndexStatusPage({ kbId, onNavigate }: IndexStatusPageProps) {
 
       {/* Index status cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        {mockIndexStatuses.map((idx: any) => {
+        {apiIndexCards.map((idx: typeof mockIndexStatuses[0]) => {
           const sc = statusConfig2[idx.status as keyof typeof statusConfig2];
           const pct = Math.round((idx.indexed / idx.total) * 100);
           return (
@@ -1226,7 +1498,20 @@ export function IndexStatusPage({ kbId, onNavigate }: IndexStatusPageProps) {
               >
                 定位
               </button>
-              <button type="button" className="text-xs px-2.5 py-1 bg-gray-50 text-gray-600 rounded-lg hover:bg-gray-100">重试</button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!useRealApi) return;
+                  const docId = (f.deep_link_extra as { selectedDocId?: string } | undefined)?.selectedDocId;
+                  if (docId) {
+                    await parseKbDocuments(kbId, [docId]);
+                    refreshDocs();
+                  }
+                }}
+                className="text-xs px-2.5 py-1 bg-gray-50 text-gray-600 rounded-lg hover:bg-gray-100"
+              >
+                重试
+              </button>
             </div>
           </div>
         ))}

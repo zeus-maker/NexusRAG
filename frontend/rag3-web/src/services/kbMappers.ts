@@ -1,4 +1,4 @@
-import type { Document, KBStatus, KnowledgeBase, ParseStatus } from '../types';
+import type { Chunk, ContentType, Document, KBStatus, KnowledgeBase, ParseStatus } from '../types';
 import type { KBCreateForm } from '../components/KBCreateDialog';
 
 /** RAGFlow Dataset API 响应形状（精简） */
@@ -135,19 +135,37 @@ export function mapDocumentToUI(doc: RagflowDocument, kbId: string): Document {
   };
 }
 
+/** RAGFlow POST /api/v1/datasets 请求体（对齐 CreateDatasetReq） */
 export function mapCreateFormToPayload(form: KBCreateForm) {
   const chunkMethod = CHUNK_STRATEGY_TO_METHOD[form.chunkStrategy] || 'naive';
-  return {
+  const description = form.description.trim();
+
+  const payload: Record<string, unknown> = {
     name: form.name.trim(),
-    description: form.description.trim(),
-    avatar: form.icon,
-    language: form.language === '英文' ? 'English' : 'Chinese',
     permission: form.visibility,
     chunk_method: chunkMethod,
-    parser_config: {
-      llm_id: form.llmModel,
+    // language 非顶层字段，走 ext（与上游 datasets 创建对话框一致）
+    ext: {
+      language: form.language === '英文' ? 'English' : 'Chinese',
     },
   };
+
+  if (description) payload.description = description;
+
+  // avatar 须为 data:image/{jpeg,png};base64,...；emoji 仅 UI 展示，勿提交
+  // embedding_model 须为 model@provider；无效格式时省略，使用租户默认 embd_id
+  const emb = form.embeddingModel?.trim();
+  if (emb && emb.includes('@')) {
+    payload.embedding_model = emb;
+  }
+
+  if (form.enableGraphRAG) {
+    payload.parser_config = {
+      graphrag: { use_graphrag: true },
+    };
+  }
+
+  return payload;
 }
 
 export function sortKeyToOrderby(sortBy: string): string {
@@ -158,4 +176,128 @@ export function sortKeyToOrderby(sortBy: string): string {
     chunks: 'chunk_count',
   };
   return map[sortBy] || 'update_time';
+}
+
+export interface RagflowChunk {
+  id: string;
+  content?: string;
+  document_id?: string;
+  docnm_kwd?: string;
+  important_keywords?: string[];
+  available?: boolean;
+  positions?: number[][];
+}
+
+export interface RagflowSearchChunk {
+  chunk_id?: string;
+  id?: string;
+  content_with_weight?: string;
+  content?: string;
+  docnm_kwd?: string;
+  document_name?: string;
+  similarity?: number;
+  vector_similarity?: number;
+  term_similarity?: number;
+}
+
+export interface RagflowIngestionLog {
+  id: string;
+  operation_status?: string;
+  progress?: number;
+  progress_msg?: string;
+  create_date?: string;
+  update_date?: string;
+  document_name?: string;
+  file_name?: string;
+  type?: string;
+}
+
+/** 解析状态 UI 标签（API 模式文档表） */
+export const PARSE_STATUS_UI: Record<ParseStatus, { label: string; color: string }> = {
+  pending: { label: '待解析', color: 'bg-gray-100 text-gray-600' },
+  parsing: { label: '解析中', color: 'bg-blue-100 text-blue-700' },
+  parsed: { label: '已完成', color: 'bg-green-100 text-green-700' },
+  failed: { label: '失败', color: 'bg-red-100 text-red-700' },
+};
+
+export function mapChunkToUI(chunk: RagflowChunk, index: number): Chunk {
+  const content = chunk.content || '';
+  const page = chunk.positions?.[0]?.[0] ?? 1;
+  return {
+    chunk_id: chunk.id,
+    chunk_index: index + 1,
+    content_preview: content.length > 300 ? `${content.slice(0, 300)}…` : content,
+    content_type: inferContentType(content),
+    chunk_strategy: '通用分块',
+    token_count: Math.max(1, Math.round(content.length / 2)),
+    page_number: page,
+    section_title: chunk.docnm_kwd || `Chunk ${index + 1}`,
+    acl_level: chunk.available === false ? 'restricted' : 'internal',
+  };
+}
+
+function inferContentType(content: string): ContentType {
+  if (content.includes('|') && content.split('\n').some(l => l.includes('|'))) return 'table';
+  if (/```|function\s|class\s|import\s/.test(content)) return 'code';
+  if (/\$.*\$|\\\(|\\\[/.test(content)) return 'formula';
+  if (content.length < 80 && !content.includes('\n')) return 'text';
+  return 'text';
+}
+
+export function mapSearchHitToFusion(chunk: RagflowSearchChunk, rank: number) {
+  const score = chunk.similarity ?? chunk.vector_similarity ?? 0;
+  return {
+    rank,
+    chunk_id: chunk.chunk_id || chunk.id || '',
+    doc_name: chunk.docnm_kwd || chunk.document_name || '—',
+    score,
+    snippet: (chunk.content_with_weight || chunk.content || '').slice(0, 200),
+    channel: 'vector' as const,
+  };
+}
+
+export function mapIngestionLogToUI(log: RagflowIngestionLog) {
+  const status = (log.operation_status || 'unknown').toLowerCase();
+  const statusColor =
+    status.includes('done') || status.includes('success')
+      ? 'text-green-600'
+      : status.includes('fail') || status.includes('error')
+        ? 'text-red-600'
+        : status.includes('run')
+          ? 'text-blue-600'
+          : 'text-gray-600';
+  return {
+    id: log.id,
+    name: log.document_name || log.file_name || log.type || '—',
+    status: log.operation_status || '—',
+    statusColor,
+    progress: log.progress ?? 0,
+    message: log.progress_msg || '—',
+    time: log.update_date || log.create_date || '—',
+  };
+}
+
+export function mapSettingsToUpdatePayload(patch: {
+  name?: string;
+  description?: string;
+  permission?: 'me' | 'team';
+  chunk_method?: string;
+  embedding_model?: string;
+}) {
+  const payload: Record<string, unknown> = {};
+  if (patch.name?.trim()) payload.name = patch.name.trim();
+  if (patch.description !== undefined) payload.description = patch.description.trim();
+  if (patch.permission) payload.permission = patch.permission;
+  if (patch.chunk_method) payload.chunk_method = patch.chunk_method;
+  if (patch.embedding_model?.includes('@')) payload.embedding_model = patch.embedding_model;
+  return payload;
+}
+
+/** 文档预览/下载 URL（相对 /api/v1） */
+export function documentPreviewPath(docId: string) {
+  return `/documents/${docId}/preview`;
+}
+
+export function documentDownloadPath(docId: string) {
+  return `/documents/${docId}/download`;
 }

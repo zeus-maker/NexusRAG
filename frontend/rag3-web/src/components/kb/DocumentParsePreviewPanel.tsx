@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Target, Layers, GitBranch, ExternalLink } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Target, Layers, GitBranch, ExternalLink, FileText } from 'lucide-react';
 import {
   PAGEINDEX_TREE_V5, getPageIndexTree, findTreeNode, getNodePreviewBbox,
   getPageIndexDocIdForKbDoc, type PageIndexTreeNode,
@@ -8,6 +8,9 @@ import { IndexTreeNode, PdfBboxPreview, NODE_TYPE_LABEL } from '../pageIndex/Pag
 import type { Document } from '../../types';
 import type { GovernedDocument } from '../../data/kbGovernanceMock';
 import { PIPELINE_STAGE_LABELS, CERT_LABELS } from '../../data/kbGovernanceMock';
+import { useRealApi } from '../../services/http';
+import { useChunks } from '../../hooks/useKbData';
+import { kbApi } from '../../services/kbApi';
 
 interface Props {
   doc: Document;
@@ -16,7 +19,85 @@ interface Props {
   onNavigate: (page: string, extra?: Record<string, unknown>) => void;
 }
 
+function ApiParsePreview({ doc, kbId, onNavigate }: Props) {
+  const { data: chunkResult, loading } = useChunks(kbId, doc.doc_id);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let revoked: string | null = null;
+    kbApi.fetchDocumentPreview(doc.doc_id)
+      .then(blob => {
+        const url = URL.createObjectURL(blob);
+        revoked = url;
+        setPreviewUrl(url);
+      })
+      .catch(() => setPreviewUrl(null));
+    return () => {
+      if (revoked) URL.revokeObjectURL(revoked);
+    };
+  }, [doc.doc_id]);
+
+  return (
+    <div className="flex flex-1 min-h-0 flex-col lg:flex-row border-t border-gray-200 dark:border-gray-700">
+      <div className="w-full lg:w-72 flex-shrink-0 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 flex flex-col">
+        <div className="px-3 py-2.5 border-b border-gray-100 dark:border-gray-800">
+          <p className="text-xs font-semibold text-gray-700 dark:text-gray-300">分块列表</p>
+          <p className="text-[10px] text-gray-400 truncate">{doc.original_name}</p>
+        </div>
+        <div className="flex-1 overflow-y-auto p-2 min-h-[160px] space-y-1">
+          {loading && <p className="text-xs text-gray-500 p-2">加载中…</p>}
+          {chunkResult.items.map(chunk => (
+            <div key={chunk.chunk_id} className="px-2 py-1.5 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 text-xs">
+              <div className="font-medium text-gray-800 dark:text-gray-200">#{chunk.chunk_index}</div>
+              <div className="text-gray-500 line-clamp-2">{chunk.content_preview}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="flex-1 overflow-y-auto p-4 space-y-3 min-w-0">
+        <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <FileText size={14} className="text-cyan-600" />
+            <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">{doc.original_name}</h3>
+          </div>
+          <div className="flex flex-wrap gap-2 text-[10px] text-gray-500 mb-3">
+            <span>{doc.chunk_count} chunks</span>
+            <span>{doc.file_type}</span>
+            <span>{doc.parse_status}</span>
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => onNavigate('kb-chunks', { selectedKBId: kbId, selectedDocId: doc.doc_id })}
+              className="text-xs px-2.5 py-1 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700"
+            >
+              查看全部分块
+            </button>
+            <a
+              href={kbApi.downloadUrl(doc.doc_id)}
+              target="_blank"
+              rel="noreferrer"
+              className="text-xs px-2.5 py-1 text-blue-600 hover:underline inline-flex items-center gap-1"
+            >
+              <ExternalLink size={11} /> 下载
+            </a>
+          </div>
+        </div>
+        {previewUrl ? (
+          <iframe title="文档预览" src={previewUrl} className="w-full h-96 rounded-xl border border-gray-200 bg-white" />
+        ) : (
+          <p className="text-xs text-gray-500">无法加载原始文件预览</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function DocumentParsePreviewPanel({ doc, kbId, governed, onNavigate }: Props) {
+  if (useRealApi) {
+    return <ApiParsePreview doc={doc} kbId={kbId} governed={governed} onNavigate={onNavigate} />;
+  }
+
   const piDocId = getPageIndexDocIdForKbDoc(doc.doc_id);
   const tree = piDocId ? (getPageIndexTree(piDocId) ?? PAGEINDEX_TREE_V5) : null;
   const [selectedNodeId, setSelectedNodeId] = useState('ch5-1-1');

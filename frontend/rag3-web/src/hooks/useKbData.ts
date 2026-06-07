@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { mockKBs, mockDocuments } from '../mockData';
+import { mockKBs, mockDocuments, mockChunks } from '../mockData';
 import { kbApi } from '../services/kbApi';
 import { useRealApi } from '../services/http';
-import type { Document, KnowledgeBase } from '../types';
+import type { Chunk, Document, KnowledgeBase } from '../types';
+import type { KBCreateForm } from '../components/KBCreateDialog';
 
 interface AsyncState<T> {
   data: T;
@@ -16,7 +17,7 @@ function useAsyncData<T>(
   fallback: T,
   deps: unknown[],
 ): AsyncState<T> {
-  const [data, setData] = useState<T>(useRealApi ? fallback : fallback);
+  const [data, setData] = useState<T>(fallback);
   const [loading, setLoading] = useState(useRealApi);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
@@ -117,9 +118,63 @@ export function useDocuments(kbId: string, search = '') {
   );
 }
 
-export async function createKnowledgeBase(form: Parameters<typeof kbApi.create>[0]): Promise<KnowledgeBase> {
+export function useDocumentListResult(kbId: string, search = '') {
+  const fallback = mockDocuments.filter(
+    d => d.kb_id === kbId && d.original_name.toLowerCase().includes(search.toLowerCase()),
+  );
+
+  return useAsyncData(
+    async () => kbApi.listDocuments(kbId, {
+      keywords: search.trim() || undefined,
+      page: 1,
+      page_size: 200,
+      orderby: 'create_time',
+      desc: true,
+    }),
+    { items: fallback, total: fallback.length },
+    [kbId, search],
+  );
+}
+
+export function useChunks(kbId: string, docId: string) {
+  const fallback = mockChunks;
+  return useAsyncData(
+    async () => {
+      const res = await kbApi.listChunks(kbId, docId, { page: 1, page_size: 100 });
+      return res;
+    },
+    { items: fallback, total: fallback.length },
+    [kbId, docId],
+  );
+}
+
+export function useIngestionLogs(kbId: string) {
+  return useAsyncData(
+    async () => kbApi.getIngestions(kbId, { page: 1, page_size: 50, log_type: 'file' }),
+    { items: [], total: 0 },
+    [kbId],
+  );
+}
+
+export function useIndexTrace(kbId: string, type: 'graph' | 'raptor' | 'mindmap') {
+  return useAsyncData(
+    async () => kbApi.traceIndex(kbId, type),
+    {},
+    [kbId, type],
+  );
+}
+
+export async function createKnowledgeBase(form: KBCreateForm): Promise<KnowledgeBase> {
   if (!useRealApi) throw new Error('mock 模式下请使用本地逻辑');
   return kbApi.create(form);
+}
+
+export async function updateKnowledgeBase(
+  kbId: string,
+  patch: Parameters<typeof kbApi.update>[1],
+): Promise<KnowledgeBase> {
+  if (!useRealApi) throw new Error('mock 模式下不支持保存');
+  return kbApi.update(kbId, patch);
 }
 
 export async function deleteKnowledgeBase(ids: string[]): Promise<void> {
@@ -130,4 +185,33 @@ export async function deleteKnowledgeBase(ids: string[]): Promise<void> {
 export async function uploadKbDocuments(kbId: string, files: File[]): Promise<Document[]> {
   if (!useRealApi) throw new Error('mock 模式下不支持上传');
   return kbApi.uploadDocuments(kbId, files);
+}
+
+export async function uploadKbFromUrl(kbId: string, name: string, url: string): Promise<Document> {
+  if (!useRealApi) throw new Error('mock 模式下不支持 URL 导入');
+  return kbApi.uploadFromUrl(kbId, name, url);
+}
+
+export async function deleteKbDocuments(kbId: string, ids: string[]): Promise<number> {
+  if (!useRealApi) throw new Error('mock 模式下不支持删除');
+  return kbApi.deleteDocuments(kbId, ids);
+}
+
+export async function parseKbDocuments(kbId: string, ids: string[]) {
+  if (!useRealApi) throw new Error('mock 模式下不支持解析');
+  return kbApi.parseDocuments(kbId, ids);
+}
+
+export async function stopKbDocuments(kbId: string, ids: string[]) {
+  if (!useRealApi) throw new Error('mock 模式下不支持停止解析');
+  return kbApi.stopDocuments(kbId, ids);
+}
+
+export async function searchKb(
+  kbId: string,
+  question: string,
+  options?: Parameters<typeof kbApi.searchDataset>[1],
+) {
+  if (!useRealApi) throw new Error('mock 模式下请使用检索 mock');
+  return kbApi.searchDataset(kbId, { question, ...options });
 }

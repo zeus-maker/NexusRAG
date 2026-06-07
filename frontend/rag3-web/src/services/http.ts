@@ -1,6 +1,6 @@
 /**
  * RAGFlow HTTP 客户端基座
- * 开发代理: vite.config.ts → http://localhost:9380
+ * 开发代理: vite.config.ts 将 /api/* 原样转发至 http://localhost:9380/api/*
  */
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? '/api';

@@ -19,7 +19,16 @@ Vite 将 `/api/*` 代理到 RAGFlow（默认 `http://localhost:9380`）。
 VITE_USE_REAL_API=true
 ```
 
-启动 RAGFlow 后端后，登录页将调用 `/v1/auth/login`（RSA 加密密码），知识库列表/创建/删除/文档列表/上传走 `/v1/datasets/*`。
+启动 RAGFlow 后端后，登录页将调用 `/api/v1/auth/login`（RSA 加密密码）。API 模式已对接：
+
+- 知识库：列表 / 创建 / 更新 / 删除
+- 文档：列表 / 上传 / URL 导入 / 删除 / 解析 / 停止 / 预览 / 下载
+- 分块：`GET .../documents/:id/chunks`
+- 检索测试：`POST .../datasets/:id/search`
+- 摄取日志：`GET .../datasets/:id/ingestions`
+- 索引进度：`GET .../datasets/:id/index?type=graph|raptor`
+
+仍为 mock 的能力：治理陈旧队列、Wiki/PageIndex/Graph Hub、权限 ACL、数据源、导出任务（无 RAGFlow 对应 API）。
 
 也可设置 `VITE_RAGFLOW_AUTH_TOKEN` 跳过登录（开发调试）。
 
