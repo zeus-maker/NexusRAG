@@ -310,9 +310,18 @@ def register_page(page_path):
     page_name = getattr(page, "page_name", page_name)
     sdk_path = "\\sdk\\" if sys.platform.startswith("win") else "/sdk/"
     restful_api_path = "\\restful_apis\\" if sys.platform.startswith("win") else "/restful_apis/"
-    url_prefix = f"/api/{API_VERSION}" if sdk_path in path or restful_api_path in path else f"/{API_VERSION}/{page_name}"
+    if page_name == "rag3":
+        # 与前端 apiRequest(/api/v1/...) 及 vite /api 代理一致
+        url_prefix = f"/api/{API_VERSION}/rag3"
+    elif sdk_path in path or restful_api_path in path:
+        url_prefix = f"/api/{API_VERSION}"
+    else:
+        url_prefix = f"/{API_VERSION}/{page_name}"
 
     app.register_blueprint(page.manager, url_prefix=url_prefix)
+    if page_name == "rag3":
+        # 保留旧路径 /v1/rag3/* 兼容
+        app.register_blueprint(page.manager, url_prefix=f"/{API_VERSION}/rag3", name="rag3_legacy")
     return url_prefix
 
 

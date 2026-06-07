@@ -224,9 +224,6 @@ async def _run_build(task_id: str, kb_id: str, tenant_id: str, index_type: str, 
             )
 
             chunks = await _fetch_all_chunks(tenant_id, kb_id, doc_id)
-            if not chunks:
-                msgs.append(f"{datetime.now():%H:%M:%S} [WARN] {doc_name} 无分块，已跳过")
-                continue
 
             if index_type == "pageindex":
                 tree = None
@@ -255,6 +252,9 @@ async def _run_build(task_id: str, kb_id: str, tenant_id: str, index_type: str, 
                     logger.warning("pageindex sdk build skipped for %s: %s", doc_name, e)
 
                 if not tree:
+                    if not chunks:
+                        msgs.append(f"{datetime.now():%H:%M:%S} [WARN] {doc_name} 无分块且 SDK 建树失败，已跳过")
+                        continue
                     tree = _build_pageindex_tree(doc_name, chunks)
                     tree["source"] = build_source
                 REDIS_CONN.set(
@@ -268,6 +268,9 @@ async def _run_build(task_id: str, kb_id: str, tenant_id: str, index_type: str, 
                     f"{len(chunks)} chunks · {root_children} 顶层节点"
                 )
             else:
+                if not chunks:
+                    msgs.append(f"{datetime.now():%H:%M:%S} [WARN] {doc_name} 无分块，已跳过")
+                    continue
                 entries = _build_wiki_entries(doc_id, doc_name, chunks)
                 existing_raw = REDIS_CONN.get(_wiki_artifact_key(kb_id))
                 existing: list[dict] = []

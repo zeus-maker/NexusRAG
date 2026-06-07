@@ -1631,3 +1631,34 @@ RAG3 PageIndex 建树此前为按页码分组 chunk 的启发式 mock，与 Vect
 - `backend/ragflow_rag30/rag3/pageindex_integration.py`（新建）
 - `backend/ragflow_rag30/rag3/index_service.py`
 - `backend/ragflow_rag30/pyproject.toml`
+
+---
+
+## 55. 修复 RAG3 PageIndex API 404 导致建树从未触发
+
+### 背景与目标
+
+用户已配置 `PAGEINDEX_API_KEY` 并上传 PDF，Hub 仍显示 PageIndex 未生成。排查发现前端请求 `/api/v1/rag3/*` 返回 404，构建任务从未入队；且 404 被静默吞掉后批次标记为已触发，无法重试。
+
+### 改动摘要
+
+- **路由**：`rag3_app` 主注册前缀改为 `/api/v1/rag3`（与 `apiRequest`、vite `/api` 代理一致），保留 `/v1/rag3` 兼容。
+- **前端**：解析队列触发增强索引失败时不再 `markBatchIndexTriggered`，控制台输出错误，允许下一轮轮询重试。
+- **建树**：PageIndex 云 SDK 路径不再强制先有 ES 分块（PDF 直传云 API）；启发式回退仍要求分块。
+
+### 验证与风险
+
+- `curl http://localhost:9380/api/v1/rag3/health` 返回 `code:0`。
+- 重启 `ragflow_server` 并导出 `PAGEINDEX_API_KEY` 后，上传 PDF 勾选 PageIndex → 向量解析完成后应能 `POST /api/v1/rag3/datasets/:id/index?type=pageindex`。
+- 风险：云建树耗时可达数分钟；非 PDF 仍依赖分块启发式。
+
+### 反思与沉淀
+
+- RAGFlow 存在 `/api/v1`（REST）与 `/v1`（旧 Web API）双前缀；RAG3 扩展应挂在 `/api/v1/rag3` 而非仅 `/v1/rag3`。
+- 前端内存 `documentEnhancementStore` 刷新会丢批次状态，已解析文档需在 Hub 手动点「构建」或重新上传。
+
+### 涉及文件
+
+- `backend/ragflow_rag30/api/apps/__init__.py`
+- `frontend/rag3-web/src/hooks/useParseQueuePolling.ts`
+- `backend/ragflow_rag30/rag3/index_service.py`

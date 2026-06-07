@@ -142,8 +142,8 @@ export function useParseQueuePolling(
           await triggerKbEnhancementIndexes(kbId, sample.config, parsedIds);
         }
         markBatchIndexTriggered(kbId, batchId);
-      } catch {
-        markBatchIndexTriggered(kbId, batchId);
+      } catch (err) {
+        console.error('[parse-queue] enhancement index trigger failed', err);
       } finally {
         triggeringRef.current.delete(lockKey);
       }
