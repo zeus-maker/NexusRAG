@@ -1174,3 +1174,29 @@ P0 最后一项：检索测试页需从单通道混合结果升级为 PRD §10.5
 - `frontend/rag3-web/src/components/kb/PdfPreviewWithHighlights.tsx`
 - `frontend/rag3-web/src/components/kb/KnowledgeChunkWorkspace.tsx`
 - `frontend/rag3-web/src/components/kb/ChunkListCard.tsx`、`ChunkContentView.tsx`
+
+---
+
+## 40. 单文档预览统一固定高度滚动（PDF 虚拟列表）
+
+### 背景与目标
+
+用户要求 PDF 及其他单文档预览均为固定高度框内滑动浏览，避免一次性在 DOM 中铺开全部页面撑高布局。
+
+### 改动摘要
+
+- 新增 `DocumentScrollFrame`、`DocumentIframePreview`：非 PDF 在固定高度 iframe 内滚动。
+- `PdfPreviewWithHighlights` 改为**虚拟滚动**：仅挂载视口±1 页 DOM，用 spacer 维持总滚动高度；滚出视口释放 canvas 缓存。
+- 文档管理解析预览区固定 `min(560px, 48vh)`；分块工作区左栏 `h-full min-h-0` 约束。
+
+### 验证与风险
+
+- `npm run build` 通过。
+- 多页 PDF 仅见少量页节点；快速滚动可能短暂「加载中」占位。
+
+### 涉及文件
+
+- `frontend/rag3-web/src/components/kb/DocumentScrollFrame.tsx`、`DocumentIframePreview.tsx`
+- `frontend/rag3-web/src/components/kb/PdfPreviewWithHighlights.tsx`
+- `frontend/rag3-web/src/components/kb/KnowledgeChunkWorkspace.tsx`
+- `frontend/rag3-web/src/pages/KnowledgeBase.tsx`
