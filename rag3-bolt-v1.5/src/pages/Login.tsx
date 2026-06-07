@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Zap, Eye, EyeOff, ArrowRight } from 'lucide-react';
+import { Sparkles, Eye, EyeOff, ArrowRight } from 'lucide-react';
 
 interface LoginPageProps {
   onLogin: () => void;
@@ -33,10 +33,10 @@ export function LoginPage({ onLogin }: LoginPageProps) {
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="w-14 h-14 bg-gradient-to-br from-blue-500 to-blue-700 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-2xl shadow-blue-500/50">
-            <Zap size={26} className="text-white" />
+            <Sparkles size={26} className="text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-white">RAG 3.0</h1>
-          <p className="text-blue-300/80 text-sm mt-1">企业级知识库智能问答系统</p>
+          <h1 className="text-2xl font-bold text-white">智识引擎</h1>
+          <p className="text-blue-300/80 text-sm mt-1">企业知识库平台</p>
         </div>
 
         {/* Login card */}

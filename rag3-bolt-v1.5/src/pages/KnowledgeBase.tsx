@@ -500,14 +500,14 @@ export function KBDetailPage({ kbId, onNavigate }: KBDetailPageProps) {
         ))}
       </div>
 
-      {/* RAG 3.0 Hub 入口 */}
+      {/* 增强索引 Hub 入口 */}
       <div>
-        <h3 className="text-sm font-semibold text-gray-800 mb-3">RAG 3.0 增强层</h3>
+        <h3 className="text-sm font-semibold text-gray-800 mb-3">增强索引</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {([
-            { id: 'pageindex-hub', label: 'PageIndex 树索引', desc: '85/156 建树率 54.5%', detail: '失败: 12 个文档', icon: GitBranch, accent: 'text-cyan-600', border: 'hover:border-cyan-300' },
+            { id: 'pageindex-hub', label: 'PageIndex 管理', desc: '树形推理索引 · 85/156 已建树', detail: '建树率 54.5% · 失败 12 个', icon: GitBranch, accent: 'text-cyan-600', border: 'hover:border-cyan-300' },
             { id: 'wiki-hub', label: 'LLM Wiki 知识库', desc: '12/42 页面已发布', detail: '待审核: 3 个, 编译中: 2 个', icon: BookOpen, accent: 'text-violet-600', border: 'hover:border-violet-300' },
-            { id: 'graphrag-hub', label: 'GraphRAG 图谱', desc: '社区: 24 个, 实体: 1.2K', detail: '实体复核: 86 待确认', icon: Network, accent: 'text-amber-600', border: 'hover:border-amber-300' },
+            { id: 'graphrag-hub', label: '知识图谱', desc: '社区: 24 个, 实体: 1.2K', detail: '实体复核: 86 待确认', icon: Network, accent: 'text-amber-600', border: 'hover:border-amber-300' },
           ] as const).map(hub => {
             const Icon = hub.icon;
             return (

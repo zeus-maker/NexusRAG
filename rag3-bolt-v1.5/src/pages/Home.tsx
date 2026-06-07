@@ -305,7 +305,7 @@ export function HomePage({ onNavigate, currentUser }: HomePageProps) {
               <div className="flex flex-wrap gap-2">
                 {([
                   { id: 'wiki-hub', label: 'Wiki Hub', icon: BookOpen },
-                  { id: 'pageindex-hub', label: 'PageIndex Hub', icon: Network },
+                  { id: 'pageindex-hub', label: 'PageIndex 管理', icon: Network },
                   { id: 'graphrag-hub', label: 'GraphRAG Hub', icon: BarChart2 },
                 ] as const).map(hub => {
                   const Icon = hub.icon;
