@@ -73,46 +73,44 @@ export function ChunkListCard({
         </div>
       </div>
 
-      {/* 主体：图 + 文本 */}
-      <div className="px-3 py-2.5 space-y-2">
+      {/* 主体：文本与缩略图左右并排 */}
+      <div className="px-3 py-2.5">
         {chunk.section_title && chunk.section_title !== `Chunk ${chunk.chunk_index}` && (
-          <p className="text-[11px] font-medium text-gray-700 dark:text-gray-300 line-clamp-1" title={chunk.section_title}>
+          <p className="text-[11px] font-medium text-gray-700 dark:text-gray-300 line-clamp-1 mb-1.5" title={chunk.section_title}>
             {chunk.section_title}
           </p>
         )}
 
-        {hasImage && (
-          <button
-            type="button"
-            onClick={e => {
-              e.stopPropagation();
-              onImageZoom(chunk.image_id!, `Chunk #${chunk.chunk_index}`);
-            }}
-            className="block w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 overflow-hidden hover:ring-2 hover:ring-cyan-300 transition-shadow"
-            title="点击放大预览"
-          >
-            <ChunkImage
-              imageId={chunk.image_id!}
-              className="w-full max-h-28 object-contain mx-auto"
-            />
-            <span className="block text-center text-[10px] text-gray-400 py-1 bg-white/80 dark:bg-gray-900/80">
-              点击放大
-            </span>
-          </button>
-        )}
+        <div className={`flex gap-2.5 items-start ${hasImage ? 'flex-row' : ''}`}>
+          <div className="flex-1 min-w-0 space-y-1.5">
+            <p className={`text-xs leading-relaxed text-gray-600 dark:text-gray-400 ${
+              selected ? 'line-clamp-3' : 'line-clamp-4'
+            }`}>
+              {chunk.content_preview || '（无文本内容）'}
+            </p>
+            <div className="flex items-center justify-between text-[10px] text-gray-400">
+              <span>约 {chunk.token_count} 字</span>
+              {chunk.chunk_strategy && chunk.chunk_strategy !== '通用分块' && (
+                <span className="truncate max-w-[50%]">{chunk.chunk_strategy}</span>
+              )}
+            </div>
+          </div>
 
-        <p className={`text-xs leading-relaxed text-gray-600 dark:text-gray-400 ${
-          selected
-            ? 'line-clamp-2'
-            : hasImage ? 'line-clamp-3' : 'line-clamp-4'
-        }`}>
-          {chunk.content_preview || '（无文本内容）'}
-        </p>
-
-        <div className="flex items-center justify-between text-[10px] text-gray-400">
-          <span>约 {chunk.token_count} 字</span>
-          {chunk.chunk_strategy && chunk.chunk_strategy !== '通用分块' && (
-            <span className="truncate max-w-[50%]">{chunk.chunk_strategy}</span>
+          {hasImage && (
+            <button
+              type="button"
+              onClick={e => {
+                e.stopPropagation();
+                onImageZoom(chunk.image_id!, `Chunk #${chunk.chunk_index}`);
+              }}
+              className="flex-shrink-0 w-[4.5rem] h-[4.5rem] rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 overflow-hidden hover:ring-2 hover:ring-cyan-300 transition-shadow"
+              title="点击放大预览"
+            >
+              <ChunkImage
+                imageId={chunk.image_id!}
+                className="w-full h-full object-contain"
+              />
+            </button>
           )}
         </div>
       </div>

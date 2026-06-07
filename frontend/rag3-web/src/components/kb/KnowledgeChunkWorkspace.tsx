@@ -147,20 +147,20 @@ export function KnowledgeChunkWorkspace({
           </button>
         </div>
       </header>
-      <div className="flex-1 min-h-0 p-3 overflow-hidden">
+      <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
         {!previewUrl ? (
           <p className="text-xs text-gray-500 p-4">无法加载原始文件预览</p>
         ) : isPdf ? (
           <PdfPreviewWithHighlights
             url={previewUrl}
             highlights={highlights}
-            className="h-full min-h-[240px]"
+            className="flex-1 min-h-0"
           />
         ) : (
           <iframe
             title="文档预览"
             src={previewUrl}
-            className="w-full h-full min-h-[240px] rounded-xl border border-gray-200 bg-white"
+            className="flex-1 min-h-0 w-full rounded-xl border border-gray-200 bg-white"
           />
         )}
       </div>

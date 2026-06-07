@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import * as pdfjs from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import type { PdfHighlightRect } from '../../utils/documentUtil';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker;
 
@@ -12,7 +13,7 @@ interface Props {
   className?: string;
 }
 
-interface PageRender {
+interface PageMeta {
   pageNumber: number;
   width: number;
   height: number;
@@ -21,12 +22,51 @@ interface PageRender {
 export function PdfPreviewWithHighlights({ url, highlights = [], className = '' }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const pdfRef = useRef<PDFDocumentProxy | null>(null);
+  const canvasRefs = useRef<Record<number, HTMLCanvasElement | null>>({});
+  const renderedRef = useRef<Set<number>>(new Set());
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [pages, setPages] = useState<PageRender[]>([]);
+  const [numPages, setNumPages] = useState(0);
+  const [pages, setPages] = useState<PageMeta[]>([]);
   const [refSize, setRefSize] = useState<{ width: number; height: number } | null>(null);
-  const [renderTick, setRenderTick] = useState(0);
-  const canvasRefs = useRef<Record<number, HTMLCanvasElement | null>>({});
+  const [renderedPages, setRenderedPages] = useState<Set<number>>(() => new Set());
+  const [focusPage, setFocusPage] = useState(1);
+
+  const highlightPage = highlights[0]?.pageNumber ?? 1;
+
+  const renderPage = useCallback(async (pageNumber: number) => {
+    const pdf = pdfRef.current;
+    if (!pdf || renderedRef.current.has(pageNumber)) return;
+
+    const canvas = canvasRefs.current[pageNumber];
+    if (!canvas) return;
+
+    const containerWidth = containerRef.current?.clientWidth || 400;
+    const page1 = await pdf.getPage(1);
+    const vp1 = page1.getViewport({ scale: 1 });
+    const s = Math.min(1.5, Math.max(0.55, (containerWidth - 24) / vp1.width));
+
+    const page = await pdf.getPage(pageNumber);
+    const viewport = page.getViewport({ scale: s });
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    await page.render({ canvasContext: ctx, viewport, canvas }).promise;
+    renderedRef.current.add(pageNumber);
+    setRenderedPages(prev => new Set(prev).add(pageNumber));
+
+    setPages(prev => {
+      const next = [...prev];
+      const idx = pageNumber - 1;
+      if (next[idx]) {
+        next[idx] = { pageNumber, width: viewport.width, height: viewport.height };
+      }
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     if (!url) {
@@ -38,13 +78,15 @@ export function PdfPreviewWithHighlights({ url, highlights = [], className = '' 
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setNumPages(0);
     setPages([]);
     setRefSize(null);
+    setRenderedPages(new Set());
+    renderedRef.current.clear();
     pdfRef.current = null;
 
     (async () => {
       try {
-        // pdfjs-dist v6+ 须传 DocumentInitParameters 对象，不能直接传字符串
         const res = await fetch(url);
         if (!res.ok) throw new Error(`预览加载失败 (${res.status})`);
         const data = await res.arrayBuffer();
@@ -59,16 +101,16 @@ export function PdfPreviewWithHighlights({ url, highlights = [], className = '' 
         setRefSize({ width: vp1.width, height: vp1.height });
 
         const containerWidth = containerRef.current?.clientWidth || vp1.width;
-        const scale = Math.min(1.5, Math.max(0.6, containerWidth / vp1.width));
+        const s = Math.min(1.5, Math.max(0.55, (containerWidth - 24) / vp1.width));
+        const vp = page1.getViewport({ scale: s });
 
-        const rendered: PageRender[] = [];
-        for (let i = 1; i <= pdf.numPages; i++) {
-          const page = await pdf.getPage(i);
-          if (cancelled) return;
-          const viewport = page.getViewport({ scale });
-          rendered.push({ pageNumber: i, width: viewport.width, height: viewport.height });
-        }
-        if (!cancelled) setPages(rendered);
+        const placeholders: PageMeta[] = Array.from({ length: pdf.numPages }, (_, i) => ({
+          pageNumber: i + 1,
+          width: vp.width,
+          height: vp.height,
+        }));
+        setNumPages(pdf.numPages);
+        setPages(placeholders);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : 'PDF 加载失败');
       } finally {
@@ -79,43 +121,38 @@ export function PdfPreviewWithHighlights({ url, highlights = [], className = '' 
     return () => { cancelled = true; };
   }, [url]);
 
+  // 懒加载：仅渲染视口内页面（及相邻页）
   useEffect(() => {
-    const pdf = pdfRef.current;
-    if (!pdf || !pages.length) return;
-    let cancelled = false;
+    const root = containerRef.current;
+    if (!root || !numPages) return;
 
-    const renderAll = async () => {
-      await new Promise<void>(r => requestAnimationFrame(() => r()));
-      const containerWidth = containerRef.current?.clientWidth || pages[0].width;
-      const page1 = await pdf.getPage(1);
-      const vp1 = page1.getViewport({ scale: 1 });
-      const scale = Math.min(1.5, Math.max(0.6, containerWidth / vp1.width));
+    const observer = new IntersectionObserver(
+      entries => {
+        entries.forEach(entry => {
+          if (!entry.isIntersecting) return;
+          const pageNum = Number((entry.target as HTMLElement).dataset.page);
+          if (pageNum > 0) void renderPage(pageNum);
+        });
+      },
+      { root, rootMargin: '120px 0px', threshold: 0.01 },
+    );
 
-      for (const meta of pages) {
-        if (cancelled) return;
-        const canvas = canvasRefs.current[meta.pageNumber];
-        if (!canvas) continue;
-        const page = await pdf.getPage(meta.pageNumber);
-        const viewport = page.getViewport({ scale });
-        const ctx = canvas.getContext('2d');
-        if (!ctx) continue;
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        await page.render({ canvasContext: ctx, viewport, canvas }).promise;
-      }
-      if (!cancelled) setRenderTick(t => t + 1);
-    };
+    const slots = root.querySelectorAll('[data-page]');
+    slots.forEach(el => observer.observe(el));
+    return () => observer.disconnect();
+  }, [numPages, pages.length, renderPage, url]);
 
-    void renderAll();
-    return () => { cancelled = true; };
-  }, [pages, url]);
-
+  // 选中分块时滚到对应页
   useEffect(() => {
-    if (!highlights.length) return;
-    const first = highlights[0];
-    const el = document.getElementById(`pdf-page-${first.pageNumber}`);
-    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, [highlights, renderTick]);
+    if (!highlightPage || !numPages) return;
+    setFocusPage(highlightPage);
+    void renderPage(highlightPage);
+    const timer = window.setTimeout(() => {
+      const el = document.getElementById(`pdf-page-${highlightPage}`);
+      el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [highlights, highlightPage, numPages, renderPage]);
 
   const scaleRect = (rect: PdfHighlightRect, pageW: number, pageH: number) => {
     if (!refSize) return null;
@@ -129,49 +166,98 @@ export function PdfPreviewWithHighlights({ url, highlights = [], className = '' 
     };
   };
 
+  const scrollToPage = (page: number) => {
+    const clamped = Math.max(1, Math.min(numPages, page));
+    setFocusPage(clamped);
+    void renderPage(clamped);
+    const el = document.getElementById(`pdf-page-${clamped}`);
+    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   return (
-    <div ref={containerRef} className={`relative overflow-y-auto bg-gray-100 dark:bg-gray-800 rounded-xl ${className}`}>
-      {loading && (
-        <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-500 z-10">
-          加载 PDF…
+    <div className={`flex flex-col h-full min-h-0 ${className}`}>
+      {numPages > 1 && (
+        <div className="flex-shrink-0 flex items-center justify-center gap-2 py-1.5 px-2 border-b border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-900/80 text-xs text-gray-600">
+          <button
+            type="button"
+            disabled={focusPage <= 1}
+            onClick={() => scrollToPage(focusPage - 1)}
+            className="p-1 rounded hover:bg-gray-100 disabled:opacity-30"
+            title="上一页"
+          >
+            <ChevronLeft size={14} />
+          </button>
+          <span className="tabular-nums min-w-[4rem] text-center">
+            {focusPage} / {numPages} 页
+          </span>
+          <button
+            type="button"
+            disabled={focusPage >= numPages}
+            onClick={() => scrollToPage(focusPage + 1)}
+            className="p-1 rounded hover:bg-gray-100 disabled:opacity-30"
+            title="下一页"
+          >
+            <ChevronRight size={14} />
+          </button>
         </div>
       )}
-      {error && (
-        <div className="p-4 text-xs text-red-600">{error}</div>
-      )}
-      <div className="flex flex-col items-center gap-3 p-3">
-        {pages.map(page => {
-          const pageHighlights = highlights.filter(h => h.pageNumber === page.pageNumber);
-          return (
-            <div
-              key={page.pageNumber}
-              id={`pdf-page-${page.pageNumber}`}
-              className="relative shadow-md bg-white"
-              style={{ width: page.width, height: page.height }}
-            >
-              <canvas
-                ref={el => { canvasRefs.current[page.pageNumber] = el; }}
-                className="block"
-              />
-              {pageHighlights.map((rect, idx) => {
-                const box = scaleRect(rect, page.width, page.height);
-                if (!box || box.width <= 0 || box.height <= 0) return null;
-                return (
+
+      <div
+        ref={containerRef}
+        className="relative flex-1 min-h-0 overflow-y-auto overflow-x-hidden bg-gray-100 dark:bg-gray-800 rounded-b-xl scroll-smooth"
+      >
+        {loading && (
+          <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-500 z-10 bg-gray-100/80">
+            加载 PDF…
+          </div>
+        )}
+        {error && (
+          <div className="p-4 text-xs text-red-600">{error}</div>
+        )}
+        <div className="flex flex-col items-center gap-4 p-3">
+          {pages.map(page => {
+            const pageHighlights = highlights.filter(h => h.pageNumber === page.pageNumber);
+            const isRendered = renderedPages.has(page.pageNumber);
+            return (
+              <div
+                key={page.pageNumber}
+                id={`pdf-page-${page.pageNumber}`}
+                data-page={page.pageNumber}
+                className="relative shadow-md bg-white flex-shrink-0"
+                style={{ width: page.width, minHeight: page.height }}
+              >
+                {!isRendered && (
                   <div
-                    key={idx}
-                    className="absolute pointer-events-none border-2 border-amber-400 bg-amber-300/25 rounded-sm"
-                    style={{
-                      left: box.left,
-                      top: box.top,
-                      width: box.width,
-                      height: box.height,
-                    }}
-                  />
-                );
-              })}
-            </div>
-          );
-        })}
+                    className="absolute inset-0 flex items-center justify-center text-[10px] text-gray-400 bg-white"
+                    style={{ width: page.width, height: page.height }}
+                  >
+                    滚动加载…
+                  </div>
+                )}
+                <canvas
+                  ref={el => { canvasRefs.current[page.pageNumber] = el; }}
+                  className="block max-w-full"
+                />
+                {pageHighlights.map((rect, idx) => {
+                  const box = scaleRect(rect, page.width, page.height);
+                  if (!box || box.width <= 0 || box.height <= 0) return null;
+                  return (
+                    <div
+                      key={idx}
+                      className="absolute pointer-events-none border-2 border-amber-400 bg-amber-300/30 rounded-sm z-10"
+                      style={{
+                        left: box.left,
+                        top: box.top,
+                        width: box.width,
+                        height: box.height,
+                      }}
+                    />
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
