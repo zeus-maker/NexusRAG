@@ -36,6 +36,11 @@ export interface FusionHit {
   evalLabel?: EvalLabel;
 }
 
+export interface RerankMeta {
+  attempted: boolean;
+  error: string | null;
+}
+
 export interface FullRetrievalResult {
   query: string;
   channels: ChannelResult[];
@@ -46,6 +51,8 @@ export interface FullRetrievalResult {
   /** API 模式：RAGFlow 混合检索，非 WRRF */
   isRealApi?: boolean;
   vectorWeight?: number;
+  /** API 模式精排双请求元信息 */
+  rerankMeta?: RerankMeta;
 }
 
 export const CHANNEL_META: Record<RetrievalChannel, { label: string; color: string }> = {

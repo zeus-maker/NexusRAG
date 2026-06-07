@@ -93,8 +93,9 @@ export function buildRealRetrievalResult(params: {
   enabledChannels: Set<RealApiChannel>;
   useKg: boolean;
   latencyMs: number;
+  rerankMeta?: FullRetrievalResult['rerankMeta'];
 }): FullRetrievalResult {
-  const { query, pre, post, enabledChannels, useKg, latencyMs, vectorWeight } = params;
+  const { query, pre, post, enabledChannels, useKg, latencyMs, vectorWeight, rerankMeta } = params;
   const raw = pre.rawChunks;
   const requestCount = post ? 2 : 1;
   const perChannelLatency = Math.max(1, Math.round(latencyMs / requestCount));
@@ -136,5 +137,6 @@ export function buildRealRetrievalResult(params: {
     rrfK: 0,
     isRealApi: true,
     vectorWeight,
+    rerankMeta,
   };
 }

@@ -128,12 +128,17 @@ export function RetrievalTestPage({ kbId, onNavigate }: RetrievalTestPageProps) 
         const t0 = performance.now();
         const pre = await searchKb(kbId, query.trim(), baseParams);
         let post = null;
-        if (useRerank && effectiveRerankId) {
+        const rerankMeta = {
+          attempted: Boolean(useRerank && effectiveRerankId),
+          error: null as string | null,
+        };
+        if (rerankMeta.attempted) {
           try {
             post = await searchKb(kbId, query.trim(), { ...baseParams, rerank_id: effectiveRerankId });
           } catch (rerankErr) {
             const msg = rerankErr instanceof Error ? rerankErr.message : 'Rerank 请求失败';
-            showToast(`精排失败：${msg}。已展示混合检索结果，请检查系统管理中的 Rerank API Key 与模型。`);
+            rerankMeta.error = msg;
+            showToast(`精排失败：${msg}。已展示精排前结果，请检查系统管理中的 Rerank API Key 与模型。`);
           }
         }
         const latencyMs = Math.round(performance.now() - t0);
@@ -146,6 +151,7 @@ export function RetrievalTestPage({ kbId, onNavigate }: RetrievalTestPageProps) 
           enabledChannels: apiChannels,
           useKg,
           latencyMs,
+          rerankMeta,
         });
         setResult(res);
         setChannelTab(res.channels[0]?.channel ?? 'vector');
@@ -464,60 +470,109 @@ export function RetrievalTestPage({ kbId, onNavigate }: RetrievalTestPageProps) 
               )}
 
               {result && resultTab === '精排前后' && (
-                <div className="space-y-4">
-                  <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">
-                    {result.isRealApi
-                      ? `Rerank 精排对比 · ${effectiveRerankId || rerankModel || '未配置'}`
-                      : `Cross-Encoder 精排对比 · ${rerankModel}`}
-                  </p>
-                  {!result.isRealApi || result.fusionReranked.length > 0 ? (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                      <div>
-                        <h4 className="text-xs font-semibold text-gray-500 mb-2">
-                          {result.isRealApi ? '精排前（混合 similarity）' : '精排前（WRRF）'}
-                        </h4>
-                        <div className="space-y-2">
-                          {result.fusion.map(hit => (
-                            <FusionHitCard
-                              key={`pre-${hit.chunkId}`}
-                              hit={hit}
-                              showRerank={false}
-                              compact
-                              isRealApi={result.isRealApi}
-                              onViewChunk={() => handleViewChunk(hit)}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                      <div>
-                        <h4 className="text-xs font-semibold text-gray-500 mb-2">精排后</h4>
-                        <div className="space-y-2">
-                          {(useRerank && result.fusionReranked.length > 0
-                            ? result.fusionReranked
-                            : result.fusion
-                          ).map(hit => (
-                            <FusionHitCard
-                              key={`post-${hit.chunkId}`}
-                              hit={hit}
-                              showRerank={useRerank && result.fusionReranked.length > 0}
-                              compact
-                              isRealApi={result.isRealApi}
-                              onViewChunk={() => handleViewChunk(hit)}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <p className="text-xs text-gray-500">请开启 Rerank 并配置租户 Rerank 模型以对比精排前后</p>
-                  )}
-                </div>
+                <RerankComparePanel
+                  result={result}
+                  useRerank={useRerank}
+                  rerankModelLabel={result.isRealApi
+                    ? (effectiveRerankId || rerankModel || '未配置')
+                    : rerankModel}
+                  onViewChunk={handleViewChunk}
+                />
               )}
             </div>
           </div>
         </div>
       </div>
     </KBDetailLayout>
+  );
+}
+
+function RerankComparePanel({
+  result,
+  useRerank,
+  rerankModelLabel,
+  onViewChunk,
+}: {
+  result: FullRetrievalResult;
+  useRerank: boolean;
+  rerankModelLabel: string;
+  onViewChunk: (hit: FusionHit) => void;
+}) {
+  const hasPre = result.fusion.length > 0;
+  const hasPost = result.fusionReranked.length > 0;
+  const rerankMeta = result.rerankMeta;
+  const rerankAttempted = result.isRealApi
+    ? Boolean(rerankMeta?.attempted)
+    : useRerank;
+  const postHits = hasPost
+    ? result.fusionReranked
+    : result.isRealApi && rerankAttempted
+      ? []
+      : result.fusion;
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+        {result.isRealApi
+          ? `Rerank 精排对比 · ${rerankModelLabel}`
+          : `Cross-Encoder 精排对比 · ${rerankModelLabel}`}
+      </p>
+
+      {!hasPre ? (
+        <p className="text-xs text-gray-500">无满足阈值的检索结果，请调整问题或相似度阈值后重试</p>
+      ) : !result.isRealApi || useRerank || hasPost ? (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div>
+            <h4 className="text-xs font-semibold text-gray-500 mb-2">
+              {result.isRealApi ? '精排前（混合 similarity）' : '精排前（WRRF）'}
+            </h4>
+            <div className="space-y-2">
+              {result.fusion.map(hit => (
+                <FusionHitCard
+                  key={`pre-${hit.chunkId}`}
+                  hit={hit}
+                  showRerank={false}
+                  compact
+                  isRealApi={result.isRealApi}
+                  onViewChunk={() => onViewChunk(hit)}
+                />
+              ))}
+            </div>
+          </div>
+          <div>
+            <h4 className="text-xs font-semibold text-gray-500 mb-2">精排后</h4>
+            {hasPost || !result.isRealApi ? (
+              <div className="space-y-2">
+                {postHits.map(hit => (
+                  <FusionHitCard
+                    key={`post-${hit.chunkId}`}
+                    hit={hit}
+                    showRerank={hasPost && (result.isRealApi ? rerankAttempted : useRerank)}
+                    compact
+                    isRealApi={result.isRealApi}
+                    onViewChunk={() => onViewChunk(hit)}
+                  />
+                ))}
+              </div>
+            ) : rerankMeta?.error ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40 p-3 text-xs text-amber-800 dark:text-amber-200">
+                <p className="font-medium mb-1">精排请求失败</p>
+                <p className="break-words">{rerankMeta.error}</p>
+                <p className="mt-2 text-[10px] text-amber-700/80 dark:text-amber-300/80">
+                  左侧为未精排结果。请检查系统管理 → 模型管理中的通义 Rerank API Key 与模型配置。
+                </p>
+              </div>
+            ) : rerankAttempted ? (
+              <p className="text-xs text-gray-500">精排返回空结果（可能阈值过高或候选集为空）</p>
+            ) : (
+              <p className="text-xs text-gray-500">请开启 Rerank 并配置租户 Rerank 模型以对比精排前后</p>
+            )}
+          </div>
+        </div>
+      ) : (
+        <p className="text-xs text-gray-500">请开启 Rerank 并配置租户 Rerank 模型以对比精排前后</p>
+      )}
+    </div>
   );
 }
 

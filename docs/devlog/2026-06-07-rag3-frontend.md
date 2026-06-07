@@ -1399,3 +1399,29 @@ PDF 已能渲染，但左栏预览区不出现滚动条，多页内容随容器�
 - `backend/ragflow_rag30/llm/rerank_model.py`
 - `backend/ragflow_rag30/common/log_utils.py`
 - `backend/ragflow_rag30/rag/nlp/search.py`
+
+---
+
+## 48. 修复检索测试「精排前后」Tab 有结果却不展示
+
+### 背景与目标
+
+用户已开启 Rerank（`gte-rerank@Tongyi-Qianwen`），混合检索有数据，但「精排前后」仅显示「请开启 Rerank…」占位。根因是 UI 条件 `fusionReranked.length > 0` 过严：精排请求失败或未发起时 `post=null`，`fusionReranked` 为空，连精排前的 `fusion` 也被隐藏。
+
+### 改动摘要
+
+- `RetrievalTestPage`：新增 `RerankComparePanel`；只要有 `fusion` 即展示左右对比。
+- 精排失败：左侧精排前结果，右侧展示 API 错误详情（`rerankMeta.error`）。
+- `buildRealRetrievalResult` 透传 `rerankMeta: { attempted, error }`。
+
+### 验证与风险
+
+- `npm run build` 通过。
+- 精排成功：左右两列均有卡片；精排失败：左列有数据、右列 amber 错误框。
+- 若右列仍报错，需继续排查后端 DashScope Rerank 配置（与 §47 独立）。
+
+### 涉及文件
+
+- `frontend/rag3-web/src/pages/RetrievalTestPage.tsx`
+- `frontend/rag3-web/src/utils/retrievalTestApi.ts`
+- `frontend/rag3-web/src/data/retrievalTestMock.ts`
