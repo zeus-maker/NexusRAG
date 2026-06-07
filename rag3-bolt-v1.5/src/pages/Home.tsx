@@ -133,7 +133,7 @@ export function HomePage({ onNavigate, currentUser }: HomePageProps) {
   const today = new Date('2026-06-06');
 
   return (
-    <div className="h-full overflow-y-auto bg-gray-50/50 dark:bg-gray-950">
+    <div className="h-full min-h-0 overflow-y-auto bg-gray-50/50 dark:bg-gray-950">
       <div className="max-w-[1400px] mx-auto p-6 flex flex-col gap-5">
 
         {/* Hero */}
@@ -284,7 +284,7 @@ export function HomePage({ onNavigate, currentUser }: HomePageProps) {
                 </div>
                 <button
                   type="button"
-                  onClick={() => onNavigate('sys-monitor')}
+                  onClick={() => onNavigate('sys-monitor', { monitorTab: 2 })}
                   className="text-xs text-violet-600 hover:underline flex items-center gap-1"
                 >
                   查看全部 <ExternalLink size={11} />

@@ -353,3 +353,124 @@
 - `rag3-bolt-v1.5/src/components/SystemSubNav.tsx` — 系统路由区 SubNav + 页内 Tab + TableCard
 - `rag3-bolt-v1.5/src/pages/PipelineConfigPage.tsx` — 评测中心式布局
 - `rag3-bolt-v1.5/src/pages/ClassifierPage.tsx` — 评测中心式布局 + 四分类器主从分栏
+
+---
+
+## 14. 系统监控四 Tab 深化（对齐 PRD §6.4）
+
+### 背景与目标
+
+原 `MonitorPage` 嵌在 `System.tsx` 中，仅单页展示指标卡片、流水线延迟、Token 成本与静态告警，缺少 PRD §6.4 要求的四 Tab（基础设施 / 流水线 / RAG3索引 / 成本）及跨库索引巡检表。目标重构为可演示的平台监控页，布局对齐评测中心，并支持从首页 RAG3 运营 Widget 深链到「RAG3索引」Tab。
+
+**用户可见变化**：系统管理 → 系统监控 四 Tab；基础设施含 QPS 趋势、服务状态、告警规则启停与最近告警；流水线 Tab 支持 1h/6h/24h/7d 切换并可跳转流水线配置；RAG3索引 Tab 含搜索/仅告警筛选、跨库 Wiki·PI·图谱进度表与 Hub 深链；成本 Tab 含预算进度、模型/流水线成本分布并可跳转评测成本中心。
+
+### 改动摘要
+
+- 新增 `data/monitorMock.ts`：基础设施指标、服务状态、告警、流水线延迟分时、KB 索引聚合、成本快照。
+- 新增 `pages/MonitorPage.tsx` 独立页面；`System.tsx` re-export；`store.monitorTab` 支持首页深链 Tab。
+- `Home.tsx`「查看全部」跳转 `monitorTab: 2`（RAG3索引）。
+
+### 验证与风险
+
+- 验证：`npm run build` 通过；sys-monitor 四 Tab 可切换；首页 RAG3 Widget「查看全部」直达 RAG3索引 Tab；告警规则可 mock 启停。
+- 风险：指标与聚合表均为 mock，未接 Prometheus / index-status API；告警编辑/添加仍为占位。
+
+### 涉及文件
+
+- `rag3-bolt-v1.5/src/data/monitorMock.ts`
+- `rag3-bolt-v1.5/src/pages/MonitorPage.tsx`
+- `rag3-bolt-v1.5/src/pages/System.tsx`
+- `rag3-bolt-v1.5/src/App.tsx`
+- `rag3-bolt-v1.5/src/store.ts`
+- `rag3-bolt-v1.5/src/pages/Home.tsx`
+
+---
+
+## 15. 系统监控功能第二轮深化
+
+### 背景与目标
+
+§14 已落地四 Tab 骨架，但告警仅静态列表、流水线缺 Tier/错误率、RAG3 索引表无进度与告警详情、成本 Tab 缺趋势与 KB 维度。本轮在 mock 前提下补齐 PRD §6.4 交互深度，使监控页可作为平台管理员日常巡检入口。
+
+**用户可见变化**：顶栏未恢复告警横幅 + 自动刷新 30s + 快捷跳转链路追踪/查询路由；基础设施新增错误率/P95 副趋势、资源节点表、添加告警规则弹窗；流水线新增 P1–P5 健康卡、Tier 分布、L1–L5 延迟、错误率表；RAG3索引新增汇总卡片筛选、进度条、右侧告警详情面板；成本新增 7 日趋势、KB Top5、周期选择与导出。
+
+### 改动摘要
+
+- 扩展 `monitorMock.ts`：资源节点、双趋势、Tier/错误率/Layer 统计、成本趋势与 KB 排行、索引告警详情。
+- `MonitorPage.tsx` 各 Tab 深化；`AddAlertRuleModal` 对齐 PRD 告警配置流程。
+
+### 验证与风险
+
+- 验证：`npm run build` 通过；四 Tab 新增区块可交互；RAG3 行点击展示告警侧栏；添加告警规则可写入列表。
+- 风险：自动刷新为 mock；告警恢复/批量处理/导出无后端。
+
+### 涉及文件
+
+- `rag3-bolt-v1.5/src/data/monitorMock.ts`
+- `rag3-bolt-v1.5/src/pages/MonitorPage.tsx`
+
+---
+
+## 16. 系统监控布局优化（对齐评测中心分层顶栏）
+
+### 背景与目标
+
+§14–§15 已补齐四 Tab 功能，但页面信息密度高、窄屏与侧栏展开时易出现横向溢出，且顶栏结构与评测中心（`Evaluation`）不一致。本轮仅做布局与响应式收敛，不增 mock 字段。
+
+**用户可见变化**：系统监控采用「h1 → Tab 下划线 → 当前 Tab h2+描述 → 操作区」分层顶栏；告警横幅长文案 `line-clamp` 防撑破；各 Tab 去掉重复统计行、栅格按断点重排；RAG3 索引表优先、侧栏大屏 sticky；成本三块合并为 `md:2 / xl:3` 栅格。
+
+### 改动摘要
+
+- 根容器：`p-4 sm:p-6`、`min-w-0 w-full overflow-x-hidden`，内容区统一 `min-w-0` 防 flex 子项撑宽。
+- 顶栏：`TAB_META` 驱动当前 Tab 标题与 PRD 引用描述；刷新/深链按钮窄屏全宽堆叠、`lg` 右对齐。
+- **基础设施**：错误率/P95 副趋势窄屏单列；资源表「角色」列 `sm` 以下折叠到节点名下方。
+- **流水线**：移除与 P1–P5 健康卡重复的 5 卡统计行；健康卡 `2→3→5` 列；路由指标收敛为 3 卡横排。
+- **RAG3索引**：移除与汇总卡重复的筛选 chip；主区 `lg:grid-cols-5`（表 3 + 侧栏 2）；PI/图谱列 `lg` 以下隐藏、移动端正文补 PI 摘要；侧栏 `lg:sticky`。
+- **成本**：模型/KB/流水线成本分布合并单区 `md:grid-cols-2 xl:grid-cols-3`。
+
+### 验证与风险
+
+- 验证：`npm run build` 通过；建议手测 `sys-monitor` 四 Tab 在 ~375px 与侧栏展开宽度下无横向滚动；RAG3 行点击侧栏仍 sticky（≥lg）。
+- 风险：表格列折叠后窄屏需纵向滚动查看更多字段；sticky 侧栏在极短视口可能与顶栏操作区重叠，后续可加 `top` 偏移。
+
+### 反思与沉淀
+
+- 监控页与评测中心共用 `SystemSectionTabs`，顶栏契约已统一；后续若 `SystemSubNav` 增加监控入口，侧栏与页内 Tab 职责需再划分。
+- 功能密度高的 Tab 优先「删重复 + 断点藏列」而非继续加卡，比单纯缩小字号更可维护。
+
+### 涉及文件
+
+- `rag3-bolt-v1.5/src/pages/MonitorPage.tsx` — 四 Tab 响应式布局与分层顶栏
+
+---
+
+## 17. 修复系统监控 Tab 被裁切与全站主区滚动
+
+### 背景与目标
+
+§16 为防横向溢出在 `MonitorPage` 根节点加了 `overflow-x-hidden`，叠加 `SystemSectionTabs` 按钮 `-mb-px` 负边距，导致「基础设施」等 Tab 文字几乎不可见（仅余下划线）。同时 `App` 壳层 flex 子项缺 `min-h-0`，工作台等长页底部内容无法滚动、呈裁切态，易被误认为「布局变了」。
+
+**用户可见变化**：系统监控四 Tab 完整可点；工作台/监控等页可纵向滚动至底部。
+
+### 改动摘要
+
+- `SystemSectionTabs`：对齐 `EvalSubNav`，去掉负边距，边框与滚动区分层，激活 Tab 补背景色。
+- `MonitorPage`：移除根节点 `overflow-x-hidden`；`h1` 与 Tab 合并为同一标题块（同评测中心）。
+- `App.tsx`：`flex-1` 容器与 `main` 补 `min-h-0`；`Home.tsx` 滚动根补 `min-h-0`。
+
+### 验证与风险
+
+- 验证：`npm run build` 通过；浏览器 `sys-monitor` Tab 栏文字完整；`home` 可滚至页底。
+- 风险：极宽表格仍依赖 `TableCard` 横向滚动，勿在页面根再叠 `overflow-x-hidden`。
+
+### 反思与沉淀
+
+- 防溢出应落在表格/栅格子节点（`min-w-0` + 局部 `overflow-x-auto`），不宜在整页滚动容器上 `overflow-x-hidden`。
+- flex 全屏壳层：`h-screen` → `flex-1` → `h-full overflow-y-auto` 链路每一层 flex 子项都需 `min-h-0`，否则 `overflow-y-auto` 不生效。
+
+### 涉及文件
+
+- `rag3-bolt-v1.5/src/components/SystemSubNav.tsx`
+- `rag3-bolt-v1.5/src/pages/MonitorPage.tsx`
+- `rag3-bolt-v1.5/src/App.tsx`
+- `rag3-bolt-v1.5/src/pages/Home.tsx`

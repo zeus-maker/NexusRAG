@@ -103,7 +103,7 @@ export default function App() {
       case 'sys-audit':
         return <AuditLogPage />;
       case 'sys-monitor':
-        return <MonitorPage />;
+        return <MonitorPage onNavigate={navigate} initialTab={state.monitorTab ?? 0} />;
       case 'sys-traces':
         return <TracesPage />;
       default:
@@ -122,13 +122,13 @@ export default function App() {
         onLogout={logout}
         currentPage={state.page}
       />
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 min-h-0 overflow-hidden">
         <Sidebar
           collapsed={state.sidebarCollapsed}
           currentPage={state.page}
           onNavigate={navigate}
         />
-        <main className="flex-1 overflow-hidden bg-gray-50 dark:bg-gray-900">
+        <main className="flex-1 min-h-0 overflow-hidden bg-gray-50 dark:bg-gray-900">
           {renderContent()}
         </main>
       </div>

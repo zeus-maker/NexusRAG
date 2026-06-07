@@ -42,21 +42,23 @@ interface SystemSectionTabsProps {
 /** 页内分段 Tab（视觉与 EvalSubNav 一致，状态驱动） */
 export function SystemSectionTabs({ tabs, activeTab, onTabChange }: SystemSectionTabsProps) {
   return (
-    <div className="flex items-center gap-1 overflow-x-auto pb-1 -mb-px scrollbar-thin border-b border-gray-200 dark:border-gray-700">
-      {tabs.map((tab, idx) => (
-        <button
-          key={tab}
-          type="button"
-          onClick={() => onTabChange(idx)}
-          className={`px-3 py-2 text-xs font-medium rounded-t-lg border-b-2 -mb-px whitespace-nowrap transition-colors ${
-            activeTab === idx
-              ? 'border-blue-600 text-blue-700 dark:text-blue-400'
-              : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-          }`}
-        >
-          {tab}
-        </button>
-      ))}
+    <div className="border-b border-gray-200 dark:border-gray-700">
+      <div className="flex items-center gap-1 overflow-x-auto scrollbar-thin">
+        {tabs.map((tab, idx) => (
+          <button
+            key={tab}
+            type="button"
+            onClick={() => onTabChange(idx)}
+            className={`px-3 py-2 text-xs font-medium rounded-t-lg border-b-2 whitespace-nowrap transition-colors ${
+              activeTab === idx
+                ? 'border-blue-600 text-blue-700 dark:text-blue-400 bg-white dark:bg-gray-900'
+                : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'
+            }`}
+          >
+            {tab}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

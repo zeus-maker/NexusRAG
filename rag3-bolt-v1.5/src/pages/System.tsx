@@ -2,9 +2,11 @@ import { useState } from 'react';
 import {
   Plus, Search, MoreHorizontal, Shield,
   AlertCircle, CheckCircle, Download, Settings,
-  Users, Activity, DollarSign, Cpu, Zap
+  Users
 } from 'lucide-react';
-import { mockUsers, mockAuditLogs, mockMonitorMetrics } from '../mockData';
+import { mockUsers, mockAuditLogs } from '../mockData';
+
+export { MonitorPage } from './MonitorPage';
 
 export function UserManagePage() {
   const [search, setSearch] = useState('');
@@ -299,126 +301,3 @@ export function AuditLogPage() {
   );
 }
 
-export function MonitorPage() {
-  const pipelineLatencies = [
-    { name: 'P1 向量检索', avg: 450, p95: 890, color: 'bg-blue-500', pct: 45 },
-    { name: 'P2 PageIndex', avg: 520, p95: 1020, color: 'bg-purple-500', pct: 52 },
-    { name: 'P3 GraphRAG', avg: 1200, p95: 2400, color: 'bg-orange-500', pct: 100 },
-    { name: 'P4 Wiki', avg: 180, p95: 380, color: 'bg-green-500', pct: 18 },
-    { name: 'P5 Agent', avg: 3500, p95: 6000, color: 'bg-red-500', pct: 100 },
-  ];
-
-  const alertRules = [
-    { level: 'P0', condition: 'Faithfulness 突降 30%+', channel: '电话 + 企业微信', enabled: true },
-    { level: 'P1', condition: 'P95 延迟 > 10s', channel: '企业微信', enabled: true },
-    { level: 'P2', condition: '日成本 > ¥500', channel: '邮件 + Jira', enabled: true },
-  ];
-
-  return (
-    <div className="p-6 flex flex-col gap-5 h-full overflow-y-auto">
-      <div>
-        <h1 className="text-xl font-bold text-gray-900">系统监控</h1>
-        <p className="text-sm text-gray-500 mt-0.5">实时监控 RAG 系统性能与健康状态</p>
-      </div>
-
-      {/* Core metrics */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {mockMonitorMetrics.map((m, i) => (
-          <div key={i} className="bg-white rounded-xl border border-gray-200 p-4">
-            <div className="flex items-center justify-between mb-2">
-              <div className="p-1.5 bg-blue-50 rounded-lg">
-                {i === 0 ? <Activity size={14} className="text-blue-600" /> : i === 1 ? <Zap size={14} className="text-green-600" /> : i === 2 ? <AlertCircle size={14} className="text-red-600" /> : <Cpu size={14} className="text-orange-600" />}
-              </div>
-              <span className={`text-[10px] font-medium ${m.positive ? 'text-green-600' : 'text-red-600'}`}>{m.change}</span>
-            </div>
-            <div className="text-2xl font-bold text-gray-900">{m.value}</div>
-            <div className="text-xs text-gray-500 mt-0.5">{m.label}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Pipeline latency */}
-      <div className="bg-white rounded-xl border border-gray-200 p-4">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold text-gray-800">流水线延迟分布</h3>
-          <div className="flex gap-1.5">
-            {['1h', '6h', '24h', '7d'].map(t => (
-              <button key={t} className={`px-2 py-1 text-[10px] rounded ${t === '24h' ? 'bg-blue-600 text-white' : 'hover:bg-gray-100 text-gray-600'}`}>{t}</button>
-            ))}
-          </div>
-        </div>
-        <div className="space-y-3">
-          {pipelineLatencies.map(p => (
-            <div key={p.name} className="flex items-center gap-3">
-              <span className="text-xs text-gray-600 w-28 flex-shrink-0">{p.name}</span>
-              <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
-                <div className={`h-full ${p.color} rounded-full`} style={{ width: `${Math.min(p.pct, 100)}%` }}></div>
-              </div>
-              <span className="text-xs text-gray-700 font-medium w-16 text-right">avg {p.avg}ms</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Token usage */}
-      <div className="bg-white rounded-xl border border-gray-200 p-4">
-        <h3 className="text-sm font-semibold text-gray-800 mb-3">LLM Token 消耗与成本</h3>
-        <div className="grid grid-cols-2 gap-4 mb-3">
-          <div className="bg-blue-50 rounded-xl p-3">
-            <div className="flex items-center gap-2 mb-1">
-              <DollarSign size={14} className="text-blue-600" />
-              <span className="text-xs text-gray-600">今日</span>
-            </div>
-            <div className="text-lg font-bold text-gray-900">2.5M</div>
-            <div className="text-xs text-gray-600">tokens · <span className="font-semibold">¥38.5</span></div>
-          </div>
-          <div className="bg-purple-50 rounded-xl p-3">
-            <div className="flex items-center gap-2 mb-1">
-              <DollarSign size={14} className="text-purple-600" />
-              <span className="text-xs text-gray-600">本月</span>
-            </div>
-            <div className="text-lg font-bold text-gray-900">45M</div>
-            <div className="text-xs text-gray-600">tokens · <span className="font-semibold">¥680</span></div>
-          </div>
-        </div>
-        <div className="space-y-1.5">
-          <p className="text-xs text-gray-500 font-medium">模型分布</p>
-          {[
-            { model: 'DeepSeek-v4', pct: 68, color: 'bg-blue-500' },
-            { model: 'Qwen3-72B', pct: 22, color: 'bg-purple-500' },
-            { model: 'Claude-4', pct: 10, color: 'bg-orange-500' },
-          ].map(m => (
-            <div key={m.model} className="flex items-center gap-2">
-              <span className="text-[10px] text-gray-600 w-24">{m.model}</span>
-              <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                <div className={`h-full ${m.color} rounded-full`} style={{ width: `${m.pct}%` }}></div>
-              </div>
-              <span className="text-[10px] text-gray-600 w-8 text-right">{m.pct}%</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Alert rules */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-gray-800">告警规则</h3>
-          <button className="text-xs text-blue-600 hover:underline flex items-center gap-1"><Plus size={11} /> 添加</button>
-        </div>
-        {alertRules.map((rule, i) => (
-          <div key={i} className="px-4 py-3 flex items-center gap-3 border-b border-gray-50 last:border-0">
-            <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${rule.level === 'P0' ? 'bg-red-100 text-red-700' : rule.level === 'P1' ? 'bg-orange-100 text-orange-700' : 'bg-yellow-100 text-yellow-700'}`}>{rule.level}</span>
-            <div className="flex-1 min-w-0">
-              <div className="text-xs font-medium text-gray-800">{rule.condition}</div>
-              <div className="text-[10px] text-gray-500">{rule.channel}</div>
-            </div>
-            <div className="flex gap-2 items-center">
-              <span className="text-[10px] text-green-600 bg-green-50 px-2 py-0.5 rounded">已启用</span>
-              <button className="text-[10px] px-2 py-1 border border-gray-200 rounded hover:bg-gray-50 text-gray-600">编辑</button>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}

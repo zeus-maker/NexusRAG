@@ -48,6 +48,7 @@ interface AppState {
   selectedDocId: string | null;
   selectedConvId: string | null;
   kbSettingsTab: KBSettingsTab | null;
+  monitorTab: number | null;
   sidebarCollapsed: boolean;
   theme: 'light' | 'dark';
   currentUser: { name: string; role: string; email: string } | null;
@@ -59,6 +60,7 @@ const initialState: AppState = {
   selectedDocId: null,
   selectedConvId: null,
   kbSettingsTab: null,
+  monitorTab: null,
   sidebarCollapsed: false,
   theme: (typeof localStorage !== 'undefined' && localStorage.getItem('rag3-theme') === 'dark') ? 'dark' : 'light',
   currentUser: null,
