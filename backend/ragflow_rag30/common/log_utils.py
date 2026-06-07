@@ -90,14 +90,20 @@ def get_log_levels() -> dict:
     return dict(pkg_levels)
 
 
+def _safe_response_body_text(obj):
+    """DashScope DictMixin 无 .text；缺失键时 getattr 会 KeyError。"""
+    if obj is None:
+        return None
+    if hasattr(obj, "get"):
+        return obj.get("message") or obj.get("text")
+    return None
+
+
 def log_exception(e, *args):
     logging.exception(e)
     for a in args:
-        try:
-            text = getattr(a, "text")
-        except Exception:
-            text = None
-        if text is not None:
+        text = _safe_response_body_text(a)
+        if text:
             logging.error(text)
             raise Exception(text)
         logging.error(str(a))

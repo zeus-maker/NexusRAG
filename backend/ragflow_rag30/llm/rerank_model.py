@@ -375,47 +375,110 @@ class VoyageRerank(Base):
         return rank, res.total_tokens
 
 
+def _dashscope_dict_get(obj, key: str, default=""):
+    if obj is None:
+        return default
+    if hasattr(obj, "get"):
+        return obj.get(key, default)
+    return default
+
+
+def _dashscope_error_detail(resp) -> str:
+    message = _dashscope_dict_get(resp, "message")
+    code = _dashscope_dict_get(resp, "code")
+    parts = [p for p in [f"code={code}" if code else "", message] if p]
+    if parts:
+        return " ".join(parts)
+    try:
+        return str(resp)
+    except Exception:
+        return repr(resp)
+
+
+def _dashscope_resp_ok(resp) -> bool:
+    if _dashscope_dict_get(resp, "status_code", None) != HTTPStatus.OK:
+        return False
+    code = _dashscope_dict_get(resp, "code")
+    if code and str(code) not in ("", "200", "Success", "success"):
+        return False
+    return bool(_dashscope_rerank_results(resp))
+
+
+def _dashscope_rerank_results(resp) -> list:
+    output = _dashscope_dict_get(resp, "output", None)
+    if output is None:
+        return []
+    if hasattr(output, "get"):
+        return output.get("results") or []
+    try:
+        return output.results or []
+    except Exception:
+        return []
+
+
+def _dashscope_rerank_index_score(item) -> tuple[int, float]:
+    idx = _dashscope_dict_get(item, "index", None)
+    score = _dashscope_dict_get(item, "relevance_score", None)
+    if idx is None or score is None:
+        try:
+            idx = item.index
+            score = item.relevance_score
+        except Exception as exc:
+            raise ValueError(f"invalid rerank result item: {item!r}") from exc
+    return int(idx), float(score)
+
+
 class QWenRerank(Base):
     _FACTORY_NAME = "Tongyi-Qianwen"
+
+    _MAX_DOC_CHARS = 3000
 
     def __init__(self, key, model_name="gte-rerank", **kwargs):
         import dashscope
         self.api_key = key
         self.model_name = dashscope.TextReRank.Models.gte_rerank if model_name is None else model_name
-        # Remove invalid global timeout, use official SDK per-request timeout parameter
         self.request_timeout = 30.0
 
     def similarity(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
         if not query or not texts:
             return np.zeros(len(texts), dtype=float), 0
-            
+
         import dashscope
 
-        # Pass official request_timeout parameter to both API call branches
-        if self.model_name.startswith("qwen3-rerank"):  
-            resp = dashscope.TextReRank.call(  
-                api_key=self.api_key, model=self.model_name,  
-                query=query, documents=texts, top_n=len(texts),
+        safe_query = query[: self._MAX_DOC_CHARS] if len(query) > self._MAX_DOC_CHARS else query
+        safe_texts = []
+        for t in texts:
+            doc = t if isinstance(t, str) else str(t or "")
+            if len(doc) > self._MAX_DOC_CHARS:
+                doc = doc[: self._MAX_DOC_CHARS]
+            safe_texts.append(doc)
+
+        if self.model_name.startswith("qwen3-rerank"):
+            resp = dashscope.TextReRank.call(
+                api_key=self.api_key, model=self.model_name,
+                query=safe_query, documents=safe_texts, top_n=len(safe_texts),
                 request_timeout=self.request_timeout
-            )  
-        else:  
-            resp = dashscope.TextReRank.call(  
-                api_key=self.api_key, model=self.model_name,  
-                query=query, documents=texts,  
-                top_n=len(texts), return_documents=False,
+            )
+        else:
+            resp = dashscope.TextReRank.call(
+                api_key=self.api_key, model=self.model_name,
+                query=safe_query, documents=safe_texts,
+                top_n=len(safe_texts), return_documents=False,
                 request_timeout=self.request_timeout
-            )  
+            )
 
         rank = np.zeros(len(texts), dtype=float)
-        if resp.status_code == HTTPStatus.OK:
-            try:
-                for r in resp.output.results:
-                    rank[r.index] = r.relevance_score
-            except Exception as _e:
-                log_exception(_e, resp)
+        if _dashscope_resp_ok(resp):
+            for r in _dashscope_rerank_results(resp):
+                idx, score = _dashscope_rerank_index_score(r)
+                if 0 <= idx < len(rank):
+                    rank[idx] = score
             return rank, total_token_count_from_response(resp)
-        else:
-            raise ValueError(f"Error calling QWenRerank model {self.model_name}: {resp.status_code} - {resp.text}")
+        detail = _dashscope_error_detail(resp)
+        status = _dashscope_dict_get(resp, "status_code", "unknown")
+        raise ValueError(
+            f"Error calling QWenRerank model {self.model_name}: HTTP {status} - {detail}"
+        )
 
 
 class HuggingfaceRerank(Base):

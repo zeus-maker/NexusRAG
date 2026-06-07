@@ -1365,3 +1365,37 @@ PDF 已能渲染，但左栏预览区不出现滚动条，多页内容随容器�
 - `backend/ragflow_rag30/rag/llm/rerank_model.py`
 - `backend/ragflow_rag30/api/apps/restful_apis/dataset_api.py`
 - `frontend/rag3-web/src/pages/RetrievalTestPage.tsx`
+
+---
+
+## 47. Rerank KeyError text 根因加固与服务重启
+
+### 背景与目标
+
+用户开启精排后仍见 `KeyError: 'text'`，混合检索正常。根因是 DashScope `DictMixin` 无 `.text` 字段，且 `getattr(resp, "text")` / `resp.text` 会走 `__getattr__` 直接 KeyError；API 进程 PID 81785 自 8:33 起未重启，修复代码未加载。Traceback 行号与当前源码错位（旧字节码 + 新行号）造成误判。
+
+### 改动摘要
+
+- `QWenRerank`：统一用 `_dashscope_dict_get` / `_dashscope_resp_ok` 判断 HTTP 与 body `code`、是否有 `output.results`；错误信息只读 `message`/`code`；文档强制 `str` 并截断 3000 字。
+- 同步修复遗留副本 `llm/rerank_model.py`（仍含 `resp.text`）。
+- `log_exception`：DashScope 响应用 `.get("message")` 替代 `getattr(..., "text")`。
+- `search.py`：移除 `rerank_by_model` DEBUG print。
+- 已重启 `ragflow_server`（新 PID），加载上述改动。
+
+### 验证与风险
+
+- 重启后开启 Rerank：失败时应返回 `ValueError` 明文（如 InvalidApiKey），不再 KeyError。
+- 若 DashScope 业务失败但 HTTP 200 且无 results，同样走明确错误路径。
+- 精排仍依赖租户通义 Rerank API Key 与模型名配置正确。
+
+### 反思与沉淀
+
+- 对 DashScope SDK 响应对象：禁用 `getattr(x, key, default)` 与 `.text`；一律 `resp.get(key, default)`。
+- 后端 Python 热改不生效，改 `rag/llm` 后必须重启 `ragflow_server`。
+
+### 涉及文件
+
+- `backend/ragflow_rag30/rag/llm/rerank_model.py`
+- `backend/ragflow_rag30/llm/rerank_model.py`
+- `backend/ragflow_rag30/common/log_utils.py`
+- `backend/ragflow_rag30/rag/nlp/search.py`

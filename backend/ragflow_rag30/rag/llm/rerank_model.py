@@ -375,16 +375,19 @@ class VoyageRerank(Base):
         return rank, res.total_tokens
 
 
+def _dashscope_dict_get(obj, key: str, default=""):
+    """DictMixin 缺失键时 __getattr__ 会 KeyError，不能用 getattr 默认值。"""
+    if obj is None:
+        return default
+    if hasattr(obj, "get"):
+        return obj.get(key, default)
+    return default
+
+
 def _dashscope_error_detail(resp) -> str:
     """DashScopeAPIResponse 使用 message/code，无 requests 风格的 .text。"""
-    try:
-        message = resp.get("message") if hasattr(resp, "get") else getattr(resp, "message", "")
-    except Exception:
-        message = ""
-    try:
-        code = resp.get("code") if hasattr(resp, "get") else getattr(resp, "code", "")
-    except Exception:
-        code = ""
+    message = _dashscope_dict_get(resp, "message")
+    code = _dashscope_dict_get(resp, "code")
     parts = [p for p in [f"code={code}" if code else "", message] if p]
     if parts:
         return " ".join(parts)
@@ -392,6 +395,39 @@ def _dashscope_error_detail(resp) -> str:
         return str(resp)
     except Exception:
         return repr(resp)
+
+
+def _dashscope_resp_ok(resp) -> bool:
+    if _dashscope_dict_get(resp, "status_code", None) != HTTPStatus.OK:
+        return False
+    code = _dashscope_dict_get(resp, "code")
+    if code and str(code) not in ("", "200", "Success", "success"):
+        return False
+    return bool(_dashscope_rerank_results(resp))
+
+
+def _dashscope_rerank_results(resp) -> list:
+    output = _dashscope_dict_get(resp, "output", None)
+    if output is None:
+        return []
+    if hasattr(output, "get"):
+        return output.get("results") or []
+    try:
+        return output.results or []
+    except Exception:
+        return []
+
+
+def _dashscope_rerank_index_score(item) -> tuple[int, float]:
+    idx = _dashscope_dict_get(item, "index", None)
+    score = _dashscope_dict_get(item, "relevance_score", None)
+    if idx is None or score is None:
+        try:
+            idx = item.index
+            score = item.relevance_score
+        except Exception as exc:
+            raise ValueError(f"invalid rerank result item: {item!r}") from exc
+    return int(idx), float(score)
 
 
 class QWenRerank(Base):
@@ -414,10 +450,12 @@ class QWenRerank(Base):
         import dashscope
 
         safe_query = query[: self._MAX_DOC_CHARS] if len(query) > self._MAX_DOC_CHARS else query
-        safe_texts = [
-            (t[: self._MAX_DOC_CHARS] if isinstance(t, str) and len(t) > self._MAX_DOC_CHARS else t)
-            for t in texts
-        ]
+        safe_texts = []
+        for t in texts:
+            doc = t if isinstance(t, str) else str(t or "")
+            if len(doc) > self._MAX_DOC_CHARS:
+                doc = doc[: self._MAX_DOC_CHARS]
+            safe_texts.append(doc)
 
         # Pass official request_timeout parameter to both API call branches
         if self.model_name.startswith("qwen3-rerank"):
@@ -435,16 +473,16 @@ class QWenRerank(Base):
             )
 
         rank = np.zeros(len(texts), dtype=float)
-        if resp.status_code == HTTPStatus.OK:
-            try:
-                for r in resp.output.results:
-                    rank[r.index] = r.relevance_score
-            except Exception as _e:
-                log_exception(_e, resp)
+        if _dashscope_resp_ok(resp):
+            for r in _dashscope_rerank_results(resp):
+                idx, score = _dashscope_rerank_index_score(r)
+                if 0 <= idx < len(rank):
+                    rank[idx] = score
             return rank, total_token_count_from_response(resp)
         detail = _dashscope_error_detail(resp)
+        status = _dashscope_dict_get(resp, "status_code", "unknown")
         raise ValueError(
-            f"Error calling QWenRerank model {self.model_name}: HTTP {resp.status_code} - {detail}"
+            f"Error calling QWenRerank model {self.model_name}: HTTP {status} - {detail}"
         )
 
 
