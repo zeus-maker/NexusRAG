@@ -127,9 +127,15 @@ export function RetrievalTestPage({ kbId, onNavigate }: RetrievalTestPageProps) 
         };
         const t0 = performance.now();
         const pre = await searchKb(kbId, query.trim(), baseParams);
-        const post = useRerank && effectiveRerankId
-          ? await searchKb(kbId, query.trim(), { ...baseParams, rerank_id: effectiveRerankId })
-          : null;
+        let post = null;
+        if (useRerank && effectiveRerankId) {
+          try {
+            post = await searchKb(kbId, query.trim(), { ...baseParams, rerank_id: effectiveRerankId });
+          } catch (rerankErr) {
+            const msg = rerankErr instanceof Error ? rerankErr.message : 'Rerank 请求失败';
+            showToast(`精排失败：${msg}。已展示混合检索结果，请检查系统管理中的 Rerank API Key 与模型。`);
+          }
+        }
         const latencyMs = Math.round(performance.now() - t0);
 
         const res = buildRealRetrievalResult({

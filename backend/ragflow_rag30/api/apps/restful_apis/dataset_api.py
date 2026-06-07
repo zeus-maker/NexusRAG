@@ -530,6 +530,9 @@ async def search(tenant_id, dataset_id):
             return get_result(data=result)
         else:
             return get_error_data_result(message=result)
+    except ValueError as e:
+        logging.warning("dataset search ValueError: %s", e)
+        return get_error_data_result(message=str(e))
     except Exception as e:
         logging.exception(e)
         if "not_found" in str(e):

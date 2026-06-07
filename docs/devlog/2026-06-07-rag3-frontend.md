@@ -1340,3 +1340,28 @@ PDF 已能渲染，但左栏预览区不出现滚动条，多页内容随容器�
 - `frontend/rag3-web/src/utils/retrievalTestApi.ts`
 - `frontend/rag3-web/src/services/kbApi.ts`、`kbMappers.ts`
 - `frontend/rag3-web/src/data/retrievalTestMock.ts`
+
+---
+
+## 46. 修复检索 Rerank 报错 KeyError text 与精排降级
+
+### 背景与目标
+
+开启 Rerank 检索时后端 `QWenRerank` 在 DashScope 返回非 200 时访问 `resp.text`（不存在），抛出 `KeyError: 'text'` 掩盖真实 API 错误；前端精排请求失败导致整次检索报错。
+
+### 改动摘要
+
+- `rerank_model.py`：新增 `_dashscope_error_detail`，错误信息改读 `message`/`code`；Rerank 文档截断至 3000 字符。
+- `dataset_api.py`：`ValueError` 透传为 API message，不再统一 Internal server error。
+- `RetrievalTestPage`：精排请求失败时保留混合检索结果并 toast 提示检查 Rerank API Key。
+
+### 验证与风险
+
+- 重启 `ragflow_rag30` API 后，开启 Rerank：若 DashScope 仍失败，应看到明确 message 而非 KeyError；混合检索仍可返回。
+- 根因若为未配置通义 Rerank API Key，需在系统管理 → 模型管理补全。
+
+### 涉及文件
+
+- `backend/ragflow_rag30/rag/llm/rerank_model.py`
+- `backend/ragflow_rag30/api/apps/restful_apis/dataset_api.py`
+- `frontend/rag3-web/src/pages/RetrievalTestPage.tsx`

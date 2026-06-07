@@ -375,8 +375,30 @@ class VoyageRerank(Base):
         return rank, res.total_tokens
 
 
+def _dashscope_error_detail(resp) -> str:
+    """DashScopeAPIResponse 使用 message/code，无 requests 风格的 .text。"""
+    try:
+        message = resp.get("message") if hasattr(resp, "get") else getattr(resp, "message", "")
+    except Exception:
+        message = ""
+    try:
+        code = resp.get("code") if hasattr(resp, "get") else getattr(resp, "code", "")
+    except Exception:
+        code = ""
+    parts = [p for p in [f"code={code}" if code else "", message] if p]
+    if parts:
+        return " ".join(parts)
+    try:
+        return str(resp)
+    except Exception:
+        return repr(resp)
+
+
 class QWenRerank(Base):
     _FACTORY_NAME = "Tongyi-Qianwen"
+
+    # gte-rerank / qwen3-rerank 单文档建议控制在约 4k token 内
+    _MAX_DOC_CHARS = 3000
 
     def __init__(self, key, model_name="gte-rerank", **kwargs):
         import dashscope
@@ -388,23 +410,29 @@ class QWenRerank(Base):
     def similarity(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
         if not query or not texts:
             return np.zeros(len(texts), dtype=float), 0
-            
+
         import dashscope
 
+        safe_query = query[: self._MAX_DOC_CHARS] if len(query) > self._MAX_DOC_CHARS else query
+        safe_texts = [
+            (t[: self._MAX_DOC_CHARS] if isinstance(t, str) and len(t) > self._MAX_DOC_CHARS else t)
+            for t in texts
+        ]
+
         # Pass official request_timeout parameter to both API call branches
-        if self.model_name.startswith("qwen3-rerank"):  
-            resp = dashscope.TextReRank.call(  
-                api_key=self.api_key, model=self.model_name,  
-                query=query, documents=texts, top_n=len(texts),
+        if self.model_name.startswith("qwen3-rerank"):
+            resp = dashscope.TextReRank.call(
+                api_key=self.api_key, model=self.model_name,
+                query=safe_query, documents=safe_texts, top_n=len(safe_texts),
                 request_timeout=self.request_timeout
-            )  
-        else:  
-            resp = dashscope.TextReRank.call(  
-                api_key=self.api_key, model=self.model_name,  
-                query=query, documents=texts,  
-                top_n=len(texts), return_documents=False,
+            )
+        else:
+            resp = dashscope.TextReRank.call(
+                api_key=self.api_key, model=self.model_name,
+                query=safe_query, documents=safe_texts,
+                top_n=len(safe_texts), return_documents=False,
                 request_timeout=self.request_timeout
-            )  
+            )
 
         rank = np.zeros(len(texts), dtype=float)
         if resp.status_code == HTTPStatus.OK:
@@ -414,8 +442,10 @@ class QWenRerank(Base):
             except Exception as _e:
                 log_exception(_e, resp)
             return rank, total_token_count_from_response(resp)
-        else:
-            raise ValueError(f"Error calling QWenRerank model {self.model_name}: {resp.status_code} - {resp.text}")
+        detail = _dashscope_error_detail(resp)
+        raise ValueError(
+            f"Error calling QWenRerank model {self.model_name}: HTTP {resp.status_code} - {detail}"
+        )
 
 
 class HuggingfaceRerank(Base):
