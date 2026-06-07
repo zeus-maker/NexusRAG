@@ -1595,3 +1595,39 @@ PDF 已能渲染，但左栏预览区不出现滚动条，多页内容随容器�
 - `frontend/rag3-web/src/services/hubApi.ts`、`hooks/useEnhancementHubData.ts`（新建）
 - `frontend/rag3-web/src/pages/Hub/*.tsx`
 - `backend/ragflow_rag30/rag3/index_service.py`、`api/apps/rag3_app.py`
+
+---
+
+## 54. 集成 VectifyAI PageIndex SDK（pip install pageindex）
+
+### 背景与目标
+
+RAG3 PageIndex 建树此前为按页码分组 chunk 的启发式 mock，与 VectifyAI 官方「无向量、树索引 + 推理检索」能力脱节。用户要求接入 `pip install pageindex` 官方包，使上传勾选 PageIndex 后能用真实 SDK 建树与检索。
+
+### 改动摘要
+
+- **依赖**：`pyproject.toml` 增加 `pageindex>=0.2.8`（VectifyAI Python SDK，云 API `PageIndexClient`）。
+- **集成模块** `rag3/pageindex_integration.py`：
+  - 读取 `PAGEINDEX_API_KEY`；从 MinIO 拉取 PDF → `submit_document` → 轮询 `is_retrieval_ready` → `get_tree`；
+  - `normalize_pageindex_tree` 将 API 的 `nodes/sub_nodes` 规范为 Hub 使用的 `root.children` 格式，并保存 `pageindex_doc_id`、`source`；
+  - 检索优先 `submit_query` + `get_retrieval`，失败或无 key 时回退关键词匹配。
+- **`index_service._run_build`**：配置 API key 且文档为 PDF 时走 SDK；否则保留启发式建树并标注 `source=heuristic`。
+- **说明**：当前 pip 包为云 SDK（非 GitHub 自托管 `page_index()`）；本地 PDF 解析建树需 `PAGEINDEX_API_KEY`（https://dash.pageindex.ai/api-keys）。
+
+### 验证与风险
+
+- `.venv/bin/python3 -c "from rag3.pageindex_integration import ..."` 通过；树规范化单测断言通过。
+- 配置 `PAGEINDEX_API_KEY` 后上传 PDF 并触发 pageindex 构建 → 日志应出现「使用 PageIndex SDK 建树」；Hub 树 API 返回 `source: pageindex_cloud`。
+- 未配置 key 时行为与 §53 一致（启发式建树），无破坏性变更。
+- 风险：云 API 轮询最长 600s，大 PDF 构建耗时；非 PDF 仍走启发式；需重启 `ragflow_server` 并 `pip/uv sync` 安装新依赖。
+
+### 反思与沉淀
+
+- pip 包 0.2.8 仅导出 `PageIndexClient`，开源本地 `page_index()` 在 GitHub 仓库；后续可按租户 LLM key 接自托管路径。
+- 产物 Redis 键不变，前端 `mapTreeNode` 无需改；`source` 字段可供 Hub 展示构建来源。
+
+### 涉及文件
+
+- `backend/ragflow_rag30/rag3/pageindex_integration.py`（新建）
+- `backend/ragflow_rag30/rag3/index_service.py`
+- `backend/ragflow_rag30/pyproject.toml`

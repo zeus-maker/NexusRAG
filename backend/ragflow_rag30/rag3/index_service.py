@@ -229,14 +229,43 @@ async def _run_build(task_id: str, kb_id: str, tenant_id: str, index_type: str, 
                 continue
 
             if index_type == "pageindex":
-                tree = _build_pageindex_tree(doc_name, chunks)
+                tree = None
+                build_source = "heuristic"
+                try:
+                    from rag3.pageindex_integration import build_pageindex_tree_cloud, is_pageindex_cloud_enabled
+
+                    if is_pageindex_cloud_enabled():
+                        msgs.append(f"{datetime.now():%H:%M:%S} 使用 PageIndex SDK 建树 · {doc_name}")
+                        _update_task(
+                            task_id,
+                            progress=base_prog + 0.5 / total if total else base_prog,
+                            progress_msg="\n".join(msgs),
+                            process_duration=time.time() - started,
+                        )
+                        tree = build_pageindex_tree_cloud(
+                            kb_id,
+                            doc_id,
+                            doc_name,
+                            doc_meta=doc if isinstance(doc, dict) else None,
+                            chunk_count=len(chunks),
+                        )
+                        if tree:
+                            build_source = tree.get("source") or "pageindex_cloud"
+                except Exception as e:
+                    logger.warning("pageindex sdk build skipped for %s: %s", doc_name, e)
+
+                if not tree:
+                    tree = _build_pageindex_tree(doc_name, chunks)
+                    tree["source"] = build_source
                 REDIS_CONN.set(
                     _pageindex_artifact_key(kb_id, doc_id),
                     json.dumps(tree, ensure_ascii=False),
                     _ARTIFACT_TTL_SEC,
                 )
+                root_children = len(tree.get("root", {}).get("children") or [])
                 msgs.append(
-                    f"{datetime.now():%H:%M:%S} PageIndex 树已构建 · {doc_name} · {len(chunks)} chunks · {len(tree['root']['children'])} 页节点"
+                    f"{datetime.now():%H:%M:%S} PageIndex 树已构建 ({build_source}) · {doc_name} · "
+                    f"{len(chunks)} chunks · {root_children} 顶层节点"
                 )
             else:
                 entries = _build_wiki_entries(doc_id, doc_name, chunks)
@@ -391,10 +420,22 @@ def load_wiki_entries(kb_id: str) -> list[dict[str, Any]]:
 
 
 def search_pageindex_hits(kb_id: str, query: str, top_k: int = 10) -> list[dict[str, Any]]:
-    """从已构建 PageIndex 树中做简单关键词检索（供 pipeline 使用）。"""
-    q = (query or "").lower()
+    """从已构建 PageIndex 树检索：优先 PageIndex SDK，否则关键词匹配。"""
+    q = (query or "").strip()
     if not q:
         return []
+
+    try:
+        from rag3.pageindex_integration import is_pageindex_cloud_enabled, search_pageindex_cloud
+
+        if is_pageindex_cloud_enabled():
+            cloud_hits = search_pageindex_cloud(kb_id, q, top_k=top_k)
+            if cloud_hits:
+                return cloud_hits
+    except Exception:
+        logger.exception("pageindex cloud search fallback to keyword")
+
+    q_lower = q.lower()
     documents, _ = DocumentService.get_by_kb_id(
         kb_id=kb_id,
         page_number=0,
@@ -417,9 +458,9 @@ def search_pageindex_hits(kb_id: str, query: str, top_k: int = 10) -> list[dict[
                 snippet = leaf.get("snippet") or leaf.get("title") or ""
                 title = leaf.get("title") or ""
                 text = f"{title} {snippet}".lower()
-                if not any(tok in text for tok in q.split() if len(tok) > 1):
+                if not any(tok in text for tok in q_lower.split() if len(tok) > 1):
                     continue
-                score = sum(1 for tok in q.split() if len(tok) > 1 and tok in text) / max(len(q.split()), 1)
+                score = sum(1 for tok in q_lower.split() if len(tok) > 1 and tok in text) / max(len(q_lower.split()), 1)
                 hits.append({
                     "chunk_id": leaf.get("chunk_id") or leaf.get("node_id"),
                     "doc_id": doc["id"],
