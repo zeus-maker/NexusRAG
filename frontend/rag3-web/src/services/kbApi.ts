@@ -277,6 +277,11 @@ export const kbApi = {
     return [];
   },
 
+  chunkImageUrl(imageId: string, cacheBust?: string | number) {
+    const base = apiUrl(`/documents/images/${imageId}`);
+    return cacheBust ? `${base}?_t=${cacheBust}` : base;
+  },
+
   previewUrl(docId: string) {
     return apiUrl(documentPreviewPath(docId));
   },

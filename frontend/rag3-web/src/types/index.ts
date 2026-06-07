@@ -37,8 +37,12 @@ export interface Document {
   tags: string[];
   uploaded_by: string;
   uploaded_at: string;
-  /** RAGFlow 解析进度/失败原因 */
+  /** RAGFlow 解析进度 0~1 */
+  progress?: number;
+  /** RAGFlow 解析进度/失败原因（多行，含 HH:MM:SS 时间戳） */
   progress_msg?: string;
+  process_begin_at?: string;
+  process_duration?: number;
 }
 
 export interface Chunk {
@@ -53,6 +57,14 @@ export interface Chunk {
   acl_level: string;
   /** RAGFlow available_int：false 时不参与检索 */
   available?: boolean;
+  /** 分块缩略图 ID */
+  image_id?: string;
+  /** text | table | image */
+  doc_type_kwd?: string;
+  /** PDF 锚点 [[page, left, right, top, bottom], ...] */
+  positions?: number[][];
+  /** 原始 HTML 内容（含表格/图片标签） */
+  content_html?: string;
 }
 
 export interface ChatMessage {

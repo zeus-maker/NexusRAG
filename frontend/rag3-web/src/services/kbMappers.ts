@@ -42,7 +42,10 @@ export interface RagflowDocument {
   update_date?: string;
   created_by?: string;
   nickname?: string;
+  progress?: number;
   progress_msg?: string;
+  process_begin_at?: string;
+  process_duration?: number;
 }
 
 const CHUNK_METHOD_LABELS: Record<string, string> = {
@@ -77,8 +80,15 @@ const RUN_TO_PARSE: Record<string, ParseStatus> = {
 };
 
 function tsToIso(ts?: number, dateStr?: string): string {
-  if (dateStr) return new Date(dateStr).toISOString();
-  if (ts) return new Date(ts).toISOString();
+  if (ts && ts > 0) {
+    const ms = ts < 1e12 ? ts * 1000 : ts;
+    const d = new Date(ms);
+    if (!Number.isNaN(d.getTime())) return d.toISOString();
+  }
+  if (dateStr) {
+    const d = new Date(dateStr);
+    if (!Number.isNaN(d.getTime())) return d.toISOString();
+  }
   return new Date().toISOString();
 }
 
@@ -133,7 +143,10 @@ export function mapDocumentToUI(doc: RagflowDocument, kbId: string): Document {
     tags: [],
     uploaded_by: doc.nickname || doc.created_by || '—',
     uploaded_at: tsToIso(doc.create_time, doc.create_date),
+    progress: typeof doc.progress === 'number' ? doc.progress : undefined,
     progress_msg: doc.progress_msg?.trim() || undefined,
+    process_begin_at: doc.process_begin_at,
+    process_duration: doc.process_duration,
   };
 }
 
@@ -183,11 +196,16 @@ export function sortKeyToOrderby(sortBy: string): string {
 export interface RagflowChunk {
   id: string;
   content?: string;
+  content_with_weight?: string;
   document_id?: string;
   docnm_kwd?: string;
   important_keywords?: string[];
   available?: boolean;
   positions?: number[][];
+  position_int?: number[][];
+  image_id?: string;
+  img_id?: string;
+  doc_type_kwd?: string;
 }
 
 export interface RagflowSearchChunk {
@@ -222,22 +240,35 @@ export const PARSE_STATUS_UI: Record<ParseStatus, { label: string; color: string
   failed: { label: '失败', color: 'bg-red-100 text-red-700' },
 };
 
+function normalizePositions(chunk: RagflowChunk): number[][] | undefined {
+  const raw = chunk.positions ?? chunk.position_int;
+  if (!Array.isArray(raw) || !raw.length) return undefined;
+  return raw.filter(p => Array.isArray(p) && p.length >= 5) as number[][];
+}
+
 export function mapChunkToUI(chunk: RagflowChunk, index: number, pageOffset = 0): Chunk {
-  const content = chunk.content || '';
-  const page = chunk.positions?.[0]?.[0] ?? 1;
+  const html = chunk.content_with_weight || '';
+  const content = chunk.content || html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() || html;
+  const positions = normalizePositions(chunk);
+  const page = positions?.[0]?.[0] ?? 1;
   const keywords = chunk.important_keywords?.filter(Boolean) ?? [];
   const sectionTitle = keywords[0] || chunk.docnm_kwd || `Chunk ${pageOffset + index + 1}`;
+  const docType = (chunk.doc_type_kwd || '').toLowerCase();
   return {
     chunk_id: chunk.id,
     chunk_index: pageOffset + index + 1,
     content_preview: content,
-    content_type: inferContentType(content),
+    content_html: html || undefined,
+    content_type: docType === 'image' ? 'image' : docType === 'table' ? 'table' : inferContentType(content),
     chunk_strategy: '通用分块',
     token_count: Math.max(1, Math.round(content.length / 2)),
     page_number: page,
     section_title: sectionTitle,
     acl_level: chunk.available === false ? 'restricted' : 'internal',
     available: chunk.available !== false,
+    image_id: chunk.image_id || chunk.img_id || undefined,
+    doc_type_kwd: chunk.doc_type_kwd,
+    positions,
   };
 }
 
@@ -256,7 +287,10 @@ export function normalizeChunkDetail(raw: Record<string, unknown>): RagflowChunk
         : typeof availableInt === 'boolean'
           ? availableInt
           : Number(availableInt) !== 0,
-    positions: raw.positions as number[][] | undefined,
+    positions: (raw.positions ?? raw.position_int) as number[][] | undefined,
+    image_id: (raw.image_id ?? raw.img_id) as string | undefined,
+    doc_type_kwd: raw.doc_type_kwd as string | undefined,
+    content_with_weight: raw.content_with_weight as string | undefined,
   };
 }
 

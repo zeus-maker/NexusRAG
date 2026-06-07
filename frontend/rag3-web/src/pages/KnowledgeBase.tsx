@@ -10,7 +10,11 @@ import {
 import { DocumentParsePreviewPanel } from '../components/kb/DocumentParsePreviewPanel';
 import { DocumentActionMenu, parseStatusFilterLabel } from '../components/kb/DocumentActionMenu';
 import { ChunkSplitDialog } from '../components/kb/ChunkSplitDialog';
-import type { ParseStatus } from '../types';
+import { ParseProgressLogModal } from '../components/kb/ParseProgressLogModal';
+import { KnowledgeChunkWorkspace } from '../components/kb/KnowledgeChunkWorkspace';
+import { formatRelativeTime, formatDateTime } from '../utils/timeFormat';
+import { parseProgressPercent } from '../utils/documentUtil';
+import type { Document, ParseStatus } from '../types';
 import { getPageIndexDocIdForKbDoc } from '../data/pageIndexMock';
 import { mockKBs, mockDocuments, mockChunks, mockIndexStatuses } from '../mockData';
 import type { KnowledgeBase } from '../types';
@@ -58,14 +62,7 @@ function formatBytes(bytes: number) {
   return (bytes / 1024).toFixed(0) + ' KB';
 }
 
-function formatTime(iso: string) {
-  const now = new Date('2026-06-05T12:00:00Z').getTime();
-  const t = new Date(iso).getTime();
-  const diff = now - t;
-  if (diff < 3600000) return Math.floor(diff / 60000) + ' 分钟前';
-  if (diff < 86400000) return Math.floor(diff / 3600000) + ' 小时前';
-  return Math.floor(diff / 86400000) + ' 天前';
-}
+const formatTime = formatRelativeTime;
 
 const PAGE_SIZE = 8;
 const SORT_OPTIONS = [
@@ -772,6 +769,7 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
   const [urlValue, setUrlValue] = useState('');
   const [menuDocId, setMenuDocId] = useState<string | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<DOMRect | null>(null);
+  const [logModalDoc, setLogModalDoc] = useState<Document | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const menuBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
@@ -781,8 +779,9 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
     ? documents.filter(d => d.parse_status === 'parsing' || d.parse_status === 'pending').map(d => ({
         name: d.original_name,
         size: formatBytes(d.file_size),
-        progress: d.parse_status === 'parsing' ? 50 : 10,
+        progress: parseProgressPercent(d.progress, d.parse_status),
         stage: d.parse_status === 'parsing' ? 'parsing' as const : 'uploading' as const,
+        doc: d,
       }))
     : getUploadQueue();
 
@@ -1038,6 +1037,7 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
           </div>
           {uploadQueue.map((f, i) => {
             const st = PIPELINE_STAGE_LABELS[f.stage] ?? PIPELINE_STAGE_LABELS.parsing;
+            const queueDoc = useRealApi && 'doc' in f ? (f as { doc?: Document }).doc : undefined;
             return (
               <div key={i} className="px-4 py-2.5 flex items-center gap-3 border-b border-gray-50 dark:border-gray-800 last:border-0">
                 <FileText size={14} className="text-gray-400 flex-shrink-0" />
@@ -1047,6 +1047,15 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
                   <div className={`h-full rounded-full transition-all ${f.stage === 'indexed' ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${f.progress}%` }}></div>
                 </div>
                 <span className={`text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0 ${st.color}`}>{st.label}</span>
+                {queueDoc?.progress_msg && (
+                  <button
+                    type="button"
+                    onClick={() => setLogModalDoc(queueDoc)}
+                    className="text-[10px] text-cyan-600 hover:underline flex-shrink-0"
+                  >
+                    日志
+                  </button>
+                )}
               </div>
             );
           })}
@@ -1185,13 +1194,36 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
                   <td className="px-4 py-3 text-xs text-gray-500 hidden md:table-cell">{formatBytes(doc.file_size)}</td>
                   <td className="px-4 py-3 max-w-[200px]">
                     {useRealApi ? (
-                      <div className="space-y-1">
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${parseUi.color}`}>
+                      <div className="space-y-1" onClick={e => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          onClick={() => (doc.progress_msg || doc.parse_status === 'parsing' || doc.parse_status === 'failed') && setLogModalDoc(doc)}
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${parseUi.color} ${
+                            doc.progress_msg || doc.parse_status === 'parsing' || doc.parse_status === 'failed'
+                              ? 'hover:ring-1 hover:ring-cyan-300 cursor-pointer'
+                              : 'cursor-default'
+                          }`}
+                          title={doc.progress_msg ? '查看解析日志' : undefined}
+                        >
                           {doc.parse_status === 'parsing' && <Loader size={10} className="animate-spin" />}
                           {parseUi.label}
-                        </span>
-                        {doc.parse_status === 'failed' && doc.progress_msg && (
-                          <p className="text-[10px] text-red-600 line-clamp-2" title={doc.progress_msg}>
+                          {(doc.progress_msg || doc.parse_status === 'parsing') && (
+                            <span className="opacity-70">· {parseProgressPercent(doc.progress, doc.parse_status)}%</span>
+                          )}
+                        </button>
+                        {(doc.parse_status === 'parsing' || doc.parse_status === 'pending') && (
+                          <div className="w-full max-w-[120px] h-1 bg-gray-100 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-blue-500 rounded-full transition-all"
+                              style={{ width: `${parseProgressPercent(doc.progress, doc.parse_status)}%` }}
+                            />
+                          </div>
+                        )}
+                        {doc.progress_msg && (
+                          <p
+                            className={`text-[10px] line-clamp-2 ${doc.parse_status === 'failed' ? 'text-red-600' : 'text-gray-500'}`}
+                            title={doc.progress_msg}
+                          >
                             {doc.progress_msg.split('\n').filter(Boolean).pop()?.slice(0, 160)}
                           </p>
                         )}
@@ -1221,7 +1253,9 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
                       </div>
                     ) : <span className="text-xs text-gray-400">--</span>}
                   </td>
-                  <td className="px-4 py-3 text-xs text-gray-500 hidden xl:table-cell">{formatTime(doc.uploaded_at)}</td>
+                  <td className="px-4 py-3 text-xs text-gray-500 hidden xl:table-cell" title={formatRelativeTime(doc.uploaded_at)}>
+                    {formatDateTime(doc.uploaded_at)}
+                  </td>
                   <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                     <div className="flex items-center gap-1 justify-end">
                       {doc.parse_status === 'parsed' && (
@@ -1268,12 +1302,17 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
     {showPreview && previewDoc && canPreview && (
       <div className="flex-1 min-h-[240px] flex flex-col border-t border-gray-200 dark:border-gray-700 overflow-hidden">
         <DocumentParsePreviewPanel
+          key={previewDoc.doc_id}
           doc={previewDoc}
           kbId={kbId}
           governed={governedMap[previewDoc.doc_id]}
           onNavigate={onNavigate}
         />
       </div>
+    )}
+
+    {logModalDoc && (
+      <ParseProgressLogModal doc={logModalDoc} onClose={() => setLogModalDoc(null)} />
     )}
     {showPreview && previewDoc && !canPreview && (
       <div className="flex-1 min-h-[120px] flex items-center justify-center border-t border-gray-200 dark:border-gray-700 text-sm text-gray-500 p-6">
@@ -1530,13 +1569,26 @@ export function ChunkPreviewPage({ kbId, docId, onNavigate }: ChunkPreviewPagePr
         <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{chunksError}</div>
       )}
 
-      {useRealApi && !chunksLoading && chunkResult.total === 0 && (
-        <div className="text-center py-12 text-sm text-gray-500 bg-white rounded-xl border border-gray-200">
-          {doc?.parse_status === 'parsed' ? '暂无分块数据' : '文档尚未解析完成'}
+      {useRealApi && doc && (
+        <div className="flex-1 min-h-[520px] bg-white rounded-xl border border-gray-200 overflow-hidden flex flex-col">
+          <KnowledgeChunkWorkspace
+            key={doc.doc_id}
+            doc={doc}
+            kbId={kbId}
+            pageSize={CHUNK_PAGE_SIZE}
+            keywords={chunkSearch.trim() || undefined}
+            showChunkActions
+            actions={{
+              onSplit: chunk => setSplitTarget(chunk),
+              onMergeNext: (chunk, index) => void handleMergeWithNext(chunk, index),
+              onToggleExclude: chunk => void handleToggleExclude(chunk),
+              chunkActionId,
+            }}
+          />
         </div>
       )}
 
-      {/* Chunks list */}
+      {!useRealApi && (
       <div className="space-y-3">
         {chunks.map((chunk, index) => {
           const tc = contentTypeConfig[chunk.content_type];
@@ -1621,13 +1673,6 @@ export function ChunkPreviewPage({ kbId, docId, onNavigate }: ChunkPreviewPagePr
           );
         })}
       </div>
-
-      {useRealApi && chunkResult.total > CHUNK_PAGE_SIZE && (
-        <div className="flex items-center justify-center gap-2 pt-2">
-          <button type="button" disabled={chunkPage <= 1} onClick={() => setChunkPage(p => p - 1)} className="p-1.5 rounded border border-gray-200 disabled:opacity-40"><ChevronLeft size={14} /></button>
-          <span className="text-xs text-gray-500">{chunkPage} / {totalPages}</span>
-          <button type="button" disabled={chunkPage >= totalPages} onClick={() => setChunkPage(p => p + 1)} className="p-1.5 rounded border border-gray-200 disabled:opacity-40"><ChevronRight size={14} /></button>
-        </div>
       )}
 
       {splitTarget && (

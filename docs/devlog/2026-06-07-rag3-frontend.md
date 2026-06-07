@@ -1040,3 +1040,39 @@ P0 最后一项：检索测试页需从单通道混合结果升级为 PRD §10.5
 - `backend/ragflow_rag30/scripts/download-deepdoc-models.sh`、`install.sh`、`start-task-executor.sh`
 - `backend/README.md`
 - `frontend/rag3-web/src/services/kbMappers.ts`、`types/index.ts`、`pages/KnowledgeBase.tsx`
+
+---
+
+## 35. 文档解析日志、上传时间与分块 PDF 预览对齐 RAGFlow
+
+### 背景与目标
+
+用户要求 rag3-web 文档管理在解析进度、上传时间、文档切换预览与分块查询体验上对齐 RAGFlow 原生前端：展示带时间戳的 `progress_msg`、修复上传时间偏差、切换文档时 PDF 不残留、分块支持缩略图与 PDF 锚点高亮。
+
+### 改动摘要
+
+- **解析进度**：映射 `progress`/`process_begin_at`/`process_duration`；解析队列与状态列使用真实进度百分比；点击状态或「日志」打开 `ParseProgressLogModal`，`whitespace-pre-line` 展示多行日志并高亮 `[ERROR]`。
+- **上传时间**：`tsToIso` 优先毫秒时间戳并兼容秒级；`formatRelativeTime` 改用 `Date.now()`；表格列展示 `formatDateTime` 绝对时间。
+- **文档切换预览**：`KnowledgeChunkWorkspace`/`DocumentParsePreviewPanel` 以 `key={doc.doc_id}` 重置状态；切换时 revoke blob URL 并清空选中分块。
+- **分块双栏**：新增 `KnowledgeChunkWorkspace`（左分块列表 + 右 PDF/内容预览）；`ChunkImage` 鉴权拉取 `/documents/images/{id}`；`PdfPreviewWithHighlights`（pdfjs-dist）按 `positions` 绘制高亮并滚动定位；`ChunkContentView` 支持 HTML 表格与图片。
+- **分块页**：API 模式改用双栏工作区，保留拆分/合并/排除操作。
+
+### 验证与风险
+
+- `npm run build` 通过。
+- 路径：文档管理 → 解析中文件点状态徽章看日志；切换文档预览应更新 PDF；分块页点击块应在 PDF 上出现高亮框。
+- PDF 高亮坐标依赖后端 `positions` 与 page1 viewport 比例，非 PDF 仍走 iframe；pdfjs 增加 bundle 体积。
+
+### 反思与沉淀
+
+- 复刻 RAGFlow 时优先移植数据契约（`progress_msg` 原样展示、`positions` 五元组）再换 UI 壳，避免在前端重造时间戳解析。
+- 图片 API 需 Authorization，不宜直接用 `<img src>`，统一 blob 拉取。
+
+### 涉及文件
+
+- `frontend/rag3-web/package.json` — pdfjs-dist、dompurify
+- `frontend/rag3-web/src/utils/timeFormat.ts`、`documentUtil.ts`
+- `frontend/rag3-web/src/components/kb/ParseProgressLogModal.tsx`、`ChunkImage.tsx`、`ChunkContentView.tsx`、`PdfPreviewWithHighlights.tsx`、`KnowledgeChunkWorkspace.tsx`
+- `frontend/rag3-web/src/components/kb/DocumentParsePreviewPanel.tsx`
+- `frontend/rag3-web/src/services/kbMappers.ts`、`kbApi.ts`、`types/index.ts`
+- `frontend/rag3-web/src/pages/KnowledgeBase.tsx`
