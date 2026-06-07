@@ -22,9 +22,9 @@ export const KB_SUB_NAV_ITEMS: KBSubNavItem[] = [
   { key: 'pageindex-hub', label: 'PageIndex', icon: <GitBranch size={15} />, badgeKey: 'pageindex' },
   { key: 'graphrag-hub', label: '知识图谱', icon: <Network size={15} /> },
   { key: 'wiki-hub', label: 'Wiki', icon: <BookOpen size={15} />, badgeKey: 'wiki' },
-  { key: 'kb-settings-datasource', label: '数据源', icon: <Database size={15} />, page: 'kb-settings', settingsTab: 'datasource' },
+  { key: 'kb-data-sources', label: '数据源', icon: <Database size={15} /> },
   { key: 'kb-settings', label: '配置', icon: <Settings size={15} /> },
-  { key: 'kb-permissions', label: '权限', icon: <Shield size={15} />, comingSoon: true },
+  { key: 'kb-permissions', label: '权限', icon: <Shield size={15} /> },
   { key: 'kb-logs', label: '日志', icon: <ScrollText size={15} />, comingSoon: true },
 ];
 

@@ -31,6 +31,9 @@ const systemNavItem: NavItem = {
     { key: 'sys-roles', label: '角色权限', icon: <Shield size={15} />, page: 'sys-roles' },
     { key: 'sys-pipeline', label: '流水线配置', icon: <GitBranch size={15} />, page: 'sys-pipeline' },
     { key: 'sys-classifier', label: '查询路由', icon: <Shuffle size={15} />, page: 'sys-classifier' },
+    { key: 'sys-fusion', label: '融合精排', icon: <Layers size={15} />, page: 'sys-fusion' },
+    { key: 'sys-retrieval-strategy', label: '检索策略', icon: <Route size={15} />, page: 'sys-retrieval-strategy' },
+    { key: 'sys-generation-strategy', label: '生成策略', icon: <Sparkles size={15} />, page: 'sys-generation-strategy' },
     { key: 'sys-security', label: '安全合规', icon: <Lock size={15} />, page: 'sys-security' },
     { key: 'sys-models', label: '模型管理', icon: <Cpu size={15} />, page: 'sys-models' },
     { key: 'sys-audit', label: '审计日志', icon: <FileSearch size={15} />, page: 'sys-audit' },
@@ -41,11 +44,13 @@ const systemNavItem: NavItem = {
 
 const SYSTEM_PAGES = [
   'sys-users', 'sys-roles', 'sys-pipeline', 'sys-classifier',
+  'sys-fusion', 'sys-retrieval-strategy', 'sys-generation-strategy',
   'sys-security', 'sys-models', 'sys-audit', 'sys-monitor', 'sys-traces', 'sys-api',
 ];
 const HUB_PAGES = ['wiki-hub', 'pageindex-hub', 'graphrag-hub'];
 const KB_PAGES = [
   'kb-list', 'kb-recycle-bin', 'kb-detail', 'kb-documents', 'kb-chunks', 'kb-index-status', 'kb-settings',
+  'kb-permissions', 'kb-data-sources', 'kb-export',
   'kb-retrieval-test', 'kb-wiki', 'kb-pageindex-tree', 'kb-wiki-manage', 'kb-pageindex-manage',
   ...HUB_PAGES,
 ];
@@ -197,6 +202,9 @@ const breadcrumbMap: Record<string, string[]> = {
   'kb-chunks': ['知识库管理', '分块预览'],
   'kb-index-status': ['知识库管理', '索引状态'],
   'kb-settings': ['知识库管理', '配置'],
+  'kb-permissions': ['知识库管理', '权限管理'],
+  'kb-data-sources': ['知识库管理', '数据源'],
+  'kb-export': ['知识库管理', '导出任务'],
   'kb-retrieval-test': ['知识库管理', '检索测试'],
   'kb-wiki': ['知识库管理', 'Wiki 浏览器'],
   'kb-pageindex-tree': ['知识库管理', 'PageIndex 树'],
@@ -220,6 +228,9 @@ const breadcrumbMap: Record<string, string[]> = {
   'sys-roles': ['系统管理', '角色权限'],
   'sys-pipeline': ['系统管理', '流水线配置'],
   'sys-classifier': ['系统管理', '查询路由'],
+  'sys-fusion': ['系统管理', '融合精排'],
+  'sys-retrieval-strategy': ['系统管理', '检索策略'],
+  'sys-generation-strategy': ['系统管理', '生成策略'],
   'sys-security': ['系统管理', '安全合规'],
   'sys-models': ['系统管理', '模型管理'],
   'sys-audit': ['系统管理', '审计日志'],

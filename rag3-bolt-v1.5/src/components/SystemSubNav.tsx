@@ -1,8 +1,11 @@
-import { GitBranch, Shuffle } from 'lucide-react';
+import { GitBranch, Shuffle, Layers, Route, Sparkles } from 'lucide-react';
 
 const SYSTEM_ROUTING_TABS = [
   { page: 'sys-pipeline', label: '流水线配置', icon: <GitBranch size={14} /> },
   { page: 'sys-classifier', label: '查询路由', icon: <Shuffle size={14} /> },
+  { page: 'sys-fusion', label: '融合精排', icon: <Layers size={14} /> },
+  { page: 'sys-retrieval-strategy', label: '检索策略', icon: <Route size={14} /> },
+  { page: 'sys-generation-strategy', label: '生成策略', icon: <Sparkles size={14} /> },
 ];
 
 interface SystemSubNavProps {

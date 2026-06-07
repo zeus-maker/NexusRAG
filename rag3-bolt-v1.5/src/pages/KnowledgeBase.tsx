@@ -97,7 +97,7 @@ export function KBListPage({ onNavigate }: KBListPageProps) {
     { icon: <FlaskConical size={13} />, label: '检索测试', action: () => onNavigate('kb-retrieval-test', { selectedKBId: kb.kb_id }) },
     { icon: <Activity size={13} />, label: '索引状态', action: () => onNavigate('kb-index-status', { selectedKBId: kb.kb_id }) },
     { icon: <RefreshCw size={13} />, label: '重建索引', action: () => showToast(`已提交「${kb.name}」全量重建`) },
-    { icon: <Download size={13} />, label: '导出', action: () => showToast('导出任务已创建，可在详情页查看') },
+    { icon: <Download size={13} />, label: '导出', action: () => onNavigate('kb-export', { selectedKBId: kb.kb_id }) },
     { icon: <Copy size={13} />, label: '复制配置', action: () => showToast('配置已复制到剪贴板（原型）') },
     { icon: <Archive size={13} />, label: '归档', action: () => showToast(`「${kb.name}」已标记归档`) },
     { icon: <Trash2 size={13} />, label: '删除', action: () => setDeleteTarget(kb), danger: true },
@@ -652,6 +652,13 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
           <h1 className="text-base font-bold text-gray-900">{kb.name} · 文档管理</h1>
         </div>
         <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => onNavigate('kb-export', { selectedKBId: kbId })}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700"
+          >
+            <Download size={14} /> 导出
+          </button>
           <button className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700">
             🔗 URL导入
           </button>

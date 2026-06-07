@@ -3,7 +3,8 @@ import { Sidebar, TopBar, StatusBar } from './components/Layout';
 import { LoginPage } from './pages/Login';
 import { KBListPage, KBDetailPage, DocumentPage, ChunkPreviewPage, IndexStatusPage } from './pages/KnowledgeBase';
 import { KBRecycleBinPage } from './pages/KBRecycleBin';
-import { KBSettingsPage, RetrievalTestPage, WikiPage, PageIndexTreePage, WikiManagePage, PageIndexManagePage } from './pages/KBExtra';
+import { KBSettingsPage, WikiPage, PageIndexTreePage, WikiManagePage, PageIndexManagePage } from './pages/KBExtra';
+import { RetrievalTestPage } from './pages/RetrievalTestPage';
 import { ChatPage } from './pages/Chat';
 import { SearchPage } from './pages/Search';
 import { AgentPage } from './pages/Agent';
@@ -14,6 +15,10 @@ import { CostCenterPage, ReplayPage } from './pages/EvalExtra';
 import { EvalRouteLearningPage } from './pages/EvalRouteLearning';
 import { UserManagePage, RoleManagePage, PipelineConfigPage, AuditLogPage, MonitorPage } from './pages/System';
 import { ClassifierPage, SecurityPage, ModelsPage, TracesPage } from './pages/SystemExtra';
+import { FusionConfigPage } from './pages/FusionConfigPage';
+import { RetrievalStrategyPage } from './pages/RetrievalStrategyPage';
+import { GenerationStrategyPage } from './pages/GenerationStrategyPage';
+import { KBPermissionsPage, KBDataSourcesPage, KBExportPage } from './pages/KBP0Pages';
 import { HomePage } from './pages/Home';
 import WikiHubPage from './pages/Hub/WikiHubPage';
 import PageIndexHubPage from './pages/Hub/PageIndexHubPage';
@@ -50,8 +55,14 @@ export default function App() {
             initialTab={state.kbSettingsTab || 'parsing'}
           />
         );
+      case 'kb-permissions':
+        return <KBPermissionsPage kbId={state.selectedKBId || 'kb-001'} onNavigate={navigate} />;
+      case 'kb-data-sources':
+        return <KBDataSourcesPage kbId={state.selectedKBId || 'kb-001'} onNavigate={navigate} />;
+      case 'kb-export':
+        return <KBExportPage kbId={state.selectedKBId || 'kb-001'} onNavigate={navigate} />;
       case 'kb-retrieval-test':
-        return <RetrievalTestPage kbId={state.selectedKBId || 'kb-001'} />;
+        return <RetrievalTestPage kbId={state.selectedKBId || 'kb-001'} onNavigate={navigate} />;
       case 'kb-wiki':
         return <WikiPage kbId={state.selectedKBId || 'kb-001'} onNavigate={navigate} />;
       case 'kb-pageindex-tree':
@@ -96,6 +107,12 @@ export default function App() {
         return <PipelineConfigPage onNavigate={navigate} />;
       case 'sys-classifier':
         return <ClassifierPage onNavigate={navigate} />;
+      case 'sys-fusion':
+        return <FusionConfigPage onNavigate={navigate} />;
+      case 'sys-retrieval-strategy':
+        return <RetrievalStrategyPage onNavigate={navigate} />;
+      case 'sys-generation-strategy':
+        return <GenerationStrategyPage onNavigate={navigate} />;
       case 'sys-security':
         return <SecurityPage />;
       case 'sys-models':

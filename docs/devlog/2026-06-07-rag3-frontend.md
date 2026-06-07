@@ -529,3 +529,80 @@
 
 - `rag3-bolt-v1.5/src/data/homeMock.ts`
 - `rag3-bolt-v1.5/src/pages/Home.tsx`
+
+---
+
+## 20. 原型图 P0：融合策略三页 + 知识库权限/数据源/导出
+
+### 背景与目标
+
+对照 PRD §11.8 与 §3.8/§3.10/§10.10.1，补齐此前仅调研未落地的 P0 缺口：系统管理侧 L4 融合与 L2/L3 策略配置，以及知识库侧权限、独立数据源、导出任务页。用户从侧栏或 `SystemSubNav` 五 Tab 可直达各页；KB 子导航「权限」「数据源」去掉 Soon；导出从列表 ⋮ 菜单与文档页顶栏进入。
+
+**用户可见变化**：系统管理新增「融合精排」「检索策略」「生成策略」三页（含 Top-K、RRF 权重表、路由测试、生成策略矩阵）；知识库内可配置团队可见性与 Chunk ACL、管理关联数据源、创建/跟踪导出任务（含新建弹窗）。
+
+### 改动摘要
+
+- `fusionMock.ts`：融合/检索/生成策略默认值、KB ACL、数据源、导出任务 mock。
+- `FusionConfigPage` / `RetrievalStrategyPage` / `GenerationStrategyPage`：对齐 §11.8 ASCII 布局，复用 `SystemSubNav`。
+- `KBP0Pages.tsx`：`KBPermissionsPage`、`KBDataSourcesPage`、`KBExportPage`，均包 `KBDetailLayout`。
+- 路由：`store.ts` 扩展 6 个 page id；`App.tsx` case；`Layout.tsx` 侧栏 + breadcrumb + `SYSTEM_PAGES`/`KB_PAGES`。
+- `SystemSubNav` 扩展为 5 Tab；`KBSubNav` 数据源改独立页、权限启用。
+- 导出入口：KB 列表菜单、文档页「导出」按钮 → `kb-export`。
+
+### 验证与风险
+
+- 验证：`npm run build` 通过；侧栏系统管理三新项可切换；KB 权限/数据源/导出页在选中 KB 下可渲染；融合页保存/测试 toast 可触发。
+- 风险：仍为 mock，未接 `/api/v1/admin/fusion-config` 等 API；配置页 datasource Tab 高亮改为 `kb-data-sources` 但 Tab 内容仍在 settings 内（双入口）；导出页侧栏高亮为「文件」因 PRD 规定非侧栏项。
+
+### 反思与沉淀
+
+- L1–L4 路由体系在 UI 上拆为「查询路由（分类器）」+「融合/检索/生成策略」三页，与 PRD §11.8 navConfig 一致；后续接 API 时 mock 文件即契约层。
+- KB 导出不放侧栏、从业务入口深链，避免 12 项子导航过载。
+
+### 涉及文件
+
+- `rag3-bolt-v1.5/src/data/fusionMock.ts`
+- `rag3-bolt-v1.5/src/pages/FusionConfigPage.tsx`
+- `rag3-bolt-v1.5/src/pages/RetrievalStrategyPage.tsx`
+- `rag3-bolt-v1.5/src/pages/GenerationStrategyPage.tsx`
+- `rag3-bolt-v1.5/src/pages/KBP0Pages.tsx`
+- `rag3-bolt-v1.5/src/components/SystemSubNav.tsx`
+- `rag3-bolt-v1.5/src/components/KBSubNav.tsx`
+- `rag3-bolt-v1.5/src/components/Layout.tsx`
+- `rag3-bolt-v1.5/src/store.ts`
+- `rag3-bolt-v1.5/src/App.tsx`
+- `rag3-bolt-v1.5/src/pages/KnowledgeBase.tsx`
+- `rag3-bolt-v1.5/src/pages/KBExtra.tsx`
+
+---
+
+## 21. 多通道检索测试台深化（§10.5 P0）
+
+### 背景与目标
+
+P0 最后一项：检索测试页需从单通道混合结果升级为 PRD §10.5 要求的**五通道分路 + 融合对比 + 精排前后**三视图，并继承 `KBDetailLayout` 侧栏高亮。原 `KBExtra.tsx` 内嵌页仅 3 通道 mock、无 WRRF 融合，与 §11.8 融合配置无法联动。
+
+**用户可见变化**：检索测试接入 KB 子导航框架；左栏可勾选向量/BM25/PageIndex/GraphRAG/Wiki 五通道；右栏 Tab 切换「分路」「融合对比」「精排前后」；支持保存评测样本、导出 JSON、线上一致性对比（mock）；可跳转全局融合配置。
+
+### 改动摘要
+
+- 新建 `retrievalTestMock.ts`：`runMockFullChannelRetrieval` 模拟分路延迟、WRRF 融合（联动 `DEFAULT_FUSION_CONFIG.rrfK` 与通道权重）、精排前后分数。
+- 抽出 `RetrievalTestPage.tsx`：左右分栏布局对齐 §10.5 ASCII；删除 `KBExtra.tsx` 旧实现。
+- `App.tsx` 补充 `onNavigate`，支持跳转 `sys-fusion`。
+
+### 验证与风险
+
+- 验证：`npm run build` 通过；KB 侧栏「检索测试」→ 执行全通道检索 → 三 Tab 均有数据；融合 Tab 显示 WRRF 分数与来源通道标签。
+- 风险：融合算法为前端 mock 近似，非真实 RRF；精排分数为公式生成；未接 `/api/v1/knowledge-bases/{kb_id}/retrieval/test`。
+
+### 反思与沉淀
+
+- 检索测试台与融合配置页通过 mock 共享 `rrfK`/通道权重语义，后续接 API 时 `retrievalTestMock.ts` 可整文件替换为 service 层。
+- 大页从 `KBExtra.tsx` 拆出有利于 P0 后续 Hub/设置页继续瘦身。
+
+### 涉及文件
+
+- `rag3-bolt-v1.5/src/data/retrievalTestMock.ts`
+- `rag3-bolt-v1.5/src/pages/RetrievalTestPage.tsx`
+- `rag3-bolt-v1.5/src/pages/KBExtra.tsx`
+- `rag3-bolt-v1.5/src/App.tsx`
