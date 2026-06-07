@@ -2,7 +2,7 @@
 
 > **版本**：v1.5
 > **编制日期**：2026年6月6日
-> **最后更新**：2026年6月6日（同步前端方案 v1.6：融合层 + GraphRAG Hub）
+> **最后更新**：2026年6月6日（同步 rag3-bolt-v1.5 原型实现进度 §1–§9）
 > **编制部门**：AI平台事业部
 > **源方案**：`docs/5-企业级RAG知识库3.0实现方案.md`（约10万字）
 
@@ -47,9 +47,10 @@
 | 4 | `数据库设计.md` | 后端/DBA | 2,996 | ER图、32张MySQL表DDL、3个ES索引Mapping、3个Milvus Collection、MinIO Bucket、Redis缓存策略、数据迁移 |
 | 5 | `API接口设计.md` | 前后端 | 3,849 | RESTful规范、7大模块59个接口、统一错误码、鉴权方案、SDK示例 |
 | 6 | `前端界面实现方案.md` | 前端 | 5,800+ | **v1.6** · §11.8 融合/策略 + §11.9 GraphRAG Hub + §12-§19；附录 A-C |
-| 6a | `RAGFlow前端对照表.md` | 前端/架构 | 120+ | **v1.5** · RAGFlow 源码 vs PRD 逐项对照、User Story 覆盖、P0-P3 优先级 |
-| 6b | `../prototype/pc-prototype.html` | 前端原型 | — | PC 端 HTML 原型 v2（**未同步 v1.5**，待后续更新） |
-| 6c | `../superpowers/specs/2026-06-06-pageindex-wiki-hub-design.md` | 前端/架构 | 290+ | PageIndex & Wiki 双层 Hub 设计 spec（方案 C） |
+| 6a | `RAGFlow前端对照表.md` | 前端/架构 | 140+ | **v1.6** · RAGFlow 源码 vs PRD 逐项对照、User Story 覆盖、**原型落地状态** |
+| 6b | `前端原型实现进度.md` | 前端/开发 | 280+ | **rag3-bolt-v1.5** 可运行原型 vs PRD § 落地矩阵（Devlog §1–§9） |
+| 6c | `../prototype/pc-prototype.html` | 前端原型 | — | PC 端 HTML 原型 v2（**未同步 v1.5**，待后续更新） |
+| 6d | `../superpowers/specs/2026-06-06-pageindex-wiki-hub-design.md` | 前端/架构 | 290+ | PageIndex & Wiki 双层 Hub 设计 spec（方案 C） |
 | 7 | `后端逻辑开发方案.md` | 后端 | 4,635 | 项目结构(RAGFlow扩展)、4分类器代码、5大流水线代码、融合层、安全层、评测层、查询/入库端到端流程代码 |
 | 8 | `测试用例设计.md` | QA | 880 | 测试金字塔、95+单元测试用例、27个集成测试用例、11个E2E场景、性能/安全/RAG评测测试、CI/CD自动化 |
 | 9 | `部署配置方案.md` | 运维 | 5,560 | 5种部署模式、Docker Compose(12服务)、K8s YAML全量、Helm Chart、6数据库运维、监控告警、CI/CD、灾备、安全加固 |
@@ -65,7 +66,7 @@
 | **CEO/CFO** | BRD → PRD（第5章非功能需求） |
 | **CTO/架构师** | BRD → PRD → 技术架构 → 数据库 → API → 部署 |
 | **产品经理** | BRD → PRD → 前端界面 → API（第9章SDK） |
-| **前端开发** | PRD → API → 前端界面 → 技术架构（可选） |
+| **前端开发** | PRD → **前端原型实现进度** → API → 前端界面 → 技术架构（可选） |
 | **后端开发** | PRD → 技术架构 → 数据库 → API → 后端逻辑 → 部署 |
 | **QA工程师** | PRD → 测试用例 → API → 技术架构 |
 | **运维/SRE** | 部署 → 技术架构（第7-8章） → 测试用例（第5章性能） |
@@ -117,3 +118,4 @@
 | v1.3 | 2026-06-06 | 同步前端方案 v1.5-beta：§3.3/§11.3 API、§8 工程示例、附录 B Service 层 |
 | v1.4 | 2026-06-06 | 同步前端方案 v1.5-gamma：US-1.4/1.6/1.11、§7 组件深化、附录 C、MCP/分享嵌入 |
 | v1.5 | 2026-06-06 | 同步前端方案 v1.6：§11.8 融合层、§11.9 GraphRAG/LazyGraphRAG Hub、多通道检索测试 |
+| v1.6 | 2026-06-06 | 新增 `前端原型实现进度.md`：rag3-bolt-v1.5 九模块原型落地（KB/工作台/对话/搜索/Agent/评测）；更新对照表与方案 §20 |
