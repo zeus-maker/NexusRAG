@@ -18,6 +18,7 @@ from api.utils.api_utils import (
 from rag3.index_service import (
     get_pageindex_document_tree,
     get_pageindex_hub_analytics,
+    get_wiki_hub_analytics,
     list_pageindex_documents,
     list_wiki_hub_entries,
     run_index as rag3_run_index,
@@ -26,6 +27,7 @@ from rag3.index_service import (
     trace_index as rag3_trace_index,
 )
 from rag3.pageindex_hub_service import get_pageindex_settings, save_pageindex_settings
+from rag3.wiki_hub_service import get_wiki_settings, save_wiki_settings
 from fusion import reciprocal_rank_fusion, rerank
 from pipelines import run_pipelines
 from router import RouterEngine
@@ -246,6 +248,33 @@ async def rag3_pageindex_search(tenant_id, dataset_id):
         dataset_id, query, top_k=top_k, doc_id=doc_id, mode=mode,
     )
     return get_json_result(data=result)
+
+
+@manager.route("/datasets/<dataset_id>/wiki/settings", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+def rag3_get_wiki_settings(tenant_id, dataset_id):
+    return get_json_result(data=get_wiki_settings(dataset_id))
+
+
+@manager.route("/datasets/<dataset_id>/wiki/settings", methods=["PUT"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def rag3_save_wiki_settings(tenant_id, dataset_id):
+    body = await request.get_json(silent=True) or {}
+    if not isinstance(body, dict):
+        return get_error_data_result(message="settings must be an object")
+    return get_json_result(data=save_wiki_settings(dataset_id, body))
+
+
+@manager.route("/datasets/<dataset_id>/wiki/analytics", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+def rag3_get_wiki_analytics(tenant_id, dataset_id):
+    success, result = get_wiki_hub_analytics(dataset_id, tenant_id)
+    if success:
+        return get_result(data=result)
+    return get_error_data_result(message=result)
 
 
 @manager.route("/datasets/<dataset_id>/wiki/entries", methods=["GET"])  # noqa: F821

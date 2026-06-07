@@ -262,6 +262,19 @@ export const WIKI_COMMITS: WikiCommit[] = [
   { id: '9d4e', message: '从 Chunk 聚合生成 entity 页', author: '系统', time: '5/28 10:00' },
 ];
 
+export const WIKI_DEFAULT_SETTINGS = {
+  triggerMode: 'manual' as 'auto' | 'scheduled' | 'manual',
+  llmModel: 'deepseek-v4',
+  entityThreshold: 0.75,
+  manualReview: true,
+  autoPublish: false,
+  gitBranch: 'main',
+  autoCommit: true,
+  incrementalEntity: true,
+  incrementalSynthesis: true,
+  citeReviewThreshold: 0.8,
+};
+
 export const WIKI_STATS = {
   published: 12,
   total: 42,

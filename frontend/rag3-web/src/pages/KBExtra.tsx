@@ -11,6 +11,8 @@ import { KBDetailLayout } from '../components/KBDetailLayout';
 import { ModelProviderPanel } from '../components/llm/ModelProviderPanel';
 import { LlmModelSelect } from '../components/llm/LlmModelSelect';
 import { useKnowledgeBase, updateKnowledgeBase } from '../hooks/useKbData';
+import { useWikiHubData, useWikiManageData } from '../hooks/useEnhancementHubData';
+import type { WikiPageType } from '../data/wikiMock';
 import { useLlmModels, useTenantModels } from '../hooks/useLlmData';
 import { useRealApi } from '../services/http';
 import type { KBSettingsTab } from '../store';
@@ -566,41 +568,11 @@ export function KBSettingsPage({ kbId, onNavigate, initialTab = 'parsing' }: KBS
    WIKI BROWSER PAGE
 ────────────────────────────────────────────── */
 
-const WIKI_PAGES = [
-  {
-    slug: 'supplier-penalty',
-    title: '供应商违约金',
-    category: '概念',
-    layer: 2,
-    content: `## 概述\n供应商违约金是在供应商未能履行合同义务时，向采购方支付的赔偿金额。根据公司标准采购合同模板（V5），违约金按日计算。\n\n## 关键规则\n- **计算标准**：每迟延一日按迟延交付货物价值的 **千分之五（0.5%）** 计算\n- **累计上限**：不超过合同总金额的 **20%**\n- **解除权**：迟延超过 **30 日** 时采购方可解除合同\n\n## 不可抗力条款\n因不可抗力导致的延迟须在 48 小时内书面通知采购方，不适用违约金条款。`,
-    sources: ['供应商合同模板V5.pdf P3', '采购协议条款 P8'],
-    related: ['合同解除权', '保密义务', '不可抗力'],
-    status: 'published' as const,
-    updated: '2026-06-05',
-  },
-  {
-    slug: 'contract-termination',
-    title: '合同解除权',
-    category: '概念',
-    layer: 2,
-    content: `## 概述\n合同解除权是指合同一方在特定条件成立时，终止合同效力的法定或约定权利。\n\n## 行使条件\n- 供应商逾期交货超过 30 日\n- 货物质量不符合约定标准且无法修复\n- 供应商无故终止服务\n\n## 赔偿要求\n解除合同时，违约方须赔偿守约方全部实际损失。`,
-    sources: ['供应商合同模板V5.pdf P4'],
-    related: ['供应商违约金', '货物验收标准'],
-    status: 'published' as const,
-    updated: '2026-06-04',
-  },
-  {
-    slug: 'confidentiality',
-    title: '保密义务',
-    category: '概念',
-    layer: 2,
-    content: `## 概述\n保密义务要求合同双方对因合同履行知悉的商业秘密予以保护。\n\n## 保密期限\n合同履行期间 + 终止后 5 年\n\n## 例外情形\n- 信息已成公众知识\n- 法律强制要求披露`,
-    sources: ['供应商合同模板V5.pdf P8'],
-    related: ['供应商违约金', '合同解除权'],
-    status: 'reviewing' as const,
-    updated: '2026-06-03',
-  },
-];
+const WIKI_LAYER_TYPES: Record<1 | 2 | 3, WikiPageType[]> = {
+  1: ['raw'],
+  2: ['entity', 'concept'],
+  3: ['synthesis', 'comparison'],
+};
 
 interface WikiPageProps {
   kbId: string;
@@ -608,23 +580,35 @@ interface WikiPageProps {
 }
 
 export function WikiPage({ kbId, onNavigate }: WikiPageProps) {
-  const kb = mockKBs.find(k => k.kb_id === kbId) || mockKBs[0];
-  const [selectedSlug, setSelectedSlug] = useState(WIKI_PAGES[0].slug);
+  const { data: kbData } = useKnowledgeBase(kbId);
+  const kb = kbData ?? mockKBs.find(k => k.kb_id === kbId) ?? mockKBs[0];
+  const wiki = useWikiHubData(kbId);
+  const pages = wiki.pages;
+  const [selectedSlug, setSelectedSlug] = useState('');
   const [layer, setLayer] = useState<1 | 2 | 3>(2);
-  const [compiling, setCompiling] = useState(false);
   const [showQueue, setShowQueue] = useState(false);
 
-  const page = WIKI_PAGES.find(p => p.slug === selectedSlug) || WIKI_PAGES[0];
+  useEffect(() => {
+    if (pages.length && !pages.some(p => p.slug === selectedSlug)) {
+      setSelectedSlug(pages[0].slug);
+    }
+  }, [pages, selectedSlug]);
+
+  const page = pages.find(p => p.slug === selectedSlug) ?? pages[0];
+  const layerPages = pages.filter(p => WIKI_LAYER_TYPES[layer].includes(p.pageType));
+  const compiling = wiki.trace?.running ?? false;
 
   const handleCompile = () => {
-    setCompiling(true);
-    setTimeout(() => setCompiling(false), 2000);
+    void wiki.runBuild();
   };
 
-  const statusConfig = {
+  const statusConfig: Record<string, { label: string; color: string }> = {
     published: { label: '已发布', color: 'bg-green-100 text-green-700' },
     reviewing: { label: '待审核', color: 'bg-yellow-100 text-yellow-700' },
     draft: { label: '草稿', color: 'bg-gray-100 text-gray-600' },
+    compiling: { label: '编译中', color: 'bg-blue-100 text-blue-700' },
+    queued: { label: '排队中', color: 'bg-gray-100 text-gray-600' },
+    failed: { label: '失败', color: 'bg-red-100 text-red-700' },
   };
 
   const renderMarkdown = (text: string) => {
@@ -652,12 +636,21 @@ export function WikiPage({ kbId, onNavigate }: WikiPageProps) {
           <button onClick={() => setShowQueue(p => !p)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700">
             <Clock size={12} /> 编译队列
           </button>
-          <button onClick={handleCompile} disabled={compiling} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60">
+          <button onClick={handleCompile} disabled={compiling || wiki.loading} className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60">
             {compiling ? <RefreshCw size={12} className="animate-spin" /> : <Play size={12} />}
             {compiling ? '编译中...' : '触发编译'}
           </button>
+          {wiki.isApiMode && (
+            <span className="text-[10px] text-blue-600 px-2 py-1 bg-blue-50 rounded">RAG3 API</span>
+          )}
         </div>
       </div>
+
+      {wiki.loading && (
+        <div className="px-6 py-2 text-xs text-gray-500 flex items-center gap-2 border-b border-gray-100">
+          <Loader size={12} className="animate-spin" /> 加载 Wiki 数据…
+        </div>
+      )}
 
       <div className="flex flex-1 min-h-0">
         {/* Left tree */}
@@ -676,40 +669,43 @@ export function WikiPage({ kbId, onNavigate }: WikiPageProps) {
           </div>
 
           <div className="flex-1 overflow-y-auto p-2">
-            {[
-              { group: '实体', pages: WIKI_PAGES.filter(p => p.category === '概念') },
-              { group: '综合', pages: [] },
-              { group: '原始资料', pages: [] },
-            ].map(g => (
-              <div key={g.group}>
-                <div className="text-[10px] text-gray-400 font-semibold px-2 py-1.5 uppercase tracking-wider">{g.group}</div>
-                {g.pages.map(p => (
-                  <button
-                    key={p.slug}
-                    onClick={() => setSelectedSlug(p.slug)}
-                    className={`w-full text-left px-2.5 py-2 rounded-lg text-xs mb-0.5 transition-colors ${selectedSlug === p.slug ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700 hover:bg-gray-100'}`}
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <BookOpen size={11} className="flex-shrink-0" />
-                      <span className="truncate">{p.title}</span>
-                    </div>
-                    <span className={`text-[9px] ml-4 ${statusConfig[p.status].color.replace('bg-', 'text-')}`}>{statusConfig[p.status].label}</span>
-                  </button>
-                ))}
-                {g.pages.length === 0 && <div className="text-[10px] text-gray-400 px-2 pb-2 italic">暂无页面</div>}
+            {layerPages.length === 0 ? (
+              <div className="text-[10px] text-gray-400 px-2 py-4 italic text-center">
+                {pages.length === 0 ? '暂无 Wiki 条目，请先触发 Ingest 编译' : '当前层级暂无页面'}
               </div>
-            ))}
+            ) : (
+              layerPages.map(p => (
+                <button
+                  key={p.slug}
+                  onClick={() => setSelectedSlug(p.slug)}
+                  className={`w-full text-left px-2.5 py-2 rounded-lg text-xs mb-0.5 transition-colors ${selectedSlug === p.slug ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700 hover:bg-gray-100'}`}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <BookOpen size={11} className="flex-shrink-0" />
+                    <span className="truncate">{p.title}</span>
+                  </div>
+                  <span className={`text-[9px] ml-4 ${(statusConfig[p.status] ?? statusConfig.draft).color.replace('bg-', 'text-')}`}>
+                    {(statusConfig[p.status] ?? statusConfig.draft).label}
+                  </span>
+                </button>
+              ))
+            )}
           </div>
         </div>
 
         {/* Main content */}
         <div className="flex-1 overflow-y-auto p-6">
+          {!page ? (
+            <div className="text-sm text-gray-500 text-center py-16">暂无 Wiki 页面可展示</div>
+          ) : (
           <div className="max-w-2xl">
             <div className="flex items-start justify-between mb-4">
               <div>
                 <div className="flex items-center gap-2 mb-1">
                   <h1 className="text-xl font-bold text-gray-900">[[{page.title}]]</h1>
-                  <span className={`px-2 py-0.5 text-[10px] rounded-full font-medium ${statusConfig[page.status].color}`}>{statusConfig[page.status].label}</span>
+                  <span className={`px-2 py-0.5 text-[10px] rounded-full font-medium ${(statusConfig[page.status] ?? statusConfig.draft).color}`}>
+                    {(statusConfig[page.status] ?? statusConfig.draft).label}
+                  </span>
                 </div>
                 <p className="text-xs text-gray-500">更新于 {page.updated}</p>
               </div>
@@ -723,10 +719,13 @@ export function WikiPage({ kbId, onNavigate }: WikiPageProps) {
             </div>
 
             <div className="bg-white rounded-xl border border-gray-200 p-5 mb-4">
-              {renderMarkdown(page.content)}
+              {page.content ? renderMarkdown(page.content) : (
+                <p className="text-sm text-gray-500 italic">条目内容待编译生成</p>
+              )}
             </div>
 
             {/* Sources */}
+            {page.sources.length > 0 && (
             <div className="bg-gray-50 rounded-xl border border-gray-200 p-4 mb-3">
               <h3 className="text-xs font-semibold text-gray-700 mb-2">📎 引用来源</h3>
               <div className="flex flex-wrap gap-2">
@@ -737,8 +736,10 @@ export function WikiPage({ kbId, onNavigate }: WikiPageProps) {
                 ))}
               </div>
             </div>
+            )}
 
             {/* Related */}
+            {page.related.length > 0 && (
             <div className="bg-gray-50 rounded-xl border border-gray-200 p-4">
               <h3 className="text-xs font-semibold text-gray-700 mb-2">🔗 相关页面</h3>
               <div className="flex flex-wrap gap-2">
@@ -749,7 +750,9 @@ export function WikiPage({ kbId, onNavigate }: WikiPageProps) {
                 ))}
               </div>
             </div>
+            )}
           </div>
+          )}
         </div>
       </div>
 
@@ -761,21 +764,17 @@ export function WikiPage({ kbId, onNavigate }: WikiPageProps) {
             <button onClick={() => setShowQueue(false)} className="text-gray-400 hover:text-gray-600">✕</button>
           </div>
           <div className="flex-1 overflow-y-auto p-3 space-y-2">
-            {[
-              { page: '供应商违约金', status: 'published', cites: 143 },
-              { page: '保密义务', status: 'reviewing', cites: 87 },
-              { page: '合同解除权', status: 'published', cites: 62 },
-              { page: '知识产权归属', status: 'draft', cites: 44 },
-              { page: '不可抗力', status: 'draft', cites: 31 },
-            ].map((item, i) => (
-              <div key={i} className="flex items-center gap-2.5 p-2.5 bg-gray-50 rounded-lg border border-gray-200">
+            {wiki.compileQueue.length === 0 ? (
+              <div className="text-[10px] text-gray-400 text-center py-6 italic">暂无编译任务</div>
+            ) : wiki.compileQueue.map(item => (
+              <div key={item.id} className="flex items-center gap-2.5 p-2.5 bg-gray-50 rounded-lg border border-gray-200">
                 <BookOpen size={13} className="text-gray-400 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs font-medium text-gray-800 truncate">{item.page}</div>
-                  <div className="text-[10px] text-gray-400">{item.cites} 次引用</div>
+                  <div className="text-xs font-medium text-gray-800 truncate">{item.title}</div>
+                  <div className="text-[10px] text-gray-400">{item.step}{item.progress > 0 ? ` · ${item.progress}%` : ''}</div>
                 </div>
-                <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${statusConfig[item.status as keyof typeof statusConfig]?.color || 'bg-gray-100 text-gray-500'}`}>
-                  {statusConfig[item.status as keyof typeof statusConfig]?.label || item.status}
+                <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${statusConfig[item.status]?.color || 'bg-gray-100 text-gray-500'}`}>
+                  {statusConfig[item.status]?.label || item.status}
                 </span>
               </div>
             ))}
@@ -956,29 +955,12 @@ export function PageIndexTreePage({ kbId, onNavigate }: PageIndexTreePageProps) 
    LLM WIKI MANAGEMENT PAGE
 ────────────────────────────────────────────── */
 
-const ALL_WIKI_ENTRIES = [
-  { slug: 'supplier-penalty', title: '供应商违约金', kb: '合同知识库', layer: 2, status: 'published', cites: 143, updated: '2026-06-05', sources: 2 },
-  { slug: 'contract-termination', title: '合同解除权', kb: '合同知识库', layer: 2, status: 'published', cites: 62, updated: '2026-06-04', sources: 1 },
-  { slug: 'confidentiality', title: '保密义务', kb: '合同知识库', layer: 2, status: 'reviewing', cites: 87, updated: '2026-06-03', sources: 1 },
-  { slug: 'ip-ownership', title: '知识产权归属', kb: '合同知识库', layer: 2, status: 'draft', cites: 44, updated: '2026-06-02', sources: 3 },
-  { slug: 'force-majeure', title: '不可抗力', kb: '合同知识库', layer: 3, status: 'draft', cites: 31, updated: '2026-06-01', sources: 2 },
-  { slug: 'supplier-qualification', title: '供应商资质认证', kb: '供应商管理KB', layer: 2, status: 'published', cites: 95, updated: '2026-06-05', sources: 4 },
-  { slug: 'q2-highlights', title: 'Q2财务亮点摘要', kb: '财务报告KB', layer: 3, status: 'published', cites: 210, updated: '2026-06-05', sources: 6 },
-  { slug: 'gdpr-compliance', title: 'GDPR合规要求', kb: '法规政策KB', layer: 2, status: 'reviewing', cites: 156, updated: '2026-06-04', sources: 5 },
-];
-
-const COMPILE_JOBS = [
-  { id: 'job-001', kb: '合同知识库', trigger: '文档更新', pages: 5, status: 'running', progress: 67, started: '14:32', model: 'gpt-4o-mini' },
-  { id: 'job-002', kb: '财务报告KB', trigger: '定时任务', pages: 12, status: 'queued', progress: 0, started: '待执行', model: 'gpt-4o-mini' },
-  { id: 'job-003', kb: '法规政策KB', trigger: '手动触发', pages: 8, status: 'completed', progress: 100, started: '12:15', model: 'gpt-4o-mini' },
-  { id: 'job-004', kb: '供应商管理KB', trigger: '文档上传', pages: 3, status: 'failed', progress: 40, started: '10:08', model: 'gpt-4o' },
-];
-
 interface WikiManagePageProps {
   onNavigate: (page: string, extra?: any) => void;
 }
 
 export function WikiManagePage({ onNavigate }: WikiManagePageProps) {
+  const { entries, jobs, loading, refresh, isApiMode } = useWikiManageData();
   const [tab, setTab] = useState<'pages' | 'jobs' | 'stats'>('pages');
   const [filterKB, setFilterKB] = useState('全部');
   const [filterStatus, setFilterStatus] = useState('全部');
@@ -997,19 +979,19 @@ export function WikiManagePage({ onNavigate }: WikiManagePageProps) {
     failed: { label: '失败', color: 'bg-red-100 text-red-700' },
   } as const;
 
-  const filteredEntries = ALL_WIKI_ENTRIES.filter(e => {
+  const filteredEntries = entries.filter(e => {
     if (filterKB !== '全部' && e.kb !== filterKB) return false;
     if (filterStatus !== '全部' && e.status !== filterStatus) return false;
     if (search && !e.title.includes(search) && !e.kb.includes(search)) return false;
     return true;
   });
 
-  const kbs = ['全部', ...Array.from(new Set(ALL_WIKI_ENTRIES.map(e => e.kb)))];
+  const kbs = ['全部', ...Array.from(new Set(entries.map(e => e.kb)))];
   const statuses = ['全部', 'published', 'reviewing', 'draft'];
 
-  const published = ALL_WIKI_ENTRIES.filter(e => e.status === 'published').length;
-  const reviewing = ALL_WIKI_ENTRIES.filter(e => e.status === 'reviewing').length;
-  const totalCites = ALL_WIKI_ENTRIES.reduce((s, e) => s + e.cites, 0);
+  const published = entries.filter(e => e.status === 'published').length;
+  const reviewing = entries.filter(e => e.status === 'reviewing').length;
+  const totalCites = entries.reduce((s, e) => s + e.cites, 0);
 
   return (
     <div className="p-6 h-full overflow-y-auto flex flex-col gap-5">
@@ -1019,19 +1001,28 @@ export function WikiManagePage({ onNavigate }: WikiManagePageProps) {
           <p className="text-sm text-gray-500 mt-0.5">跨知识库管理所有Wiki页面与编译任务</p>
         </div>
         <div className="flex items-center gap-2">
-          <button className="flex items-center gap-2 px-4 py-2 border border-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50">
-            <RefreshCw size={14} /> 全量重编译
+          <button onClick={() => void refresh()} disabled={loading} className="flex items-center gap-2 px-4 py-2 border border-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-60">
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> 刷新
           </button>
+          {isApiMode && (
+            <span className="text-[10px] text-blue-600 px-2 py-1 bg-blue-50 rounded">跨 KB 聚合 API</span>
+          )}
           <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
             <Plus size={14} /> 新建 Wiki 页
           </button>
         </div>
       </div>
 
+      {loading && (
+        <div className="text-xs text-gray-500 flex items-center gap-2">
+          <Loader size={12} className="animate-spin" /> 加载跨知识库 Wiki 数据…
+        </div>
+      )}
+
       {/* Summary */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: 'Wiki 页面总数', value: ALL_WIKI_ENTRIES.length, icon: <BookOpen size={15} className="text-blue-500" />, bg: 'bg-blue-50' },
+          { label: 'Wiki 页面总数', value: entries.length, icon: <BookOpen size={15} className="text-blue-500" />, bg: 'bg-blue-50' },
           { label: '已发布', value: published, icon: <CheckCircle size={15} className="text-green-500" />, bg: 'bg-green-50' },
           { label: '待审核', value: reviewing, icon: <AlertTriangle size={15} className="text-yellow-500" />, bg: 'bg-yellow-50' },
           { label: '总引用次数', value: totalCites.toLocaleString(), icon: <BarChart2 size={15} className="text-purple-500" />, bg: 'bg-purple-50' },
@@ -1094,8 +1085,11 @@ export function WikiManagePage({ onNavigate }: WikiManagePageProps) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
+                {filteredEntries.length === 0 && (
+                  <tr><td colSpan={8} className="py-8 text-center text-xs text-gray-400 italic">暂无 Wiki 条目</td></tr>
+                )}
                 {filteredEntries.map((e, i) => (
-                  <tr key={i} className="hover:bg-gray-50 transition-colors">
+                  <tr key={e.id || i} className="hover:bg-gray-50 transition-colors">
                     <td className="py-3 px-4 font-medium text-gray-800">[[{e.title}]]</td>
                     <td className="py-3 px-4 text-gray-500">{e.kb}</td>
                     <td className="py-3 px-4">
@@ -1113,7 +1107,7 @@ export function WikiManagePage({ onNavigate }: WikiManagePageProps) {
                     <td className="py-3 px-4 text-gray-400">{e.updated}</td>
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-2">
-                        <button className="text-blue-600 hover:underline flex items-center gap-1"><Eye size={11} /> 查看</button>
+                        <button onClick={() => onNavigate('kb-wiki', { selectedKBId: e.kbId })} className="text-blue-600 hover:underline flex items-center gap-1"><Eye size={11} /> 查看</button>
                         <button className="text-gray-500 hover:underline flex items-center gap-1"><Edit2 size={11} /> 编辑</button>
                         {e.status === 'reviewing' && (
                           <button className="text-green-600 hover:underline flex items-center gap-1"><CheckCircle size={11} /> 通过</button>
@@ -1131,7 +1125,10 @@ export function WikiManagePage({ onNavigate }: WikiManagePageProps) {
       {/* Jobs tab */}
       {tab === 'jobs' && (
         <div className="flex flex-col gap-3">
-          {COMPILE_JOBS.map(job => (
+          {jobs.length === 0 && (
+            <div className="text-xs text-gray-400 italic text-center py-8">暂无编译任务</div>
+          )}
+          {jobs.map(job => (
             <div key={job.id} className="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-4">
               <div className={`flex-shrink-0 px-2.5 py-1 rounded-full text-[11px] font-semibold ${jobStatusCfg[job.status as keyof typeof jobStatusCfg].color}`}>
                 {jobStatusCfg[job.status as keyof typeof jobStatusCfg].label}
@@ -1182,12 +1179,13 @@ export function WikiManagePage({ onNavigate }: WikiManagePageProps) {
             <h3 className="text-sm font-semibold text-gray-800 mb-3">按知识库分布</h3>
             <div className="space-y-3">
               {kbs.filter(k => k !== '全部').map(kb => {
-                const count = ALL_WIKI_ENTRIES.filter(e => e.kb === kb).length;
+                const count = entries.filter(e => e.kb === kb).length;
+                const pct = entries.length ? (count / entries.length) * 100 : 0;
                 return (
                   <div key={kb} className="flex items-center gap-3">
                     <div className="text-xs text-gray-600 w-32 flex-shrink-0">{kb}</div>
                     <div className="flex-1 h-5 bg-gray-100 rounded-full overflow-hidden">
-                      <div className="h-full bg-blue-500 rounded-full" style={{ width: `${(count / ALL_WIKI_ENTRIES.length) * 100}%` }} />
+                      <div className="h-full bg-blue-500 rounded-full" style={{ width: `${pct}%` }} />
                     </div>
                     <div className="text-xs font-semibold text-gray-800 w-8 text-right">{count}</div>
                   </div>
@@ -1198,8 +1196,8 @@ export function WikiManagePage({ onNavigate }: WikiManagePageProps) {
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <h3 className="text-sm font-semibold text-gray-800 mb-3">引用次数排行 Top 5</h3>
             <div className="space-y-2">
-              {ALL_WIKI_ENTRIES.sort((a, b) => b.cites - a.cites).slice(0, 5).map((e, i) => (
-                <div key={e.slug} className="flex items-center gap-3">
+              {[...entries].sort((a, b) => b.cites - a.cites).slice(0, 5).map((e, i) => (
+                <div key={e.id} className="flex items-center gap-3">
                   <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold flex-shrink-0 ${i === 0 ? 'bg-yellow-400 text-white' : i === 1 ? 'bg-gray-300 text-white' : 'bg-orange-300 text-white'}`}>{i + 1}</span>
                   <div className="flex-1 min-w-0">
                     <div className="text-xs font-medium text-gray-800 truncate">[[{e.title}]]</div>

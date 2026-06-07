@@ -11,7 +11,7 @@ import { HubBadge, HubStatCard, hubCard, hubInput, hubSelect, BtnPrimary, BtnSec
 import { useWikiHubData } from '../../hooks/useEnhancementHubData';
 import { WikiHubContext, useWikiHubContext } from './wikiHubContext';
 import {
-  WIKI_COMMITS, WIKI_STATS, WIKI_LAYER_FILTERS,
+  WIKI_COMMITS, WIKI_STATS, WIKI_LAYER_FILTERS, WIKI_DEFAULT_SETTINGS,
   filterWikiTree, getWikiPage,
   type WikiPage, type WikiPageStatus, type WikiPageType, type WikiCompileJob, type WikiTreeNode,
   type WikiSourceDoc, type WikiIngestStatus,
@@ -638,26 +638,42 @@ function CompileQueueTab({ showToast }: { showToast: (m: string) => void }) {
 }
 
 function CompileSettingsTab({ showToast }: { showToast: (m: string) => void }) {
-  const [trigger, setTrigger] = useState('manual');
-  const [autoPublish, setAutoPublish] = useState(false);
-  const [manualReview, setManualReview] = useState(true);
-  const [autoCommit, setAutoCommit] = useState(true);
+  const wiki = useWikiHubContext();
+  const [settings, setSettings] = useState(WIKI_DEFAULT_SETTINGS);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    void wiki.loadSettings().then(s => setSettings(s));
+  }, [wiki]);
+
+  const handleSave = () => {
+    setSaving(true);
+    void wiki.saveSettings(settings)
+      .then(s => { setSettings(s); showToast('编译设置已保存'); })
+      .catch(() => showToast('保存失败'))
+      .finally(() => setSaving(false));
+  };
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      {wiki.isApiMode && (
+        <div className={`${hubCard} p-3 text-xs text-violet-800 dark:text-violet-200 bg-violet-50 dark:bg-violet-900/20 border-violet-200 dark:border-violet-800 col-span-full`}>
+          编译策略持久化至 Redis · <code className="text-[10px]">PUT /rag3/datasets/:id/wiki/settings</code>
+        </div>
+      )}
       <div className={`${hubCard} p-5`}>
         <h3 className="text-sm font-semibold text-gray-800 mb-4 flex items-center gap-2"><Settings size={16} /> 编译策略</h3>
         <div className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-gray-700 mb-2">触发策略</label>
             <div className="space-y-2">
-              {[
-                { v: 'auto', l: '新文档自动编译' },
-                { v: 'scheduled', l: '定时全量（每日 02:00）' },
-                { v: 'manual', l: '手动触发' },
-              ].map(opt => (
+              {([
+                { v: 'auto' as const, l: '新文档自动编译' },
+                { v: 'scheduled' as const, l: '定时全量（每日 02:00）' },
+                { v: 'manual' as const, l: '手动触发' },
+              ]).map(opt => (
                 <label key={opt.v} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-                  <input type="radio" name="trigger" checked={trigger === opt.v} onChange={() => setTrigger(opt.v)} className="text-violet-600" />
+                  <input type="radio" name="trigger" checked={settings.triggerMode === opt.v} onChange={() => setSettings(s => ({ ...s, triggerMode: opt.v }))} className="text-violet-600" />
                   {opt.l}
                 </label>
               ))}
@@ -665,17 +681,24 @@ function CompileSettingsTab({ showToast }: { showToast: (m: string) => void }) {
           </div>
           <div>
             <label className="block text-xs font-semibold text-gray-700 mb-1.5">编译 LLM</label>
-            <select className={hubSelect} defaultValue="deepseek">
-              <option value="deepseek">DeepSeek-v4（推荐）</option>
-              <option>GPT-4o</option>
-              <option>Claude 3.5 Sonnet</option>
-              <option>Qwen-Max</option>
+            <select className={hubSelect} value={settings.llmModel} onChange={e => setSettings(s => ({ ...s, llmModel: e.target.value }))}>
+              <option value="deepseek-v4">DeepSeek-v4（推荐）</option>
+              <option value="gpt-4o">GPT-4o</option>
+              <option value="claude-3.5-sonnet">Claude 3.5 Sonnet</option>
+              <option value="qwen-max">Qwen-Max</option>
             </select>
           </div>
           <div>
             <label className="block text-xs font-semibold text-gray-700 mb-1.5">实体抽取阈值</label>
-            <input type="range" min={50} max={95} defaultValue={75} className="w-full" />
-            <p className="text-[10px] text-gray-400 mt-1">当前 0.75 · 低于阈值不建页</p>
+            <input
+              type="range"
+              min={50}
+              max={95}
+              value={Math.round(settings.entityThreshold * 100)}
+              onChange={e => setSettings(s => ({ ...s, entityThreshold: +e.target.value / 100 }))}
+              className="w-full"
+            />
+            <p className="text-[10px] text-gray-400 mt-1">当前 {settings.entityThreshold.toFixed(2)} · 低于阈值不建页</p>
           </div>
         </div>
       </div>
@@ -684,34 +707,42 @@ function CompileSettingsTab({ showToast }: { showToast: (m: string) => void }) {
         <h3 className="text-sm font-semibold text-gray-800 mb-4">审核与 Git</h3>
         <div className="space-y-4">
           <label className="flex items-center gap-3 cursor-pointer">
-            <input type="checkbox" checked={manualReview} onChange={e => setManualReview(e.target.checked)} className="rounded text-violet-600" />
-            <span className="text-sm text-gray-700">引用率 &gt; 80% 需人工审核</span>
+            <input type="checkbox" checked={settings.manualReview} onChange={e => setSettings(s => ({ ...s, manualReview: e.target.checked }))} className="rounded text-violet-600" />
+            <span className="text-sm text-gray-700">引用率 &gt; {(settings.citeReviewThreshold * 100).toFixed(0)}% 需人工审核</span>
           </label>
           <label className="flex items-center gap-3 cursor-pointer">
-            <input type="checkbox" checked={autoPublish} onChange={e => setAutoPublish(e.target.checked)} className="rounded text-violet-600" />
+            <input type="checkbox" checked={settings.autoPublish} onChange={e => setSettings(s => ({ ...s, autoPublish: e.target.checked }))} className="rounded text-violet-600" />
             <span className="text-sm text-gray-700">审核通过后自动发布</span>
           </label>
           <div>
             <label className="block text-xs font-semibold text-gray-700 mb-1.5">Git 分支</label>
-            <select className={hubSelect} defaultValue="main">
+            <select className={hubSelect} value={settings.gitBranch} onChange={e => setSettings(s => ({ ...s, gitBranch: e.target.value }))}>
               <option value="main">main（生产）</option>
-              <option>experiment（实验）</option>
+              <option value="experiment">experiment（实验）</option>
             </select>
           </div>
           <label className="flex items-center gap-3 cursor-pointer">
-            <input type="checkbox" checked={autoCommit} onChange={e => setAutoCommit(e.target.checked)} className="rounded text-violet-600" />
+            <input type="checkbox" checked={settings.autoCommit} onChange={e => setSettings(s => ({ ...s, autoCommit: e.target.checked }))} className="rounded text-violet-600" />
             <span className="text-sm text-gray-700">编译完成自动 commit</span>
           </label>
           <div>
             <label className="block text-xs font-semibold text-gray-700 mb-1.5">增量策略</label>
             <div className="space-y-1.5 text-sm text-gray-700">
-              <label className="flex items-center gap-2"><input type="checkbox" defaultChecked className="rounded" /> 新实体自动建页</label>
-              <label className="flex items-center gap-2"><input type="checkbox" defaultChecked className="rounded" /> 更新关联综合页</label>
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={settings.incrementalEntity} onChange={e => setSettings(s => ({ ...s, incrementalEntity: e.target.checked }))} className="rounded" />
+                新实体自动建页
+              </label>
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={settings.incrementalSynthesis} onChange={e => setSettings(s => ({ ...s, incrementalSynthesis: e.target.checked }))} className="rounded" />
+                更新关联综合页
+              </label>
             </div>
           </div>
           <div className="flex gap-2 pt-2">
-            <BtnSecondary className="flex-1 justify-center">重置默认</BtnSecondary>
-            <BtnPrimary className="flex-1 justify-center" onClick={() => showToast('编译设置已保存')}>保存配置</BtnPrimary>
+            <BtnSecondary className="flex-1 justify-center" onClick={() => setSettings({ ...WIKI_DEFAULT_SETTINGS })}>重置默认</BtnSecondary>
+            <BtnPrimary className="flex-1 justify-center" onClick={handleSave} disabled={saving}>
+              {saving ? '保存中…' : '保存配置'}
+            </BtnPrimary>
           </div>
         </div>
       </div>
@@ -722,13 +753,22 @@ function CompileSettingsTab({ showToast }: { showToast: (m: string) => void }) {
 function StatsTab() {
   const wiki = useWikiHubContext();
   const stats = wiki.stats;
-  const maxCompile = Math.max(...(stats.weeklyCompile?.length ? stats.weeklyCompile : [1]));
+  const analytics = wiki.analytics;
+  const maxCompile = Math.max(...(stats.weeklyCompile?.length ? stats.weeklyCompile : [1]), 1);
+  const maxSearch = Math.max(...(analytics.weeklySearches?.length ? analytics.weeklySearches : [1]), 1);
 
   return (
     <div className="space-y-5">
       {wiki.isApiMode && (
         <div className={`${hubCard} p-3 text-xs text-violet-800 dark:text-violet-200 bg-violet-50 dark:bg-violet-900/20 border-violet-200 dark:border-violet-800`}>
-          统计指标来自 RAG3 <code className="text-[10px]">GET /rag3/datasets/:id/wiki/entries</code>；层级分布与周编译趋势在真实 Ingest 积累后逐步有数据。
+          条目统计来自 <code className="text-[10px]">GET /rag3/datasets/:id/wiki/entries</code>；检索延迟、层级分布与周趋势来自 <code className="text-[10px]">GET /rag3/datasets/:id/wiki/analytics</code>。
+        </div>
+      )}
+      {wiki.isApiMode && analytics.searchCount > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <HubStatCard label="库级检索次数" value={String(analytics.searchCount)} icon={<Search size={18} className="text-violet-500" />} />
+          <HubStatCard label="检索 P50" value={`${analytics.searchLatencyP50}ms`} icon={<Clock size={18} className="text-blue-500" />} />
+          <HubStatCard label="检索 P95" value={`${analytics.searchLatencyP95}ms`} icon={<Clock size={18} className="text-orange-500" />} />
         </div>
       )}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -779,8 +819,36 @@ function StatsTab() {
             </div>
           ))}
         </div>
-        <p className="text-[10px] text-gray-400 mt-2">GET /api/v1/rag3/datasets/&#123;kb_id&#125;/wiki/entries</p>
+        <p className="text-[10px] text-gray-400 mt-2">GET /api/v1/rag3/datasets/&#123;kb_id&#125;/wiki/analytics</p>
       </div>
+
+      {wiki.isApiMode && analytics.weeklySearches.some(v => v > 0) && (
+        <div className={`${hubCard} p-4`}>
+          <h3 className="text-sm font-semibold text-gray-800 mb-4">检索趋势（近 7 天）</h3>
+          <div className="flex items-end gap-2 h-28">
+            {analytics.weeklySearches.map((val, idx) => (
+              <div key={idx} className="flex-1 flex flex-col items-center gap-1">
+                <div className="w-full bg-blue-500 rounded-t-sm opacity-80" style={{ height: `${(val / maxSearch) * 100}%`, minHeight: 4 }} />
+                <span className="text-[10px] text-gray-400">{['一', '二', '三', '四', '五', '六', '日'][idx]}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {analytics.failDist.length > 0 && (
+        <div className={`${hubCard} p-4`}>
+          <h3 className="text-sm font-semibold text-gray-800 mb-4">编译失败分布</h3>
+          <div className="space-y-2">
+            {analytics.failDist.map(f => (
+              <div key={f.reason} className="flex items-center justify-between text-sm">
+                <span className="text-gray-700">{f.reason}</span>
+                <span className="text-xs font-medium text-red-600">{f.count} 次</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {stats.failed > 0 && (
         <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">

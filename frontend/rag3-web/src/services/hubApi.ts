@@ -76,6 +76,28 @@ export const hubApi = {
     return data;
   },
 
+  async getWikiSettings(datasetId: string) {
+    const { data } = await apiRequest<Record<string, unknown>>(
+      `/rag3/datasets/${datasetId}/wiki/settings`,
+    );
+    return data;
+  },
+
+  async saveWikiSettings(datasetId: string, settings: Record<string, unknown>) {
+    const { data } = await apiRequest<Record<string, unknown>>(
+      `/rag3/datasets/${datasetId}/wiki/settings`,
+      { method: 'PUT', body: JSON.stringify(settings) },
+    );
+    return data;
+  },
+
+  async getWikiAnalytics(datasetId: string) {
+    const { data } = await apiRequest<Record<string, unknown>>(
+      `/rag3/datasets/${datasetId}/wiki/analytics`,
+    );
+    return data;
+  },
+
   async searchWiki(datasetId: string, query: string, topK = 10) {
     const { data } = await apiRequest<{
       hits: Array<Record<string, unknown>>;

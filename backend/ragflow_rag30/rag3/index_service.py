@@ -311,6 +311,12 @@ async def _run_build(task_id: str, kb_id: str, tenant_id: str, index_type: str, 
                 record_pageindex_build(kb_id, success=True)
             except Exception:
                 pass
+        elif index_type == "wiki":
+            try:
+                from rag3.wiki_hub_service import record_wiki_build
+                record_wiki_build(kb_id, success=True)
+            except Exception:
+                pass
     except Exception as e:
         logger.exception("rag3 index build failed task=%s type=%s", task_id, index_type)
         _update_task(
@@ -323,6 +329,12 @@ async def _run_build(task_id: str, kb_id: str, tenant_id: str, index_type: str, 
             try:
                 from rag3.pageindex_hub_service import record_pageindex_build
                 record_pageindex_build(kb_id, success=False, fail_reason=str(e)[:120])
+            except Exception:
+                pass
+        elif index_type == "wiki":
+            try:
+                from rag3.wiki_hub_service import record_wiki_build
+                record_wiki_build(kb_id, success=False, fail_reason=str(e)[:120])
             except Exception:
                 pass
     finally:
@@ -782,8 +794,11 @@ def get_pageindex_hub_analytics(dataset_id: str, tenant_id: str) -> tuple[bool, 
 
 
 def search_wiki_library(kb_id: str, query: str, top_k: int = 10) -> dict[str, Any]:
+    from rag3.wiki_hub_service import record_wiki_search
+
     started = time.time()
     hits = search_wiki_hits(kb_id, query, top_k=top_k)
+    latency_ms = max(1, int((time.time() - started) * 1000))
     formatted = [
         {
             "id": h.get("entry_id") or h["chunk_id"],
@@ -795,12 +810,32 @@ def search_wiki_library(kb_id: str, query: str, top_k: int = 10) -> dict[str, An
         }
         for h in hits
     ]
+    record_wiki_search(
+        kb_id,
+        latency_ms=latency_ms,
+        entry_id=formatted[0]["id"] if formatted else None,
+    )
     return {
         "query": query,
         "hits": formatted,
         "total": len(formatted),
-        "total_ms": max(1, int((time.time() - started) * 1000)),
+        "total_ms": latency_ms,
     }
+
+
+def get_wiki_hub_analytics(dataset_id: str, tenant_id: str) -> tuple[bool, dict[str, Any] | str]:
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "No authorization."
+    from rag3.wiki_hub_service import get_wiki_analytics
+
+    ok, payload = list_wiki_hub_entries(dataset_id, tenant_id)
+    if not ok or not isinstance(payload, dict):
+        return False, payload if isinstance(payload, str) else "Failed to load wiki entries"
+    return True, get_wiki_analytics(
+        dataset_id,
+        payload.get("entries") or [],
+        payload.get("source_documents") or [],
+    )
 
 
 def search_wiki_hits(kb_id: str, query: str, top_k: int = 10) -> list[dict[str, Any]]:

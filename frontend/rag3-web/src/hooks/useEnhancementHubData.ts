@@ -27,6 +27,7 @@ import {
   WIKI_PAGES,
   WIKI_SOURCE_DOCS,
   WIKI_STATS,
+  WIKI_DEFAULT_SETTINGS,
   WIKI_COMPILE_QUEUE,
   WIKI_TREE,
   type WikiPage,
@@ -35,7 +36,7 @@ import {
   type WikiTreeNode,
 } from '../data/wikiMock';
 import { buildWikiTreeFromPages } from '../utils/wikiTreeUtils';
-import { useKnowledgeBase } from './useKbData';
+import { useKnowledgeBase, useKnowledgeBaseList } from './useKbData';
 import { kbApi } from '../services/kbApi';
 import { hubApi } from '../services/hubApi';
 import { useRealApi } from '../services/http';
@@ -471,6 +472,84 @@ export function useGraphHubData(kbId: string) {
   return { kb, stats, sourceDocs, nodes, edges, loading, refresh, getDoc, runGraphSearch, runBuild, isApiMode: useRealApi };
 }
 
+export interface WikiAnalyticsView {
+  searchLatencyP50: number;
+  searchLatencyP95: number;
+  searchCount: number;
+  weeklySearches: number[];
+  weeklyCompile: number[];
+  layerDist: Array<{ layer: string; count: number; pct: number }>;
+  topCited: Array<{ title: string; cites: number; entryId?: string }>;
+  failDist: Array<{ reason: string; count: number }>;
+}
+
+function mapWikiAnalytics(raw: Record<string, unknown> | undefined): WikiAnalyticsView {
+  if (!raw || !Object.keys(raw).length) {
+    return {
+      searchLatencyP50: 0,
+      searchLatencyP95: 0,
+      searchCount: 0,
+      weeklySearches: [0, 0, 0, 0, 0, 0, 0],
+      weeklyCompile: WIKI_STATS.weeklyCompile,
+      layerDist: WIKI_STATS.layerDist,
+      topCited: WIKI_STATS.topCited.map(t => ({ title: t.title, cites: t.cites })),
+      failDist: [],
+    };
+  }
+  return {
+    searchLatencyP50: Number(raw.search_latency_p50) || 0,
+    searchLatencyP95: Number(raw.search_latency_p95) || 0,
+    searchCount: Number(raw.search_count) || 0,
+    weeklySearches: (raw.weekly_searches as number[] | undefined) ?? [0, 0, 0, 0, 0, 0, 0],
+    weeklyCompile: (raw.weekly_compile as number[] | undefined) ?? WIKI_STATS.weeklyCompile,
+    layerDist: ((raw.layer_dist as Array<Record<string, unknown>> | undefined) ?? []).map(d => ({
+      layer: String(d.layer ?? ''),
+      count: Number(d.count) || 0,
+      pct: Number(d.pct) || 0,
+    })),
+    topCited: ((raw.top_cited as Array<Record<string, unknown>> | undefined) ?? []).map(d => ({
+      title: String(d.title ?? ''),
+      cites: Number(d.cites) || 0,
+      entryId: d.entry_id ? String(d.entry_id) : undefined,
+    })),
+    failDist: ((raw.fail_dist as Array<Record<string, unknown>> | undefined) ?? []).map(d => ({
+      reason: String(d.reason ?? ''),
+      count: Number(d.count) || 0,
+    })),
+  };
+}
+
+export function mapWikiSettingsFromApi(raw: Record<string, unknown> | undefined) {
+  if (!raw) return { ...WIKI_DEFAULT_SETTINGS };
+  return {
+    triggerMode: (raw.trigger_mode as typeof WIKI_DEFAULT_SETTINGS.triggerMode) ?? WIKI_DEFAULT_SETTINGS.triggerMode,
+    llmModel: String(raw.llm_model ?? WIKI_DEFAULT_SETTINGS.llmModel),
+    entityThreshold: Number(raw.entity_threshold) || WIKI_DEFAULT_SETTINGS.entityThreshold,
+    manualReview: Boolean(raw.manual_review ?? WIKI_DEFAULT_SETTINGS.manualReview),
+    autoPublish: Boolean(raw.auto_publish ?? WIKI_DEFAULT_SETTINGS.autoPublish),
+    gitBranch: String(raw.git_branch ?? WIKI_DEFAULT_SETTINGS.gitBranch),
+    autoCommit: Boolean(raw.auto_commit ?? WIKI_DEFAULT_SETTINGS.autoCommit),
+    incrementalEntity: Boolean(raw.incremental_entity ?? WIKI_DEFAULT_SETTINGS.incrementalEntity),
+    incrementalSynthesis: Boolean(raw.incremental_synthesis ?? WIKI_DEFAULT_SETTINGS.incrementalSynthesis),
+    citeReviewThreshold: Number(raw.cite_review_threshold) || WIKI_DEFAULT_SETTINGS.citeReviewThreshold,
+  };
+}
+
+export function mapWikiSettingsToApi(settings: typeof WIKI_DEFAULT_SETTINGS) {
+  return {
+    trigger_mode: settings.triggerMode,
+    llm_model: settings.llmModel,
+    entity_threshold: settings.entityThreshold,
+    manual_review: settings.manualReview,
+    auto_publish: settings.autoPublish,
+    git_branch: settings.gitBranch,
+    auto_commit: settings.autoCommit,
+    incremental_entity: settings.incrementalEntity,
+    incremental_synthesis: settings.incrementalSynthesis,
+    cite_review_threshold: settings.citeReviewThreshold,
+  };
+}
+
 export interface WikiTraceSnapshot {
   progress: number;
   progress_msg: string;
@@ -593,6 +672,7 @@ export function useWikiHubData(kbId: string) {
   const [trace, setTrace] = useState<WikiTraceSnapshot | null>(null);
   const [tree, setTree] = useState<WikiTreeNode>(WIKI_TREE);
   const [compileQueue, setCompileQueue] = useState<WikiCompileJob[]>(WIKI_COMPILE_QUEUE);
+  const [analytics, setAnalytics] = useState<WikiAnalyticsView>(mapWikiAnalytics(undefined));
   const [loading, setLoading] = useState(useRealApi);
 
   const refresh = useCallback(() => {
@@ -600,6 +680,7 @@ export function useWikiHubData(kbId: string) {
       setPages(WIKI_PAGES);
       setSourceDocs(WIKI_SOURCE_DOCS);
       setStats(WIKI_STATS);
+      setAnalytics(mapWikiAnalytics(undefined));
       setTrace(null);
       setTree(WIKI_TREE);
       setCompileQueue(WIKI_COMPILE_QUEUE);
@@ -607,18 +688,23 @@ export function useWikiHubData(kbId: string) {
       return;
     }
     setLoading(true);
-    hubApi.listWikiEntries(kbId)
-      .then(data => {
+    Promise.all([
+      hubApi.listWikiEntries(kbId),
+      hubApi.getWikiAnalytics(kbId).catch(() => undefined),
+    ])
+      .then(([data, analyticsRaw]) => {
         const entries = data?.entries ?? [];
         const mappedPages = entries.map((e, i) => mapWikiEntry(e as Record<string, unknown>, i));
         const mappedDocs = (data?.source_documents ?? []).map(s => mapWikiSourceDoc(s as Record<string, unknown>));
         const traceSnap = normalizeWikiTrace(data?.trace as Record<string, unknown> | undefined);
         const st = data?.stats ?? {};
+        const analyticsView = mapWikiAnalytics(analyticsRaw as Record<string, unknown> | undefined);
         setPages(mappedPages);
         setSourceDocs(mappedDocs);
         setTrace(traceSnap);
         setTree(buildWikiTreeFromPages(mappedPages, mappedDocs));
         setCompileQueue(buildApiCompileQueue(mappedDocs, traceSnap));
+        setAnalytics(analyticsView);
         setStats({
           ...WIKI_STATS,
           total: Number(st.total_entries) || mappedPages.length,
@@ -627,6 +713,11 @@ export function useWikiHubData(kbId: string) {
           compiling: Number(st.compiling ?? st.compiling_docs) || 0,
           failed: Number(st.failed ?? st.failed_docs) || 0,
           avgCiteRate: mappedPages.length ? 84 : 0,
+          layerDist: analyticsView.layerDist.length ? analyticsView.layerDist : WIKI_STATS.layerDist,
+          weeklyCompile: analyticsView.weeklyCompile,
+          topCited: analyticsView.topCited.length
+            ? analyticsView.topCited.map(t => ({ title: t.title, cites: t.cites }))
+            : WIKI_STATS.topCited,
         });
       })
       .catch(() => {
@@ -676,11 +767,24 @@ export function useWikiHubData(kbId: string) {
 
   const getPage = useCallback((slug: string) => pages.find(p => p.slug === slug || p.id === slug), [pages]);
 
+  const loadSettings = useCallback(async () => {
+    if (!useRealApi) return { ...WIKI_DEFAULT_SETTINGS };
+    const raw = await hubApi.getWikiSettings(kbId);
+    return mapWikiSettingsFromApi(raw as Record<string, unknown>);
+  }, [kbId]);
+
+  const saveSettings = useCallback(async (settings: typeof WIKI_DEFAULT_SETTINGS) => {
+    if (!useRealApi) return settings;
+    const raw = await hubApi.saveWikiSettings(kbId, mapWikiSettingsToApi(settings));
+    return mapWikiSettingsFromApi(raw as Record<string, unknown>);
+  }, [kbId]);
+
   return {
     kb,
     pages,
     sourceDocs,
     stats,
+    analytics,
     trace,
     tree,
     compileQueue,
@@ -689,6 +793,125 @@ export function useWikiHubData(kbId: string) {
     runBuild,
     searchWiki,
     getPage,
+    loadSettings,
+    saveSettings,
     isApiMode: useRealApi,
   };
+}
+
+export interface WikiManageEntry {
+  id: string;
+  title: string;
+  kb: string;
+  kbId: string;
+  layer: number;
+  status: 'published' | 'reviewing' | 'draft';
+  cites: number;
+  sources: number;
+  updated: string;
+}
+
+export interface WikiManageJob {
+  id: string;
+  kb: string;
+  kbId: string;
+  trigger: string;
+  pages: number;
+  status: 'running' | 'queued' | 'completed' | 'failed';
+  progress: number;
+  started: string;
+  model: string;
+}
+
+export function useWikiManageData() {
+  const { data: kbList, loading: kbLoading } = useKnowledgeBaseList('name', false, '', 1, 100, 'all');
+  const [entries, setEntries] = useState<WikiManageEntry[]>([]);
+  const [jobs, setJobs] = useState<WikiManageJob[]>([]);
+  const [loading, setLoading] = useState(useRealApi);
+
+  const refresh = useCallback(async () => {
+    if (!useRealApi) return;
+    setLoading(true);
+    try {
+      const kbs = kbList?.items ?? [];
+      const results = await Promise.all(
+        kbs.map(async kb => {
+          const data = await hubApi.listWikiEntries(kb.kb_id).catch(() => null);
+          return { kb, data };
+        }),
+      );
+      const allEntries: WikiManageEntry[] = [];
+      const allJobs: WikiManageJob[] = [];
+      for (const { kb, data } of results) {
+        if (!data) continue;
+        const wikiEntries = data.entries ?? [];
+        const trace = data.trace as Record<string, unknown> | undefined;
+        const progress = typeof trace?.progress === 'number' ? trace.progress : -2;
+        const running = progress >= 0 && progress < 1;
+        if (running) {
+          allJobs.push({
+            id: `job-${kb.kb_id}`,
+            kb: kb.name,
+            kbId: kb.kb_id,
+            trigger: 'Ingest',
+            pages: wikiEntries.length,
+            status: 'running',
+            progress: Math.round(progress * 100),
+            started: String((trace?.progress_msg as string | undefined)?.split('\n').pop() ?? '进行中'),
+            model: 'RAG3',
+          });
+        }
+        for (const e of wikiEntries) {
+          const raw = e as Record<string, unknown>;
+          allEntries.push({
+            id: String(raw.id ?? ''),
+            title: String(raw.title ?? 'Wiki 条目'),
+            kb: kb.name,
+            kbId: kb.kb_id,
+            layer: 2,
+            status: 'published',
+            cites: 0,
+            sources: raw.doc_id ? 1 : 0,
+            updated: '—',
+          });
+        }
+        for (const s of data.source_documents ?? []) {
+          const raw = s as Record<string, unknown>;
+          if (raw.ingest_status === 'pending') {
+            allJobs.push({
+              id: `pending-${kb.kb_id}-${raw.id}`,
+              kb: kb.name,
+              kbId: kb.kb_id,
+              trigger: '待 Ingest',
+              pages: 0,
+              status: 'queued',
+              progress: 0,
+              started: '—',
+              model: 'RAG3',
+            });
+          } else if (raw.ingest_status === 'failed') {
+            allJobs.push({
+              id: `failed-${kb.kb_id}-${raw.id}`,
+              kb: kb.name,
+              kbId: kb.kb_id,
+              trigger: '编译失败',
+              pages: Number(raw.wiki_page_count) || 0,
+              status: 'failed',
+              progress: 0,
+              started: String(raw.last_ingest ?? '—'),
+              model: 'RAG3',
+            });
+          }
+        }
+      }
+      setEntries(allEntries);
+      setJobs(allJobs);
+    } finally {
+      setLoading(false);
+    }
+  }, [kbList?.items]);
+
+  useEffect(() => { void refresh(); }, [refresh]);
+
+  return { entries, jobs, loading: loading || kbLoading, refresh, isApiMode: useRealApi };
 }

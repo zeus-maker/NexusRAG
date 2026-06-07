@@ -1786,3 +1786,37 @@ Wiki Hub 各 Tab 仍直接读 `WIKI_*` mock；`useWikiHubData` 虽调 `listWikiE
 - `frontend/rag3-web/src/hooks/useEnhancementHubData.ts`
 - `frontend/rag3-web/src/pages/Hub/WikiHubPage.tsx`、`wikiHubContext.tsx`
 - `frontend/rag3-web/src/utils/wikiTreeUtils.ts`、`retrievalTestApi.ts`
+
+---
+
+## 60. Wiki settings/analytics 后端 + Hub/KBExtra 全量接线
+
+### 背景与目标
+
+§59 后 Wiki 编译设置 Tab、统计层级/周趋势仍用 mock；`KBExtra` 的 `WikiPage`/`WikiManagePage` 仍读本地常量。需补 Redis 持久化 settings/metrics、analytics API，并将 Hub 设置/统计 Tab 与 KB 侧 Wiki 浏览/管理页接到真实数据。
+
+### 改动摘要
+
+- **后端**：新增 `wiki_hub_service.py`（`get/save_wiki_settings`、`record_wiki_build/search`、`get_wiki_analytics`）；`index_service` 在 wiki 建树/检索时写 metrics；`rag3_app` 暴露 `GET/PUT .../wiki/settings`、`GET .../wiki/analytics`。
+- **前端 Hook**：`useWikiHubData` 并行拉 entries + analytics，增 `loadSettings`/`saveSettings`、`analytics` 视图映射；新增 `useWikiManageData` 跨 KB 聚合 entries 与编译任务。
+- **Wiki Hub**：`CompileSettingsTab` 读写 Redis 设置；`StatsTab` 展示检索 P50/P95、周检索量、失败分布。
+- **KBExtra**：`WikiPage` 改用 `useWikiHubData`（条目/编译队列/触发 Ingest）；`WikiManagePage` 改用 `useWikiManageData`（跨库列表、任务、统计）。
+
+### 验证与风险
+
+- 验证：`npm run build` 通过；API 模式下 Wiki Hub「编译设置」保存后刷新应回显；`KBExtra` Wiki 页应显示真实条目或空态提示。
+- 风险：Git 版本/编辑保存仍无后端；`reviewing` 状态条目后端暂未产出；跨 KB 管理页在 KB 列表为空时显示空表。
+
+### 反思与沉淀
+
+- Wiki analytics 与 PageIndex 共用「Redis metrics + 周桶」模式，前端 `mapWikiAnalytics` 对缺字段回退 `WIKI_STATS`，避免白屏。
+- KB 侧 Wiki 与管理页复用 Hub 同一套 `hubApi`，避免第二套 mock 分叉。
+
+### 涉及文件
+
+- `backend/ragflow_rag30/rag3/wiki_hub_service.py` — settings/metrics/analytics
+- `backend/ragflow_rag30/rag3/index_service.py`、`api/apps/rag3_app.py` — 路由与埋点
+- `frontend/rag3-web/src/hooks/useEnhancementHubData.ts` — Wiki analytics/settings/manage
+- `frontend/rag3-web/src/pages/Hub/WikiHubPage.tsx` — 设置/统计 Tab
+- `frontend/rag3-web/src/pages/KBExtra.tsx` — WikiPage / WikiManagePage
+- `frontend/rag3-web/src/services/hubApi.ts`、`data/wikiMock.ts` — API 与默认设置
