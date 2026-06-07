@@ -29,6 +29,12 @@ export function PdfPreviewWithHighlights({ url, highlights = [], className = '' 
   const canvasRefs = useRef<Record<number, HTMLCanvasElement | null>>({});
 
   useEffect(() => {
+    if (!url) {
+      setLoading(false);
+      setError('预览地址无效');
+      return;
+    }
+
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -38,7 +44,13 @@ export function PdfPreviewWithHighlights({ url, highlights = [], className = '' 
 
     (async () => {
       try {
-        const pdf = await pdfjs.getDocument(url).promise;
+        // pdfjs-dist v6+ 须传 DocumentInitParameters 对象，不能直接传字符串
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`预览加载失败 (${res.status})`);
+        const data = await res.arrayBuffer();
+        if (cancelled) return;
+
+        const pdf = await pdfjs.getDocument({ data }).promise;
         if (cancelled) return;
         pdfRef.current = pdf;
 
