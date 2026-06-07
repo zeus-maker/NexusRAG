@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { ThumbsUp, ThumbsDown, MessageSquareWarning, TrendingUp, ChevronDown } from 'lucide-react';
+import { ThumbsUp, ThumbsDown, MessageSquareWarning, TrendingUp, ChevronDown, X } from 'lucide-react';
 import { EvalSubNav } from '../components/EvalSubNav';
 import {
-  SATISFACTION_SUMMARY, SATISFACTION_TREND, NEGATIVE_REASONS, NEGATIVE_CASES,
+  SATISFACTION_SUMMARY, SATISFACTION_TREND, NEGATIVE_REASONS, NEGATIVE_CASES, type NegativeCase,
 } from '../data/evalMock';
 import { mockKBs } from '../mockData';
 
@@ -13,8 +13,12 @@ interface EvalSatisfactionPageProps {
 export function EvalSatisfactionPage({ onNavigate }: EvalSatisfactionPageProps) {
   const [period, setPeriod] = useState('30d');
   const [kbFilter, setKbFilter] = useState('');
+  const [detailCase, setDetailCase] = useState<NegativeCase | null>(null);
   const s = SATISFACTION_SUMMARY;
-  const maxTrend = Math.max(...SATISFACTION_TREND);
+  const periodLabel = period === '7d' ? '近 7 天' : period === '90d' ? '近 90 天' : '近 30 天';
+  const trendScale = period === '7d' ? 0.5 : period === '90d' ? 1.2 : 1;
+  const scaledTrend = SATISFACTION_TREND.map(v => Math.min(100, v * trendScale));
+  const maxTrend = Math.max(...scaledTrend);
 
   return (
     <div className="p-6 flex flex-col gap-5 h-full overflow-y-auto bg-gray-50 dark:bg-gray-950">
@@ -57,9 +61,9 @@ export function EvalSatisfactionPage({ onNavigate }: EvalSatisfactionPageProps) 
       </div>
 
       <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-        <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-4">满意度趋势（按日）</h3>
+        <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-4">满意度趋势（{periodLabel}）</h3>
         <div className="flex items-end gap-1 h-28">
-          {SATISFACTION_TREND.map((v, i) => (
+          {scaledTrend.map((v, i) => (
             <div
               key={i}
               className="flex-1 bg-blue-500 dark:bg-blue-600 rounded-t opacity-80 hover:opacity-100 transition-opacity"
@@ -94,23 +98,45 @@ export function EvalSatisfactionPage({ onNavigate }: EvalSatisfactionPageProps) 
           <div className="space-y-2">
             {NEGATIVE_CASES.map((c, i) => (
               <div key={c.convId} className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800">
-                <div className="min-w-0">
+                <button type="button" onClick={() => setDetailCase(c)} className="min-w-0 text-left flex-1">
                   <span className="text-[10px] text-gray-400 mr-2">#{i + 1}</span>
                   <span className="text-xs font-medium text-gray-800 dark:text-gray-200">{c.title}</span>
                   <span className="text-[10px] text-gray-400 ml-2">{c.reason}</span>
-                </div>
+                </button>
                 <button
                   type="button"
                   onClick={() => onNavigate('chat', { selectedConvId: c.convId })}
-                  className="text-[10px] text-blue-600 hover:underline flex-shrink-0"
+                  className="text-[10px] text-blue-600 hover:underline flex-shrink-0 ml-2"
                 >
-                  查看
+                  对话
                 </button>
               </div>
             ))}
           </div>
         </div>
       </div>
+
+      {detailCase && (
+        <div className="fixed inset-0 z-50 flex">
+          <div className="flex-1 bg-black/40" onClick={() => setDetailCase(null)} />
+          <div className="w-full max-w-md bg-white dark:bg-gray-900 shadow-2xl p-6 overflow-y-auto">
+            <div className="flex justify-between mb-4">
+              <h3 className="text-base font-bold text-gray-900 dark:text-gray-100">差评详情</h3>
+              <button type="button" onClick={() => setDetailCase(null)}><X size={16} className="text-gray-400" /></button>
+            </div>
+            <div className="space-y-3 text-sm">
+              <p className="text-xs text-gray-500">{detailCase.kbName} · {detailCase.reason}</p>
+              {detailCase.query && <div><p className="text-xs text-gray-500">用户问题</p><p className="text-gray-800 dark:text-gray-200">{detailCase.query}</p></div>}
+              {detailCase.answer && <div><p className="text-xs text-gray-500">系统回答</p><p className="text-red-600 dark:text-red-400">{detailCase.answer}</p></div>}
+              {detailCase.feedback && <div><p className="text-xs text-gray-500">用户反馈</p><p className="text-gray-700 dark:text-gray-300 bg-amber-50 dark:bg-amber-900/20 p-2 rounded">{detailCase.feedback}</p></div>}
+            </div>
+            <div className="flex gap-2 mt-6">
+              <button type="button" onClick={() => { setDetailCase(null); onNavigate('eval-datasets'); }} className="flex-1 py-2 bg-blue-600 text-white text-sm rounded-lg">加入评测集</button>
+              <button type="button" onClick={() => { setDetailCase(null); onNavigate('chat', { selectedConvId: detailCase.convId }); }} className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-sm rounded-lg">查看对话</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

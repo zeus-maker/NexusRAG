@@ -1,4 +1,4 @@
-import { BarChart2, ListChecks, FlaskConical, Database, ThumbsUp, DollarSign, RotateCcw } from 'lucide-react';
+import { BarChart2, ListChecks, FlaskConical, Database, ThumbsUp, DollarSign, RotateCcw, Brain } from 'lucide-react';
 
 const EVAL_TABS = [
   { page: 'eval-dashboard', label: '仪表盘', icon: <BarChart2 size={14} /> },
@@ -8,6 +8,7 @@ const EVAL_TABS = [
   { page: 'eval-satisfaction', label: '用户满意度', icon: <ThumbsUp size={14} /> },
   { page: 'eval-cost', label: '成本分析', icon: <DollarSign size={14} /> },
   { page: 'eval-replay', label: '回放评测', icon: <RotateCcw size={14} /> },
+  { page: 'eval-route-learning', label: '路由学习', icon: <Brain size={14} /> },
 ];
 
 interface EvalSubNavProps {

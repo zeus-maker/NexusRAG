@@ -11,6 +11,7 @@ import { EvalDashboardPage, EvalTasksPage, ABTestPage } from './pages/Evaluation
 import { EvalDatasetPage } from './pages/EvalDataset';
 import { EvalSatisfactionPage } from './pages/EvalSatisfaction';
 import { CostCenterPage, ReplayPage } from './pages/EvalExtra';
+import { EvalRouteLearningPage } from './pages/EvalRouteLearning';
 import { UserManagePage, RoleManagePage, PipelineConfigPage, AuditLogPage, MonitorPage } from './pages/System';
 import { ClassifierPage, SecurityPage, ModelsPage, TracesPage } from './pages/SystemExtra';
 import { HomePage } from './pages/Home';
@@ -85,6 +86,8 @@ export default function App() {
         return <CostCenterPage onNavigate={navigate} />;
       case 'eval-replay':
         return <ReplayPage onNavigate={navigate} />;
+      case 'eval-route-learning':
+        return <EvalRouteLearningPage onNavigate={navigate} />;
       case 'sys-users':
         return <UserManagePage />;
       case 'sys-roles':

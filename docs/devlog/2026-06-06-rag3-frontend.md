@@ -306,3 +306,67 @@
 - `rag3-bolt-v1.5/src/pages/Evaluation.tsx`
 - `rag3-bolt-v1.5/src/pages/EvalExtra.tsx`
 - `rag3-bolt-v1.5/src/store.ts` / `App.tsx` / `Layout.tsx`
+
+---
+
+## 10. 评测中心第二轮深化（§5 / §11.3.7 / §11.5）
+
+### 背景与目标
+
+第一轮已补齐 7 Tab 与子页骨架，但仪表盘缺综合质量分与四指标趋势切换、任务页缺表格视图与失败案例抽屉、成本/回放未对齐 §11.5、路由在线学习 §11.3.7 未落地。目标在 mock 层深化交互与信息密度。
+
+**用户可见变化**：仪表盘增加运行中任务横幅、综合质量分环、快捷入口、四指标趋势多选、满意度卡片；任务页卡片/表格切换、停止运行中任务、失败案例侧栏抽屉（含引用片段与「加入数据集」）；A/B 测试分进行中/历史区、报告 Modal；数据集标签筛选与行内添加样本；满意度周期联动趋势、差评详情抽屉；成本中心预算告警与 LLM/Embedding/Rerank/Wiki 拆分；回放页历史任务表；新增「路由学习」Tab。
+
+### 改动摘要
+
+- 扩展 `evalMock.ts`：`LAYERED_EVAL`、`TREND_METRICS`、`COST_BREAKDOWN`、`BUDGET_CONFIG`、`REPLAY_TASKS`、`ROUTE_LEARNING`、`DATASET_TAGS`；失败/差评案例增加详情字段。
+- 增强 `Evaluation.tsx`、`EvalDataset.tsx`、`EvalSatisfaction.tsx`、`EvalExtra.tsx`。
+- 新增 `EvalRouteLearning.tsx`；`EvalSubNav` 扩至 8 Tab；`store`/`App`/`Layout` 注册 `eval-route-learning`。
+
+### 验证与风险
+
+- 验证：`npm run build` 通过。
+- 风险：仍为前端 mock，任务停止/样本添加刷新后重置（未持久化）。
+
+### 涉及文件
+
+- `rag3-bolt-v1.5/src/data/evalMock.ts`
+- `rag3-bolt-v1.5/src/pages/Evaluation.tsx`
+- `rag3-bolt-v1.5/src/pages/EvalDataset.tsx`
+- `rag3-bolt-v1.5/src/pages/EvalSatisfaction.tsx`
+- `rag3-bolt-v1.5/src/pages/EvalExtra.tsx`
+- `rag3-bolt-v1.5/src/pages/EvalRouteLearning.tsx`
+- `rag3-bolt-v1.5/src/components/EvalSubNav.tsx`
+- `rag3-bolt-v1.5/src/store.ts` / `App.tsx` / `Layout.tsx`
+
+---
+
+## 10. 评测中心第二轮深化（§5 / §11.3.7 / §11.5）
+
+### 背景与目标
+
+第一轮已补齐 7 Tab 与子页骨架，但仪表盘缺综合质量分与四指标趋势切换、任务页缺表格视图与失败案例抽屉、成本/回放未对齐 §11.5、路由在线学习 §11.3.7 未落地。目标在 mock 层深化交互与信息密度。
+
+**用户可见变化**：仪表盘增加运行中任务横幅、综合质量分环、快捷入口、四指标趋势多选、满意度卡片；任务页卡片/表格切换、停止运行中任务、失败案例侧栏抽屉（含引用片段与「加入数据集」）；A/B 测试分进行中/历史区、报告 Modal；数据集标签筛选与行内添加样本；满意度周期联动趋势、差评详情抽屉；成本中心预算告警与 LLM/Embedding/Rerank/Wiki 拆分；回放页历史任务表；新增「路由学习」Tab。
+
+### 改动摘要
+
+- 扩展 `evalMock.ts`：`LAYERED_EVAL`、`TREND_METRICS`、`COST_BREAKDOWN`、`BUDGET_CONFIG`、`REPLAY_TASKS`、`ROUTE_LEARNING`、`DATASET_TAGS`；失败/差评案例增加详情字段。
+- 增强 `Evaluation.tsx`、`EvalDataset.tsx`、`EvalSatisfaction.tsx`、`EvalExtra.tsx`。
+- 新增 `EvalRouteLearning.tsx`；`EvalSubNav` 扩至 8 Tab；`store`/`App`/`Layout` 注册 `eval-route-learning`。
+
+### 验证与风险
+
+- 验证：`npm run build` 通过。
+- 风险：仍为前端 mock，任务停止/样本添加刷新后重置（未持久化）。
+
+### 涉及文件
+
+- `rag3-bolt-v1.5/src/data/evalMock.ts`
+- `rag3-bolt-v1.5/src/pages/Evaluation.tsx`
+- `rag3-bolt-v1.5/src/pages/EvalDataset.tsx`
+- `rag3-bolt-v1.5/src/pages/EvalSatisfaction.tsx`
+- `rag3-bolt-v1.5/src/pages/EvalExtra.tsx`
+- `rag3-bolt-v1.5/src/pages/EvalRouteLearning.tsx`
+- `rag3-bolt-v1.5/src/components/EvalSubNav.tsx`
+- `rag3-bolt-v1.5/src/store.ts` / `App.tsx` / `Layout.tsx`

@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Plus, Upload, Search, Trash2, Edit3, Play, X, MessageSquare } from 'lucide-react';
 import { EvalSubNav } from '../components/EvalSubNav';
-import { EVAL_DATASETS, EVAL_SAMPLES, type EvalDataset, type EvalSample } from '../data/evalMock';
+import { EVAL_DATASETS, EVAL_SAMPLES, DATASET_TAGS, type EvalDataset, type EvalSample } from '../data/evalMock';
 import { mockKBs } from '../mockData';
 
 interface EvalDatasetPageProps {
@@ -13,8 +13,12 @@ export function EvalDatasetPage({ onNavigate }: EvalDatasetPageProps) {
   const [selectedId, setSelectedId] = useState('ds-001');
   const [query, setQuery] = useState('');
   const [kbFilter, setKbFilter] = useState('');
+  const [tagFilter, setTagFilter] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [showAddSample, setShowAddSample] = useState(false);
+  const [newQuestion, setNewQuestion] = useState('');
+  const [newAnswer, setNewAnswer] = useState('');
   const [newName, setNewName] = useState('');
   const [samples, setSamples] = useState(EVAL_SAMPLES);
   const [toast, setToast] = useState<string | null>(null);
@@ -24,11 +28,25 @@ export function EvalDatasetPage({ onNavigate }: EvalDatasetPageProps) {
   const filtered = useMemo(() => datasets.filter(d => {
     if (query && !d.name.includes(query)) return false;
     if (kbFilter && d.kbId !== kbFilter) return false;
+    if (tagFilter && !d.tags.includes(tagFilter)) return false;
     return true;
-  }), [datasets, query, kbFilter]);
+  }), [datasets, query, kbFilter, tagFilter]);
 
   const selected = datasets.find(d => d.id === selectedId);
   const currentSamples = samples[selectedId] ?? [];
+
+  const handleAddSample = () => {
+    if (!newQuestion.trim() || !newAnswer.trim()) { showToast('请填写问题和期望答案'); return; }
+    const existing = samples[selectedId] ?? [];
+    const nextId = Math.max(0, ...existing.map(s => s.id)) + 1;
+    const sample: EvalSample = { id: nextId, datasetId: selectedId, question: newQuestion.trim(), expectedAnswer: newAnswer.trim() };
+    setSamples(prev => ({ ...prev, [selectedId]: [...(prev[selectedId] ?? []), sample] }));
+    setDatasets(prev => prev.map(d => d.id === selectedId ? { ...d, sampleCount: d.sampleCount + 1, updatedAt: new Date().toISOString().slice(0, 10) } : d));
+    setNewQuestion('');
+    setNewAnswer('');
+    setShowAddSample(false);
+    showToast('样本已添加');
+  };
 
   const handleCreate = () => {
     if (!newName.trim()) { showToast('请输入数据集名称'); return; }
@@ -89,6 +107,12 @@ export function EvalDatasetPage({ onNavigate }: EvalDatasetPageProps) {
           <option value="">全部知识库</option>
           {mockKBs.slice(0, 5).map(kb => <option key={kb.kb_id} value={kb.kb_id}>{kb.name}</option>)}
         </select>
+        <div className="flex gap-1 flex-wrap">
+          <button type="button" onClick={() => setTagFilter('')} className={`text-[10px] px-2 py-1 rounded-lg border ${!tagFilter ? 'border-blue-400 bg-blue-50 dark:bg-blue-900/20 text-blue-700' : 'border-gray-200 dark:border-gray-700 text-gray-500'}`}>全部</button>
+          {DATASET_TAGS.map(t => (
+            <button key={t} type="button" onClick={() => setTagFilter(tagFilter === t ? '' : t)} className={`text-[10px] px-2 py-1 rounded-lg border ${tagFilter === t ? 'border-blue-400 bg-blue-50 dark:bg-blue-900/20 text-blue-700' : 'border-gray-200 dark:border-gray-700 text-gray-500'}`}>{t}</button>
+          ))}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 flex-1 min-h-0">
@@ -139,7 +163,7 @@ export function EvalDatasetPage({ onNavigate }: EvalDatasetPageProps) {
               <button type="button" onClick={() => showToast('从对话采样（占位）')} className="text-[10px] px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-lg flex items-center gap-1 text-gray-600 dark:text-gray-400">
                 <MessageSquare size={10} /> 从对话采样
               </button>
-              <button type="button" onClick={() => showToast('添加样本（占位）')} className="text-[10px] px-2 py-1 bg-blue-600 text-white rounded-lg flex items-center gap-1">
+              <button type="button" onClick={() => setShowAddSample(true)} className="text-[10px] px-2 py-1 bg-blue-600 text-white rounded-lg flex items-center gap-1">
                 <Plus size={10} /> 添加样本
               </button>
             </div>
@@ -175,6 +199,19 @@ export function EvalDatasetPage({ onNavigate }: EvalDatasetPageProps) {
           <div className="flex justify-end gap-2">
             <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg">取消</button>
             <button type="button" onClick={handleCreate} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg">创建</button>
+          </div>
+        </Modal>
+      )}
+
+      {showAddSample && (
+        <Modal title="添加样本" onClose={() => setShowAddSample(false)}>
+          <label className="text-xs text-gray-600 dark:text-gray-400 block mb-1">问题</label>
+          <input value={newQuestion} onChange={e => setNewQuestion(e.target.value)} placeholder="用户可能提出的问题" className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 mb-3" />
+          <label className="text-xs text-gray-600 dark:text-gray-400 block mb-1">期望答案</label>
+          <textarea value={newAnswer} onChange={e => setNewAnswer(e.target.value)} rows={3} placeholder="黄金标准答案" className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 mb-4" />
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setShowAddSample(false)} className="px-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg">取消</button>
+            <button type="button" onClick={handleAddSample} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg">添加</button>
           </div>
         </Modal>
       )}

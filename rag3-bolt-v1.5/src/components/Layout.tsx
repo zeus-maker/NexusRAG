@@ -47,7 +47,7 @@ const KB_PAGES = [
   'kb-retrieval-test', 'kb-wiki', 'kb-pageindex-tree', 'kb-wiki-manage', 'kb-pageindex-manage',
   ...HUB_PAGES,
 ];
-const EVAL_PAGES = ['eval-dashboard', 'eval-tasks', 'eval-ab-test', 'eval-datasets', 'eval-satisfaction', 'eval-cost', 'eval-replay'];
+const EVAL_PAGES = ['eval-dashboard', 'eval-tasks', 'eval-ab-test', 'eval-datasets', 'eval-satisfaction', 'eval-cost', 'eval-replay', 'eval-route-learning'];
 
 const hubItems = [
   { key: 'wiki-hub', label: 'Wiki Hub', icon: <BookOpen size={15} />, page: 'wiki-hub' },
@@ -206,6 +206,7 @@ const breadcrumbMap: Record<string, string[]> = {
   'eval-satisfaction': ['评测中心', '用户满意度'],
   'eval-cost': ['评测中心', '成本分析'],
   'eval-replay': ['评测中心', '回放评测'],
+  'eval-route-learning': ['评测中心', '路由学习'],
   'sys-users': ['系统管理', '用户管理'],
   'sys-roles': ['系统管理', '角色权限'],
   'sys-pipeline': ['系统管理', '流水线配置'],

@@ -27,6 +27,7 @@ type Page =
   | 'eval-satisfaction'
   | 'eval-cost'
   | 'eval-replay'
+  | 'eval-route-learning'
   | 'sys-users'
   | 'sys-roles'
   | 'sys-pipeline'

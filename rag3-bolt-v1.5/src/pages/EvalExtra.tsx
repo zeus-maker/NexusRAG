@@ -3,9 +3,10 @@ import {
   DollarSign, BarChart2, TrendingUp, Clock, Filter, Download,
   Play, Pause, RefreshCw, CheckCircle, XCircle, AlertCircle,
   ChevronDown, ChevronRight, Database, Zap, Users, FileText,
-  Activity, Plus, ArrowRight, MessageSquare
+  Activity, Plus, ArrowRight, MessageSquare, Loader
 } from 'lucide-react';
 import { EvalSubNav } from '../components/EvalSubNav';
+import { COST_BREAKDOWN, BUDGET_CONFIG, REPLAY_TASKS } from '../data/evalMock';
 
 // ─── Cost Center ───────────────────────────────────────────────────────────────
 
@@ -77,18 +78,38 @@ export function CostCenterPage({ onNavigate }: EvalExtraPageProps) {
         </div>
       </div>
 
+      {BUDGET_CONFIG.used / BUDGET_CONFIG.total >= 0.65 && (
+        <div className={`p-3 rounded-xl border flex items-center justify-between ${BUDGET_CONFIG.used / BUDGET_CONFIG.total >= 0.85 ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800' : 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800'}`}>
+          <div className="flex items-center gap-2 text-sm">
+            <AlertCircle size={16} className={BUDGET_CONFIG.used / BUDGET_CONFIG.total >= 0.85 ? 'text-red-600' : 'text-amber-600'} />
+            <span className="text-gray-800 dark:text-gray-200">月度预算已用 <strong>{((BUDGET_CONFIG.used / BUDGET_CONFIG.total) * 100).toFixed(0)}%</strong>（{BUDGET_CONFIG.currency}{BUDGET_CONFIG.used}/{BUDGET_CONFIG.total}）</span>
+          </div>
+          <button type="button" className="text-xs text-blue-600 hover:underline">调整预算</button>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {COST_BREAKDOWN.map(c => (
+          <div key={c.label} className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
+            <span className="text-lg">{c.icon}</span>
+            <div className="text-xl font-bold text-gray-900 dark:text-gray-100 mt-1">{BUDGET_CONFIG.currency}{c.amount}</div>
+            <div className="text-xs text-gray-600 dark:text-gray-400">{c.label}</div>
+          </div>
+        ))}
+      </div>
+
       {/* Summary cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: '总 Token 消耗', value: (totalTokens / 1_000_000).toFixed(1) + 'M', icon: <Database size={15} className="text-blue-500" />, bg: 'bg-blue-50', sub: '本月累计' },
-          { label: '预估总费用', value: '$' + (totalCost + COST_BY_MODEL[2].cost + COST_BY_MODEL[0].cost - COST_BY_KB.reduce((s, k) => s + k.cost, 0) + 36.5).toFixed(2), icon: <DollarSign size={15} className="text-green-500" />, bg: 'bg-green-50', sub: '含模型API费用' },
-          { label: '总查询数', value: COST_BY_KB.reduce((s, k) => s + k.queries, 0).toLocaleString(), icon: <MessageSquare size={15} className="text-purple-500" />, bg: 'bg-purple-50', sub: '本月' },
-          { label: '平均每查询成本', value: '$0.0012', icon: <TrendingUp size={15} className="text-orange-500" />, bg: 'bg-orange-50', sub: '较上月 -8%' },
+          { label: '总 Token 消耗', value: (totalTokens / 1_000_000).toFixed(1) + 'M', icon: <Database size={15} className="text-blue-500" />, bg: 'bg-blue-50 dark:bg-blue-900/20', sub: '本月累计' },
+          { label: '预估总费用', value: BUDGET_CONFIG.currency + BUDGET_CONFIG.used, icon: <DollarSign size={15} className="text-green-500" />, bg: 'bg-green-50 dark:bg-green-900/20', sub: '含模型API费用' },
+          { label: '总查询数', value: COST_BY_KB.reduce((s, k) => s + k.queries, 0).toLocaleString(), icon: <MessageSquare size={15} className="text-purple-500" />, bg: 'bg-purple-50 dark:bg-purple-900/20', sub: '本月' },
+          { label: '平均每查询成本', value: '¥0.008', icon: <TrendingUp size={15} className="text-orange-500" />, bg: 'bg-orange-50 dark:bg-orange-900/20', sub: '较上月 -8%' },
         ].map((s, i) => (
-          <div key={i} className="bg-white rounded-xl border border-gray-200 p-4">
+          <div key={i} className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
             <div className={`${s.bg} w-8 h-8 rounded-lg flex items-center justify-center mb-2`}>{s.icon}</div>
-            <div className="text-xl font-bold text-gray-900">{s.value}</div>
-            <div className="text-xs font-medium text-gray-600 mt-0.5">{s.label}</div>
+            <div className="text-xl font-bold text-gray-900 dark:text-gray-100">{s.value}</div>
+            <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mt-0.5">{s.label}</div>
             <div className="text-[10px] text-gray-400">{s.sub}</div>
           </div>
         ))}
@@ -297,10 +318,56 @@ export function ReplayPage({ onNavigate }: EvalExtraPageProps) {
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">从生产查询中抽样，离线回放对比两个版本</p>
         </div>
         {step === 'result' && (
-          <button onClick={() => setStep('sample')} className="text-xs px-3 py-1.5 border border-gray-200 rounded-lg hover:bg-gray-50">
+          <button onClick={() => setStep('sample')} className="text-xs px-3 py-1.5 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800">
             新建回放
           </button>
         )}
+      </div>
+
+      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center">
+          <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">历史回放任务</h3>
+          <span className="text-[10px] text-gray-400">GET /api/v1/eval/replay/tasks</span>
+        </div>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs text-gray-500 border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50">
+              <th className="px-4 py-2">任务</th>
+              <th className="px-4 py-2">状态</th>
+              <th className="px-4 py-2">样本</th>
+              <th className="px-4 py-2">在线 F</th>
+              <th className="px-4 py-2">回放 F</th>
+              <th className="px-4 py-2">Δ</th>
+            </tr>
+          </thead>
+          <tbody>
+            {REPLAY_TASKS.map(t => (
+              <tr key={t.id} className="border-b border-gray-50 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                <td className="px-4 py-2.5">
+                  <p className="text-xs font-medium text-gray-900 dark:text-gray-100">{t.name}</p>
+                  <p className="text-[10px] text-gray-400">{t.dateRange}</p>
+                </td>
+                <td className="px-4 py-2.5">
+                  {t.status === 'running' ? (
+                    <span className="text-[10px] text-blue-600 flex items-center gap-1"><Loader size={10} className="animate-spin" /> {t.progress}%</span>
+                  ) : t.status === 'completed' ? (
+                    <span className="text-[10px] text-green-600">完成</span>
+                  ) : (
+                    <span className="text-[10px] text-red-600">失败</span>
+                  )}
+                </td>
+                <td className="px-4 py-2.5 text-xs">{t.sampleCount}</td>
+                <td className="px-4 py-2.5 text-xs">{t.onlineF.toFixed(2)}</td>
+                <td className="px-4 py-2.5 text-xs">{t.replayF.toFixed(2)}</td>
+                <td className="px-4 py-2.5">
+                  <span className={`text-xs font-medium ${t.delta >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {t.delta >= 0 ? '+' : ''}{t.delta.toFixed(2)}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
       {/* Steps indicator */}
