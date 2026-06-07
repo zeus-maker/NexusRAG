@@ -5,7 +5,8 @@ import { KBListPage, KBDetailPage, DocumentPage, ChunkPreviewPage, IndexStatusPa
 import { KBRecycleBinPage } from './pages/KBRecycleBin';
 import { KBSettingsPage, RetrievalTestPage, WikiPage, PageIndexTreePage, WikiManagePage, PageIndexManagePage } from './pages/KBExtra';
 import { ChatPage } from './pages/Chat';
-import { SearchPage, AgentPage } from './pages/SearchAgent';
+import { SearchPage } from './pages/Search';
+import { AgentPage } from './pages/SearchAgent';
 import { EvalDashboardPage, EvalTasksPage, ABTestPage } from './pages/Evaluation';
 import { CostCenterPage, ReplayPage } from './pages/EvalExtra';
 import { UserManagePage, RoleManagePage, PipelineConfigPage, AuditLogPage, MonitorPage } from './pages/System';

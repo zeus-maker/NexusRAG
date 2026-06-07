@@ -199,3 +199,38 @@
 - `rag3-bolt-v1.5/src/pages/Chat.tsx` — 对话主界面
 - `rag3-bolt-v1.5/src/components/ChatSettingsPanel.tsx` — 对话设置侧栏
 - `rag3-bolt-v1.5/src/data/chatMock.ts` — 对话 mock 与 Trace 数据
+
+---
+
+## 7. 搜索应用功能增强（§10.6）
+
+### 背景与目标
+
+原搜索页仅有简单列表与单栏结果展示，缺 PRD §10.6 要求的搜索历史侧栏、四 Tab 结果面板（搜索结果 / AI 摘要 / 相关搜索 / 思维导图）、设置侧栏与列表筛选排序。目标对齐 RAGFlow `/searches` 体验。
+
+**用户可见变化**：列表可搜索/排序，卡片含 [打开][设置]；主界面左侧历史（今天/昨天/更早）可复用与删除；顶栏 ⚙ 设置侧栏含阈值、Rerank、图谱、元数据过滤、跨语言；结果带星级评分、关键词高亮、复制与查看原文；四 Tab 分轨展示摘要/相关搜索/Mindmap。
+
+### 改动摘要
+
+- 新增 `SearchSettingsPanel`：关联 KB、检索参数、功能开关、MetadataFilter 构建器、跨语言。
+- 新增 `data/searchMock.ts`：应用列表、搜索历史、结果、摘要、Mindmap 节点。
+- 新建 `pages/Search.tsx` 并从 `SearchAgent.tsx` 拆出；`App.tsx` 改 import。
+- 列表支持创建应用（校验名称）；设置与 Top-K/阈值联动过滤 mock 结果。
+
+### 验证与风险
+
+- 验证：`npm run build` 通过；侧栏「搜索应用」→ 打开「合同条款快速检索」→ 搜索「违约金」→ 四 Tab 切换；⚙ 关闭 AI 摘要后 Tab 隐藏；历史点击复用 query。
+- 风险：历史/设置为内存 state，刷新重置；语音按钮占位；查看原文跳转固定 kbId。
+
+### 反思与沉淀
+
+- 与 Chat 共用「列表 + 三栏 + 设置侧栏」模式，降低认知成本；mock 数据独立文件便于对接 `POST /search-apps/{id}/query`。
+- Search 与 Agent 拆文件避免 `SearchAgent.tsx` 超 500 行。
+
+### 涉及文件
+
+- `rag3-bolt-v1.5/src/pages/Search.tsx` — 搜索应用主界面
+- `rag3-bolt-v1.5/src/components/SearchSettingsPanel.tsx` — 搜索设置侧栏
+- `rag3-bolt-v1.5/src/data/searchMock.ts` — 搜索 mock 数据
+- `rag3-bolt-v1.5/src/pages/SearchAgent.tsx` — 仅保留 Agent 页
+- `rag3-bolt-v1.5/src/App.tsx` — 路由 import 调整
