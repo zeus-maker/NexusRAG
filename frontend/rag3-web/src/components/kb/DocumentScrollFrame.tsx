@@ -9,9 +9,11 @@ interface Props {
 export function DocumentScrollFrame({ children, className = '' }: Props) {
   return (
     <div
-      className={`flex flex-col h-full min-h-0 overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/40 dark:bg-gray-900/20 ${className}`}
+      className={`flex flex-col h-full min-h-0 max-h-full overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/40 dark:bg-gray-900/20 ${className}`}
     >
-      {children}
+      <div className="flex-1 min-h-0 max-h-full overflow-hidden flex flex-col">
+        {children}
+      </div>
     </div>
   );
 }

@@ -1200,3 +1200,36 @@ P0 最后一项：检索测试页需从单通道混合结果升级为 PRD §10.5
 - `frontend/rag3-web/src/components/kb/PdfPreviewWithHighlights.tsx`
 - `frontend/rag3-web/src/components/kb/KnowledgeChunkWorkspace.tsx`
 - `frontend/rag3-web/src/pages/KnowledgeBase.tsx`
+
+---
+
+## 41. PDF 单页预览修复铺开、锚点定位与切文档错位
+
+### 背景与目标
+
+用户反馈 §40 虚拟列表后仍出现三类问题：PDF 视觉上仍像整本铺开、点击分块后左侧高亮/翻页定位失效、切换文档时分块列表与 PDF 预览短暂错配。目标改为**单页渲染**（DOM 仅一张 canvas）、分块锚点可靠翻页并滚入视口，且切文档时不再展示上一文档的分块数据。
+
+### 改动摘要
+
+- `PdfPreviewWithHighlights`：放弃虚拟列表 spacer，改为顶栏翻页 + 仅渲染当前页；`useLayoutEffect` 在绘制前同步跳页，避免高亮与页码错帧；页内高亮按 scale=1 viewport 比例缩放；渲染完成后 `scrollTo` 将高亮区滚入容器视口。
+- `KnowledgeChunkWorkspace`：`key={docId:previewUrl}` 强制 PDF 重挂载；`loading` 期间清空分块列表与高亮，避免旧文档 chunks 与新 PDF 并存；`selectedChunk` 仅在加载完成且 id 命中时取值。
+- `useAsyncData`：依赖变更时先将 `data` 重置为 `fallback`，切断跨文档/跨页陈旧缓存。
+- `buildChunkHighlightRects`：页码 `<=0` 时 +1，对齐后端 `extract_pdf_positions` 归一化。
+
+### 验证与风险
+
+- 验证：`cd frontend/rag3-web && npm run build` 通过。
+- 手动：文档管理 → 解析预览 / 分块页 → 多页 PDF 左栏高度固定、仅见当前页；点不同分块应翻页并出现琥珀色高亮框；快速切换文档应短暂 loading、不应出现 A 文档分块 + B 文档 PDF。
+- 风险：极宽/极高单页在窄屏下仍需容器内纵向滚动；与 RAGFlow `react-pdf-highlighter` 全页滚动体验不同，但避免撑破布局。
+
+### 反思与沉淀
+
+虚拟列表适合「连续阅读」，分块锚点场景更需要「当前页 + 坐标叠加」——视口外页未挂载时 `scrollTo` 与高亮层均失效。切文档错位本质是 **async 数据未在 refetch 起点清空** 的典型竞态，应在 hook 层统一 reset，而非每个消费组件各自兜底。
+
+### 涉及文件
+
+- `frontend/rag3-web/src/components/kb/PdfPreviewWithHighlights.tsx` — 单页渲染与锚点滚动
+- `frontend/rag3-web/src/components/kb/KnowledgeChunkWorkspace.tsx` — 预览 key、blob 生命周期、loading 门禁
+- `frontend/rag3-web/src/components/kb/DocumentScrollFrame.tsx` — 高度链 `max-h-full`
+- `frontend/rag3-web/src/hooks/useKbData.ts` — refetch 时清空陈旧 data
+- `frontend/rag3-web/src/utils/documentUtil.ts` — 页码归一化

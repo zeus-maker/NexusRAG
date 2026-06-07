@@ -35,6 +35,7 @@ function useAsyncData<T>(
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setData(fallback);
 
     fetcher()
       .then(result => {

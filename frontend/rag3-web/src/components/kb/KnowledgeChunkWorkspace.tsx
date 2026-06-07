@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronRight, Download, FileText } from 'lucide-react';
 import type { Chunk, Document } from '../../types';
 import { useChunks, setKbChunkAvailability } from '../../hooks/useKbData';
@@ -45,6 +45,7 @@ export function KnowledgeChunkWorkspace({
   const [downloading, setDownloading] = useState(false);
   const [chunkActionId, setChunkActionId] = useState<string | null>(null);
   const [lightbox, setLightbox] = useState<{ imageId: string; title: string } | null>(null);
+  const previewUrlRef = useRef<string | null>(null);
 
   const { data: chunkResult, loading, refresh: refreshChunks } = useChunks(kbId, doc.doc_id, {
     page: chunkPage,
@@ -56,37 +57,61 @@ export function KnowledgeChunkWorkspace({
 
   useEffect(() => {
     setSelectedChunkId(null);
-    setPreviewUrl(null);
     setChunkPage(1);
+    setPreviewUrl(null);
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current);
+      previewUrlRef.current = null;
+    }
   }, [doc.doc_id]);
 
   useEffect(() => {
-    if (chunkResult.items.length && !selectedChunkId) {
+    if (loading) return;
+    if (!selectedChunkId && chunkResult.items.length > 0) {
       setSelectedChunkId(chunkResult.items[0].chunk_id);
     }
-  }, [chunkResult.items, selectedChunkId]);
+  }, [chunkResult.items, selectedChunkId, loading, doc.doc_id]);
 
   useEffect(() => {
-    let revoked: string | null = null;
+    let cancelled = false;
+
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current);
+      previewUrlRef.current = null;
+    }
     setPreviewUrl(null);
+
     kbApi.fetchDocumentPreview(doc.doc_id)
       .then(blob => {
+        if (cancelled) return;
         const url = URL.createObjectURL(blob);
-        revoked = url;
+        previewUrlRef.current = url;
         setPreviewUrl(url);
       })
-      .catch(() => setPreviewUrl(null));
+      .catch(() => {
+        if (!cancelled) setPreviewUrl(null);
+      });
+
     return () => {
-      if (revoked) URL.revokeObjectURL(revoked);
+      cancelled = true;
+      if (previewUrlRef.current) {
+        URL.revokeObjectURL(previewUrlRef.current);
+        previewUrlRef.current = null;
+      }
     };
   }, [doc.doc_id]);
 
-  const selectedChunk = chunkResult.items.find(c => c.chunk_id === selectedChunkId)
-    ?? chunkResult.items[0];
+  const chunkItems = loading ? [] : chunkResult.items;
+  const chunkTotal = loading ? 0 : chunkResult.total;
+
+  const selectedChunk =
+    !loading && selectedChunkId
+      ? chunkResult.items.find(c => c.chunk_id === selectedChunkId)
+      : undefined;
 
   const highlights = useMemo(
-    () => buildChunkHighlightRects(selectedChunk),
-    [selectedChunk],
+    () => (selectedChunk ? buildChunkHighlightRects(selectedChunk) : []),
+    [selectedChunk?.chunk_id, selectedChunk?.positions],
   );
 
   const handleDownload = async () => {
@@ -125,11 +150,11 @@ export function KnowledgeChunkWorkspace({
     chunkActionId: actions?.chunkActionId ?? chunkActionId,
   };
 
-  const totalPages = Math.max(1, Math.ceil(chunkResult.total / pageSize));
+  const totalPages = Math.max(1, Math.ceil(chunkTotal / pageSize));
 
   /** 左侧：文档预览（对齐 RAGFlow w-2/5） */
   const documentPreviewPane = (
-    <article className="flex flex-col min-w-0 min-h-0 flex-[2] lg:flex-[2] border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-700 bg-gray-50/30 dark:bg-gray-900/20">
+    <article className="flex flex-col min-w-0 h-full min-h-0 max-h-full overflow-hidden flex-[2] lg:flex-[2] border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-700 bg-gray-50/30 dark:bg-gray-900/20">
       <header className="flex-shrink-0 px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
@@ -156,6 +181,7 @@ export function KnowledgeChunkWorkspace({
           <DocumentScrollFrame className="flex-1 min-h-0 h-full">
             {isPdf ? (
               <PdfPreviewWithHighlights
+                key={`${doc.doc_id}:${previewUrl}`}
                 url={previewUrl}
                 highlights={highlights}
                 className="h-full min-h-0"
@@ -175,16 +201,16 @@ export function KnowledgeChunkWorkspace({
       <header className="flex-shrink-0 px-4 py-3 border-b border-gray-200 dark:border-gray-700">
         <h2 className="text-sm font-bold text-gray-900 dark:text-gray-100">分块结果</h2>
         <p className="text-[10px] text-gray-500 mt-0.5">
-          共 {chunkResult.total} 块 · 点击分块，左侧 PDF 同步高亮定位
+          共 {chunkTotal} 块 · 点击分块，左侧 PDF 同步高亮定位
         </p>
       </header>
 
       <div className="flex-1 overflow-y-auto p-3 min-h-0 space-y-3">
         {loading && <p className="text-xs text-gray-500 p-2">加载中…</p>}
-        {!loading && chunkResult.items.length === 0 && (
+        {!loading && chunkItems.length === 0 && (
           <p className="text-xs text-gray-500 p-2">暂无分块</p>
         )}
-        {chunkResult.items.map((chunk, index) => (
+        {chunkItems.map((chunk, index) => (
           <div key={chunk.chunk_id}>
             <ChunkListCard
               chunk={chunk}
@@ -192,7 +218,7 @@ export function KnowledgeChunkWorkspace({
               selected={selectedChunk?.chunk_id === chunk.chunk_id}
               showActions={showChunkActions}
               actions={mergedActions}
-              totalInPage={chunkResult.items.length}
+              totalInPage={chunkItems.length}
               onSelect={() => setSelectedChunkId(chunk.chunk_id)}
               onImageZoom={(imageId, title) => setLightbox({ imageId, title })}
             />
@@ -223,7 +249,7 @@ export function KnowledgeChunkWorkspace({
         ))}
       </div>
 
-      {pageSize < chunkResult.total && (
+      {pageSize < chunkTotal && (
         <div className="flex-shrink-0 p-3 border-t border-gray-100 dark:border-gray-800 flex items-center justify-center gap-2 text-xs text-gray-500">
           <button type="button" disabled={chunkPage <= 1} onClick={() => setChunkPage(p => p - 1)} className="px-2 py-0.5 border rounded disabled:opacity-40">上一页</button>
           <span>{chunkPage}/{totalPages}</span>
@@ -264,7 +290,7 @@ export function KnowledgeChunkWorkspace({
   }
 
   return (
-    <div className="flex flex-1 min-h-0 flex-col lg:flex-row">
+    <div className="flex flex-1 min-h-0 h-full max-h-full overflow-hidden flex-col lg:flex-row">
       {documentPreviewPane}
       {chunkResultPane}
       {lightboxModal}

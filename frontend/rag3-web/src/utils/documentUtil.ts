@@ -16,13 +16,18 @@ export function buildChunkHighlightRects(
   if (!positions?.length || !positions.every(p => Array.isArray(p) && p.length >= 5)) {
     return [];
   }
-  return positions.map(pos => ({
-    pageNumber: Number(pos[0]) || 1,
-    x1: Number(pos[1]),
-    x2: Number(pos[2]),
-    y1: Number(pos[3]),
-    y2: Number(pos[4]),
-  })).filter(r => r.x2 > r.x1 && r.y2 > r.y1);
+  return positions.map(pos => {
+    let pageNumber = Number(pos[0]);
+    if (!Number.isFinite(pageNumber)) pageNumber = 1;
+    if (pageNumber <= 0) pageNumber += 1;
+    return {
+      pageNumber,
+      x1: Number(pos[1]),
+      x2: Number(pos[2]),
+      y1: Number(pos[3]),
+      y2: Number(pos[4]),
+    };
+  }).filter(r => r.x2 > r.x1 && r.y2 > r.y1);
 }
 
 export function isPdfFileName(name: string): boolean {
