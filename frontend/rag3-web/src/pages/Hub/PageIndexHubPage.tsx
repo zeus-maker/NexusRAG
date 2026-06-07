@@ -11,14 +11,16 @@ import { HubBadge, HubStatCard, hubCard, hubInput, hubSelect, BtnPrimary, BtnSec
 import { usePageIndexHubData } from '../../hooks/useEnhancementHubData';
 import { PageIndexHubContext, usePageIndexHubContext } from './pageIndexHubContext';
 import {
-  PAGEINDEX_STATS, PAGEINDEX_DOCUMENTS, PAGEINDEX_TREE_V5, PAGEINDEX_DEFAULT_SETTINGS,
+  PAGEINDEX_STATS, PAGEINDEX_DEFAULT_SETTINGS,
   PAGEINDEX_BUILD_QUEUE, PAGEINDEX_PIPELINE_STEPS, PAGEINDEX_ANALYTICS, BUILD_STAGE_LABEL,
-  getPageIndexActiveBuildJobs, getPageIndexDoc, getPageIndexTree, findTreeNode,
-  getNodePreviewBbox, runMockTreeSearch, runMockLibrarySearch,
+  getPageIndexActiveBuildJobs,
+  getNodePreviewBbox,
   type PageIndexDocument, type PageIndexDocStatus, type PageIndexTreeNode,
   type PageIndexSearchResult, type PageIndexSearchMode, type PageIndexLibrarySearchResult,
   type PageIndexBbox,
 } from '../../data/pageIndexMock';
+import { findTreeNode, findTreeNodeAncestorIds } from '../../utils/pageIndexTreeUtils';
+import { openPageIndexChatTest } from '../../utils/pageIndexChatPrefill';
 
 interface PageIndexHubPageProps {
   kbId?: string;
@@ -51,9 +53,25 @@ export default function PageIndexHubPage({ kbId, onNavigate }: PageIndexHubPageP
   const [debugDocId, setDebugDocId] = useState<string | null>(null);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
-  const activeBuildJobs = getPageIndexActiveBuildJobs();
-  const buildingCount = activeBuildJobs.filter(j => j.stage !== 'queued').length;
-  const queueActive = activeBuildJobs.length;
+  const mockBuildJobs = getPageIndexActiveBuildJobs();
+  const apiBuildJobs = hub.isApiMode && hub.trace?.running
+    ? hub.documents
+        .filter(d => d.treeStatus === 'building')
+        .map(d => ({
+          docId: d.id,
+          name: d.name,
+          progress: Math.round((hub.trace?.progress ?? 0) * 100),
+          stepLabel: (hub.trace?.progress_msg ?? '').split('\n').filter(Boolean).pop() ?? '建树进行中',
+          stage: 'building' as const,
+        }))
+    : [];
+  const activeBuildJobs = hub.isApiMode ? apiBuildJobs : mockBuildJobs.filter(j => j.stage !== 'queued');
+  const buildingCount = hub.isApiMode
+    ? (hub.stats.building || (hub.trace?.running ? 1 : 0))
+    : mockBuildJobs.filter(j => j.stage !== 'queued').length;
+  const queueActive = hub.isApiMode
+    ? hub.documents.filter(d => d.treeStatus === 'building' || d.treeStatus === 'pending').length
+    : mockBuildJobs.length;
 
   const tabs = [
     '概览',
@@ -108,7 +126,12 @@ export default function PageIndexHubPage({ kbId, onNavigate }: PageIndexHubPageP
         activeTab={activeTab}
         onTabChange={setActiveTab}
       >
-        {activeTab === 0 && <OverviewTab onViewDoc={id => openDocDetail(id)} onRetry={() => showToast('重试中…')} />}
+        {activeTab === 0 && (
+          <OverviewTab
+            onViewDoc={id => openDocDetail(id)}
+            onRetry={() => void hub.runBuild().then(() => showToast(hub.isApiMode ? '已提交重建' : '重试中…'))}
+          />
+        )}
         {activeTab === 1 && (
           <DocumentsTab
             onViewTree={id => openDocDetail(id)}
@@ -119,12 +142,14 @@ export default function PageIndexHubPage({ kbId, onNavigate }: PageIndexHubPageP
         {activeTab === 2 && <BuildQueueTab showToast={showToast} onViewDoc={id => openDocDetail(id)} />}
         {activeTab === 3 && (
           <LibrarySearchTab
+            kbId={kbId || kb.kb_id}
             showToast={showToast}
+            onNavigate={onNavigate}
             onOpenDoc={(docId, debug) => openDocDetail(docId, debug)}
           />
         )}
         {activeTab === 4 && <SettingsTab showToast={showToast} />}
-        {activeTab === 5 && <StatsTab />}
+        {activeTab === 5 && <StatsTab isApiMode={hub.isApiMode} />}
       </HubPageShell>
       </PageIndexHubContext.Provider>
     </HubKBLayout>
@@ -134,29 +159,52 @@ export default function PageIndexHubPage({ kbId, onNavigate }: PageIndexHubPageP
 function OverviewTab({ onViewDoc, onRetry }: { onViewDoc: (id: string) => void; onRetry: () => void }) {
   const hub = usePageIndexHubContext();
   const stats = hub.stats;
-  const maxWeekly = Math.max(...stats.weeklyBuilds);
-  const activeJobs = getPageIndexActiveBuildJobs().filter(j => j.stage !== 'queued');
+  const maxWeekly = Math.max(...(stats.weeklyBuilds.length ? stats.weeklyBuilds : [1]));
+  const activeJobs = hub.isApiMode
+    ? hub.documents.filter(d => d.treeStatus === 'building').map(d => ({
+        docId: d.id,
+        name: d.name,
+        progress: d.buildProgress ?? Math.round((hub.trace?.progress ?? 0) * 100),
+        stepLabel: (hub.trace?.progress_msg ?? '').split('\n').filter(Boolean).pop() ?? '建树进行中',
+        stage: 'building' as const,
+      }))
+    : getPageIndexActiveBuildJobs().filter(j => j.stage !== 'queued');
+  const recentFails = hub.isApiMode
+    ? hub.documents.filter(d => d.treeStatus === 'failed').slice(0, 5).map(d => ({
+        docId: d.id,
+        name: d.name,
+        reason: d.failReason ?? '建树失败',
+        time: d.updated,
+      }))
+    : PAGEINDEX_STATS.recentFails;
+  const progressRate = hub.isApiMode ? stats.buildRate : PAGEINDEX_STATS.buildRate;
+  const progressCompleted = hub.isApiMode ? stats.completed : PAGEINDEX_STATS.completed;
+  const progressTotal = hub.isApiMode ? stats.total : PAGEINDEX_STATS.total;
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <HubStatCard label="已建树" value={`${stats.completed}/${stats.total}`} icon={<CheckCircle size={18} className="text-green-500" />} />
         <HubStatCard label="建树率" value={`${stats.buildRate}%`} icon={<GitBranch size={18} className="text-cyan-600" />} />
-        <HubStatCard label="平均深度" value={`${stats.avgDepth} 层`} icon={<Layers size={18} className="text-blue-500" />} />
+        <HubStatCard label="总节点" value={hub.isApiMode ? String(stats.totalNodes || '—') : `${stats.avgDepth} 层`} icon={<Layers size={18} className="text-blue-500" />} />
         <HubStatCard label="失败文档" value={String(stats.failed)} icon={<AlertCircle size={18} className="text-red-500" />} />
       </div>
 
       <div className={`${hubCard} p-4`}>
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">建树进度</h3>
-          <span className="text-[10px] text-gray-400">总节点 {PAGEINDEX_STATS.totalNodes.toLocaleString()} · 平均搜索 {PAGEINDEX_STATS.avgSearchMs}ms</span>
+          <span className="text-[10px] text-gray-400">
+            {hub.isApiMode
+              ? `总节点 ${(stats.totalNodes || 0).toLocaleString()} · API 实时`
+              : `总节点 ${PAGEINDEX_STATS.totalNodes.toLocaleString()} · 平均搜索 ${PAGEINDEX_STATS.avgSearchMs}ms`}
+          </span>
         </div>
         <div className="w-full h-3 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden mb-2">
-          <div className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-green-500" style={{ width: `${PAGEINDEX_STATS.buildRate}%` }} />
+          <div className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-green-500" style={{ width: `${progressRate}%` }} />
         </div>
         <div className="flex justify-between text-xs text-gray-500">
-          <span>{PAGEINDEX_STATS.completed}/{PAGEINDEX_STATS.total} 文档已完成</span>
-          <span>{PAGEINDEX_STATS.buildRate}%</span>
+          <span>{progressCompleted}/{progressTotal} 文档已完成</span>
+          <span>{progressRate}%</span>
         </div>
       </div>
 
@@ -191,7 +239,7 @@ function OverviewTab({ onViewDoc, onRetry }: { onViewDoc: (id: string) => void; 
             <AlertCircle size={14} className="text-red-500" /> 最近失败
           </h3>
           <div className="space-y-2">
-            {PAGEINDEX_STATS.recentFails.map(f => (
+            {recentFails.map(f => (
               <div key={f.docId} className="flex items-center justify-between gap-2 text-xs py-2 border-b border-gray-50 dark:border-gray-800 last:border-0">
                 <div>
                   <p className="font-medium text-gray-800 dark:text-gray-200">{f.name}</p>
@@ -207,9 +255,11 @@ function OverviewTab({ onViewDoc, onRetry }: { onViewDoc: (id: string) => void; 
         </div>
 
         <div className={`${hubCard} p-4`}>
-          <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-3">失败原因分布</h3>
+          <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-3">
+            失败原因分布{hub.isApiMode ? '（演示）' : ''}
+          </h3>
           <div className="space-y-2">
-            {PAGEINDEX_STATS.failDist.map(item => (
+            {(hub.isApiMode ? PAGEINDEX_STATS.failDist.slice(0, 1) : PAGEINDEX_STATS.failDist).map(item => (
               <div key={item.reason} className="flex items-center gap-3">
                 <span className="flex-1 text-xs text-gray-600 dark:text-gray-400">{item.reason}</span>
                 <span className="text-xs text-gray-500 w-4 text-right">{item.count}</span>
@@ -227,13 +277,13 @@ function OverviewTab({ onViewDoc, onRetry }: { onViewDoc: (id: string) => void; 
           <div className="flex-1 min-w-[200px]">
             <p className="text-xs font-semibold text-cyan-800 dark:text-cyan-300 mb-1">Vectorless Reasoning-based RAG</p>
             <p className="text-xs text-gray-600 dark:text-gray-400 leading-relaxed">
-              长文档不经分块向量化，LLM 在 JSON 树索引上做 In-Context 推理导航。FinanceBench 基准准确率 <strong>{PAGEINDEX_STATS.financeBenchRecall}%</strong>（传统向量 RAG ~50%）。
+              长文档不经分块向量化，LLM 在 JSON 树索引上做 In-Context 推理导航。{hub.isApiMode ? '检索与建树数据来自 RAG3 API。' : <>FinanceBench 基准准确率 <strong>{PAGEINDEX_STATS.financeBenchRecall}%</strong>（传统向量 RAG ~50%）。</>}
             </p>
           </div>
           <div className={`${hubCard} px-4 py-3 flex-shrink-0`}>
             <p className="text-[10px] text-gray-400">近 7 天建树</p>
             <div className="flex items-end gap-1 h-12 mt-1">
-              {PAGEINDEX_STATS.weeklyBuilds.map((v, i) => (
+              {(hub.isApiMode ? stats.weeklyBuilds : PAGEINDEX_STATS.weeklyBuilds).map((v, i) => (
                 <div key={i} className="w-4 bg-cyan-500 rounded-t-sm opacity-80" style={{ height: `${(v / maxWeekly) * 100}%`, minHeight: 4 }} />
               ))}
             </div>
@@ -349,12 +399,20 @@ function DocumentsTab({
                     )}
                     {doc.treeStatus === 'failed' && (
                       <>
-                        <button type="button" onClick={() => showToast('重试中…')} className="text-[10px] text-cyan-600 hover:underline flex items-center gap-0.5"><RotateCcw size={10} /> 重试</button>
+                        <button
+                          type="button"
+                          onClick={() => void hub.runBuild([doc.id]).then(() => showToast(hub.isApiMode ? '已提交重建' : '重试中…'))}
+                          className="text-[10px] text-cyan-600 hover:underline flex items-center gap-0.5"
+                        ><RotateCcw size={10} /> 重试</button>
                         <button type="button" onClick={() => showToast('已跳过')} className="text-[10px] text-gray-500 hover:underline flex items-center gap-0.5"><SkipForward size={10} /> 跳过</button>
                       </>
                     )}
                     {doc.treeStatus === 'pending' && (
-                      <button type="button" onClick={() => showToast('建树任务已提交')} className="text-[10px] text-blue-600 hover:underline">触发建树</button>
+                      <button
+                        type="button"
+                        onClick={() => void hub.runBuild([doc.id]).then(() => showToast(hub.isApiMode ? '建树任务已提交' : '建树任务已提交（mock）'))}
+                        className="text-[10px] text-blue-600 hover:underline"
+                      >触发建树</button>
                     )}
                   </div>
                 </td>
@@ -367,7 +425,7 @@ function DocumentsTab({
       {selected.size > 0 && (
         <div className={`${hubCard} p-3 flex items-center gap-3`}>
           <span className="text-xs text-gray-500">已选 {selected.size} 项</span>
-          <BtnPrimary onClick={() => showToast(`批量重建 ${selected.size} 个文档（mock）`)}>
+          <BtnPrimary onClick={() => void hub.runBuild([...selected]).then(() => showToast(hub.isApiMode ? `已提交 ${selected.size} 个文档建树` : `批量重建 ${selected.size} 个文档（mock）`))}>
             <RefreshCw size={12} /> 批量重建选中
           </BtnPrimary>
         </div>
@@ -382,7 +440,34 @@ function BuildQueueTab({
   showToast: (m: string) => void;
   onViewDoc: (id: string) => void;
 }) {
+  const hub = usePageIndexHubContext();
   const [queue, setQueue] = useState(PAGEINDEX_BUILD_QUEUE);
+  const apiQueue = useMemo(() => {
+    const building = hub.documents.filter(d => d.treeStatus === 'building');
+    const pending = hub.documents.filter(d => d.treeStatus === 'pending').slice(0, 10);
+    const lastLog = (hub.trace?.progress_msg ?? '').split('\n').filter(Boolean).pop() ?? '';
+    return [
+      ...building.map((d, i) => ({
+        id: `build-${d.id}`,
+        docId: d.id,
+        docName: d.name,
+        stage: 'building' as const,
+        progress: d.buildProgress ?? Math.round((hub.trace?.progress ?? 0) * 100),
+        stepLabel: lastLog || 'PageIndex SDK 建树',
+        nodesBuilt: d.nodes || undefined,
+      })),
+      ...pending.map((d, i) => ({
+        id: `pending-${d.id}`,
+        docId: d.id,
+        docName: d.name,
+        stage: 'queued' as const,
+        progress: 0,
+        stepLabel: '等待建树',
+        nodesBuilt: undefined,
+      })),
+    ];
+  }, [hub.documents, hub.trace]);
+  const displayQueue = hub.isApiMode ? apiQueue : queue;
 
   return (
     <div className="space-y-4">
@@ -405,7 +490,10 @@ function BuildQueueTab({
             </tr>
           </thead>
           <tbody>
-            {queue.map(item => (
+            {displayQueue.length === 0 && hub.isApiMode && (
+              <tr><td colSpan={5} className="px-4 py-8 text-center text-xs text-gray-400">暂无排队或进行中的建树任务</td></tr>
+            )}
+            {displayQueue.map(item => (
               <tr key={item.id} className="border-b border-gray-50 dark:border-gray-800/50 hover:bg-gray-50/50 dark:hover:bg-gray-800/30">
                 <td className="px-4 py-3">
                   <p className="text-xs font-medium text-gray-900 dark:text-gray-100">{item.docName}</p>
@@ -433,12 +521,19 @@ function BuildQueueTab({
                     )}
                     {item.stage === 'failed' && (
                       <>
-                        <button type="button" onClick={() => showToast('重试中…')} className="text-[10px] text-cyan-600 flex items-center gap-0.5"><RotateCcw size={10} /> 重试</button>
+                        <button
+                          type="button"
+                          onClick={() => void hub.runBuild([item.docId]).then(() => showToast('已提交重建'))}
+                          className="text-[10px] text-cyan-600 flex items-center gap-0.5"
+                        ><RotateCcw size={10} /> 重试</button>
                         <button type="button" onClick={() => onViewDoc(item.docId)} className="text-[10px] text-blue-600 hover:underline">调试</button>
                       </>
                     )}
-                    {item.stage === 'queued' && (
+                    {item.stage === 'queued' && !hub.isApiMode && (
                       <button type="button" onClick={() => setQueue(q => q.map(x => x.id === item.id ? { ...x, stage: 'parsing' as const, progress: 5, stepLabel: '开始文档解析' } : x))} className="text-[10px] text-cyan-600">优先</button>
+                    )}
+                    {item.stage === 'queued' && hub.isApiMode && (
+                      <button type="button" onClick={() => void hub.runBuild([item.docId]).then(() => showToast('已提交建树'))} className="text-[10px] text-cyan-600">触发</button>
                     )}
                   </div>
                 </td>
@@ -452,9 +547,11 @@ function BuildQueueTab({
 }
 
 function LibrarySearchTab({
-  showToast, onOpenDoc,
+  kbId, showToast, onNavigate, onOpenDoc,
 }: {
+  kbId: string;
   showToast: (m: string) => void;
+  onNavigate: (page: string, extra?: Record<string, unknown>) => void;
   onOpenDoc: (docId: string, debug?: boolean) => void;
 }) {
   const [testQuery, setTestQuery] = useState('违约金如何计算');
@@ -531,7 +628,11 @@ function LibrarySearchTab({
                 <div className="flex gap-2">
                   <button type="button" onClick={() => onOpenDoc(hit.docId)} className="text-[10px] text-cyan-600 hover:underline">查看树</button>
                   <button type="button" onClick={() => onOpenDoc(hit.docId, true)} className="text-[10px] text-blue-600 hover:underline">单文档调试</button>
-                  <button type="button" onClick={() => showToast('已跳转对话测试（mock）')} className="text-[10px] text-gray-500 hover:underline">在对话中测试</button>
+                  <button
+                    type="button"
+                    onClick={() => openPageIndexChatTest(onNavigate, { kbId, query: result?.query || testQuery, docId: hit.docId, docName: hit.docName })}
+                    className="text-[10px] text-gray-500 hover:underline"
+                  >在对话中测试</button>
                 </div>
               </div>
             ))}
@@ -549,12 +650,17 @@ function LibrarySearchTab({
   );
 }
 
-function StatsTab() {
+function StatsTab({ isApiMode }: { isApiMode?: boolean }) {
   const maxWeekly = Math.max(...PAGEINDEX_ANALYTICS.weeklySearches);
   const maxType = Math.max(...PAGEINDEX_ANALYTICS.docTypeDist.map(d => d.count));
 
   return (
     <div className="space-y-4">
+      {isApiMode && (
+        <div className={`${hubCard} p-3 text-xs text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800`}>
+          以下统计指标仍为产品演示数据；检索延迟与命中统计待后端 metrics API 接入后替换。
+        </div>
+      )}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <HubStatCard label="P50 延迟" value={`${PAGEINDEX_ANALYTICS.searchLatencyP50}ms`} icon={<Clock size={18} className="text-cyan-600" />} />
         <HubStatCard label="P95 延迟" value={`${PAGEINDEX_ANALYTICS.searchLatencyP95}ms`} icon={<Clock size={18} className="text-amber-500" />} />
@@ -632,9 +738,16 @@ function StatsTab() {
 }
 
 function SettingsTab({ showToast }: { showToast: (m: string) => void }) {
+  const hub = usePageIndexHubContext();
   const [settings, setSettings] = useState(PAGEINDEX_DEFAULT_SETTINGS);
 
   return (
+    <div className="space-y-4">
+      {hub.isApiMode && (
+        <div className={`${hubCard} p-3 text-xs text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800`}>
+          建树设置当前为前端演示配置，尚未持久化到后端；实际建树由 RAG3 <code className="text-[10px]">POST /rag3/datasets/:id/index?type=pageindex</code> 与 <code className="text-[10px]">PAGEINDEX_API_KEY</code> 驱动。
+        </div>
+      )}
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
       <div className={`${hubCard} p-5`}>
         <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-4 flex items-center gap-2">
@@ -739,6 +852,7 @@ function SettingsTab({ showToast }: { showToast: (m: string) => void }) {
         </div>
       </div>
     </div>
+    </div>
   );
 }
 
@@ -836,8 +950,11 @@ function DocDetailView({
   onNavigate: (page: string, extra?: Record<string, unknown>) => void;
 }) {
   const hub = usePageIndexHubContext();
-  const [tree, setTree] = useState<PageIndexTreeNode>(PAGEINDEX_TREE_V5);
-  const [selectedNodeId, setSelectedNodeId] = useState('ch5-1-1');
+  const emptyTree: PageIndexTreeNode = { id: 'root', title: doc.name, nodeType: 'root', children: [] };
+  const [tree, setTree] = useState<PageIndexTreeNode>(emptyTree);
+  const [selectedNodeId, setSelectedNodeId] = useState('root');
+  const [highlightNodeId, setHighlightNodeId] = useState<string | null>(null);
+  const [expandPathIds, setExpandPathIds] = useState<Set<string>>(new Set());
   const [testQuery, setTestQuery] = useState('违约金如何计算');
   const [searchResult, setSearchResult] = useState<PageIndexSearchResult | null>(null);
   const [searching, setSearching] = useState(false);
@@ -855,6 +972,9 @@ function DocDetailView({
 
   useEffect(() => {
     let cancelled = false;
+    setTree(emptyTree);
+    setSelectedNodeId('root');
+    setHighlightNodeId(null);
     void hub.getTree(doc.id).then(t => {
       if (!cancelled && t) {
         setTree(t);
@@ -862,21 +982,40 @@ function DocDetailView({
       }
     });
     return () => { cancelled = true; };
-  }, [doc.id, hub]);
+  }, [doc.id, doc.name, hub]);
 
   useEffect(() => {
     if (autoFocusDebug) setDebugExpanded(true);
   }, [autoFocusDebug]);
 
+  const focusTreeNode = (nodeId: string) => {
+    setSelectedNodeId(nodeId);
+    setHighlightNodeId(nodeId);
+    const ancestors = findTreeNodeAncestorIds(tree, nodeId);
+    if (ancestors) setExpandPathIds(new Set(ancestors));
+  };
+
   const handleSearch = () => {
     setSearching(true);
     setSearchResult(null);
+    setHighlightNodeId(null);
     void hub.runTreeSearch(testQuery, doc.id).then(result => {
       if (result) {
         setSearchResult(result);
-        setSelectedNodeId(result.targetNodeId);
+        focusTreeNode(result.targetNodeId);
+      } else {
+        showToast('未命中相关树节点');
       }
       setSearching(false);
+    });
+  };
+
+  const handleOpenChatTest = () => {
+    openPageIndexChatTest(onNavigate, {
+      kbId,
+      query: searchResult?.query || testQuery,
+      docId: doc.id,
+      docName: doc.name,
     });
   };
 
@@ -892,7 +1031,7 @@ function DocDetailView({
           <HubBadge variant={DOC_STATUS[doc.treeStatus].variant}>{DOC_STATUS[doc.treeStatus].label}</HubBadge>
         </div>
         <div className="flex gap-2 flex-shrink-0">
-          <BtnSecondary onClick={() => showToast('重建树任务已提交')}><RefreshCw size={12} /> 重建树</BtnSecondary>
+          <BtnSecondary onClick={() => void hub.runBuild([doc.id]).then(() => showToast(hub.isApiMode ? '重建树任务已提交' : '重建树任务已提交（mock）'))}><RefreshCw size={12} /> 重建树</BtnSecondary>
           <BtnSecondary onClick={openParsePreview}><Eye size={12} /> 解析预览</BtnSecondary>
         </div>
       </div>
@@ -905,7 +1044,14 @@ function DocDetailView({
             <p className="text-[10px] text-gray-400">{doc.pages} 页 · {doc.nodes} 节点 · 深度 {doc.depth}</p>
           </div>
           <div className="flex-1 overflow-y-auto p-2 min-h-[200px]">
-            <IndexTreeNode node={tree} depth={0} selectedId={selectedNodeId} onSelect={setSelectedNodeId} />
+            <IndexTreeNode
+              node={tree}
+              depth={0}
+              selectedId={selectedNodeId}
+              highlightId={highlightNodeId}
+              expandPathIds={expandPathIds}
+              onSelect={id => { setSelectedNodeId(id); setHighlightNodeId(null); }}
+            />
           </div>
           <div className="px-3 py-2 border-t border-gray-100 dark:border-gray-800 text-[10px] text-gray-400">
             No Chunking · No Top-K · Reasoning-based Retrieval
@@ -997,7 +1143,7 @@ function DocDetailView({
                             <span className="text-gray-500 mx-1">→</span>
                             <span className="text-gray-800 dark:text-gray-200">{s.result}</span>
                             {s.nodeId && (
-                              <button type="button" onClick={() => setSelectedNodeId(s.nodeId!)} className="ml-2 text-cyan-600 hover:underline text-[10px]">定位</button>
+                              <button type="button" onClick={() => focusTreeNode(s.nodeId!)} className="ml-2 text-cyan-600 hover:underline text-[10px]">定位</button>
                             )}
                           </div>
                           <span className="text-[10px] text-gray-400 flex-shrink-0">{s.ms}ms</span>
@@ -1010,8 +1156,8 @@ function DocDetailView({
                       </p>
                       <p className="text-xs text-gray-700 dark:text-gray-300 bg-white/60 dark:bg-gray-900/40 rounded-lg p-2 leading-relaxed">{searchResult.excerpt}</p>
                       <div className="flex gap-2 mt-2">
-                        <button type="button" onClick={() => setSelectedNodeId(searchResult.targetNodeId)} className="text-[10px] text-cyan-600 hover:underline flex items-center gap-0.5"><Box size={10} /> 在树中高亮</button>
-                        <button type="button" onClick={() => showToast('已跳转对话测试（mock）')} className="text-[10px] text-blue-600 hover:underline flex items-center gap-0.5"><MessageSquare size={10} /> 在对话中测试</button>
+                        <button type="button" onClick={() => focusTreeNode(searchResult.targetNodeId)} className="text-[10px] text-cyan-600 hover:underline flex items-center gap-0.5"><Box size={10} /> 在树中高亮</button>
+                        <button type="button" onClick={handleOpenChatTest} className="text-[10px] text-blue-600 hover:underline flex items-center gap-0.5"><MessageSquare size={10} /> 在对话中测试</button>
                       </div>
                     </div>
                   </div>
@@ -1027,7 +1173,7 @@ function DocDetailView({
               page={previewPage}
               bbox={previewBbox}
               nodeTitle={selectedNode.title}
-              highlightFromSearch={!!searchResult && searchResult.targetNodeId === selectedNodeId}
+              highlightFromSearch={!!highlightNodeId && highlightNodeId === selectedNodeId}
               onOpenParse={openParsePreview}
             />
           </div>
@@ -1040,7 +1186,7 @@ function DocDetailView({
             page={previewPage}
             bbox={previewBbox}
             nodeTitle={selectedNode.title}
-            highlightFromSearch={!!searchResult && searchResult.targetNodeId === selectedNodeId}
+            highlightFromSearch={!!highlightNodeId && highlightNodeId === selectedNodeId}
             onOpenParse={openParsePreview}
           />
         </div>
@@ -1050,16 +1196,23 @@ function DocDetailView({
 }
 
 function IndexTreeNode({
-  node, depth, selectedId, onSelect,
+  node, depth, selectedId, highlightId, expandPathIds, onSelect,
 }: {
   node: PageIndexTreeNode;
   depth: number;
   selectedId: string;
+  highlightId?: string | null;
+  expandPathIds?: Set<string>;
   onSelect: (id: string) => void;
 }) {
-  const [expanded, setExpanded] = useState(depth < 2);
+  const [expanded, setExpanded] = useState(depth < 2 || Boolean(expandPathIds?.has(node.id)));
   const hasChildren = (node.children?.length ?? 0) > 0;
   const isSelected = node.id === selectedId;
+  const isHighlighted = highlightId === node.id;
+
+  useEffect(() => {
+    if (expandPathIds?.has(node.id)) setExpanded(true);
+  }, [expandPathIds, node.id]);
 
   return (
     <div>
@@ -1067,7 +1220,11 @@ function IndexTreeNode({
         type="button"
         onClick={() => { onSelect(node.id); if (hasChildren) setExpanded(p => !p); }}
         className={`w-full flex items-center gap-1.5 py-1.5 pr-2 rounded-lg text-left text-xs transition-colors ${
-          isSelected ? 'bg-cyan-50 dark:bg-cyan-900/30 text-cyan-800 dark:text-cyan-200 font-medium' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+          isHighlighted
+            ? 'bg-amber-50 dark:bg-amber-900/30 text-amber-900 dark:text-amber-100 font-semibold ring-2 ring-amber-400/80 animate-pulse'
+            : isSelected
+              ? 'bg-cyan-50 dark:bg-cyan-900/30 text-cyan-800 dark:text-cyan-200 font-medium'
+              : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
         }`}
         style={{ paddingLeft: `${depth * 14 + 8}px` }}
       >
@@ -1085,7 +1242,15 @@ function IndexTreeNode({
         )}
       </button>
       {expanded && hasChildren && node.children!.map(child => (
-        <IndexTreeNode key={child.id} node={child} depth={depth + 1} selectedId={selectedId} onSelect={onSelect} />
+        <IndexTreeNode
+          key={child.id}
+          node={child}
+          depth={depth + 1}
+          selectedId={selectedId}
+          highlightId={highlightId}
+          expandPathIds={expandPathIds}
+          onSelect={onSelect}
+        />
       ))}
     </div>
   );

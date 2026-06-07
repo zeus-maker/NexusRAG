@@ -1662,3 +1662,37 @@ RAG3 PageIndex 建树此前为按页码分组 chunk 的启发式 mock，与 Vect
 - `backend/ragflow_rag30/api/apps/__init__.py`
 - `frontend/rag3-web/src/hooks/useParseQueuePolling.ts`
 - `backend/ragflow_rag30/rag3/index_service.py`
+
+---
+
+## 56. PageIndex Hub 树搜索高亮、对话测试与 API 对接补全
+
+### 背景与目标
+
+单文档树调试已有真实检索 API，但搜索命中后树节点无高亮/自动展开，「在对话中测试」仍为 mock toast；概览/建树队列/统计/设置等 Tab 混用 `PAGEINDEX_*` 常量，API 模式下数据不一致。
+
+### 改动摘要
+
+- **树高亮**：`IndexTreeNode` 支持 `highlightId` + `expandPathIds`；`focusTreeNode` 在树搜索后琥珀色脉冲高亮并展开祖先路径。
+- **对话测试**：`pageIndexChatPrefill` + `Chat.tsx` 消费 sessionStorage；库级/单文档「在对话中测试」跳转 `#/chat` 并预填 KB、查询、文档名。
+- **API 对接**：`usePageIndexHubData` 暴露 `trace` 并建树进行中 3s 轮询；概览/文档列表/建树队列用真实 stats、documents、trace；触发/批量/重试建树走 `runBuild`。
+- **仍 mock（已标注）**：统计 Tab 全量指标、建树设置持久化、PDF bbox 预览页、失败原因分布细项、FinanceBench 基准文案——待 metrics/settings API。
+
+### 验证与风险
+
+- `npm run build` 通过。
+- 单文档调试 → 执行树搜索 → 命中节点琥珀高亮；点「在对话中测试」→ 对话页预填查询。
+- 风险：真实树无 bbox 时右侧预览仍为示意页；对话页 RAG 应答仍为 mock 样本匹配，非 `/rag3/query` 真流。
+
+### 反思与沉淀
+
+- Hub 检索与对话测试应共用 query + kbId 契约，后续可接 `POST /rag3/query` 并展示 PageIndex channel hits。
+- 建树队列可从 `trace.progress_msg` 解析多行日志展示流水线，替代静态 `PAGEINDEX_BUILD_QUEUE`。
+
+### 涉及文件
+
+- `frontend/rag3-web/src/pages/Hub/PageIndexHubPage.tsx`
+- `frontend/rag3-web/src/hooks/useEnhancementHubData.ts`
+- `frontend/rag3-web/src/pages/Chat.tsx`
+- `frontend/rag3-web/src/utils/pageIndexTreeUtils.ts`（新建）
+- `frontend/rag3-web/src/utils/pageIndexChatPrefill.ts`（新建）

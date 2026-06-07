@@ -34,18 +34,38 @@ import { hubApi } from '../services/hubApi';
 import { useRealApi } from '../services/http';
 import { formatBytes } from '../utils/documentUtil';
 
+function parsePageNo(raw: Record<string, unknown>): number | undefined {
+  const candidates = [raw.page, raw.startPage, raw.page_index, raw.start_index];
+  for (const v of candidates) {
+    if (typeof v === 'number' && v > 0) return v;
+    if (typeof v === 'string' && /^\d+$/.test(v)) return Number(v);
+  }
+  return undefined;
+}
+
 function mapTreeNode(raw: Record<string, unknown>, depth = 0): PageIndexTreeNode {
   const children = (raw.children as Record<string, unknown>[] | undefined)?.map(c => mapTreeNode(c, depth + 1));
   const hasChildren = Boolean(children?.length);
   const isLeaf = !hasChildren && Boolean(raw.chunk_id);
+  const startPage = parsePageNo(raw);
   return {
     id: String(raw.node_id ?? raw.chunk_id ?? raw.id ?? ''),
     title: String(raw.title ?? '节点'),
     nodeType: depth === 0 ? 'root' : isLeaf ? 'leaf' : depth === 1 ? 'chapter' : 'section',
-    startPage: typeof raw.page === 'number' ? raw.page : undefined,
-    summary: typeof raw.snippet === 'string' ? raw.snippet : undefined,
+    startPage,
+    endPage: startPage,
+    summary: typeof raw.snippet === 'string' ? raw.snippet : (typeof raw.summary === 'string' ? raw.summary : undefined),
     children,
   };
+}
+
+export interface PageIndexTraceSnapshot {
+  progress: number;
+  progress_msg: string;
+  running: boolean;
+  failed: boolean;
+  done: boolean;
+  doc_ids: string[];
 }
 
 function mapPiDoc(raw: Record<string, unknown>): PageIndexDocument {
@@ -66,16 +86,32 @@ function mapPiDoc(raw: Record<string, unknown>): PageIndexDocument {
   };
 }
 
+function normalizePiTrace(raw: Record<string, unknown> | undefined): PageIndexTraceSnapshot | null {
+  if (!raw || !Object.keys(raw).length) return null;
+  const progress = typeof raw.progress === 'number' ? raw.progress : -2;
+  const docIds = Array.isArray(raw.doc_ids) ? raw.doc_ids.map(String) : [];
+  return {
+    progress,
+    progress_msg: typeof raw.progress_msg === 'string' ? raw.progress_msg : '',
+    running: progress >= 0 && progress < 1,
+    failed: progress < 0,
+    done: progress >= 1,
+    doc_ids: docIds,
+  };
+}
+
 export function usePageIndexHubData(kbId: string) {
   const { data: kb } = useKnowledgeBase(kbId);
   const [stats, setStats] = useState(MOCK_PI_STATS);
   const [documents, setDocuments] = useState<PageIndexDocument[]>(MOCK_PI_DOCS);
+  const [trace, setTrace] = useState<PageIndexTraceSnapshot | null>(null);
   const [loading, setLoading] = useState(useRealApi);
 
   const refresh = useCallback(() => {
     if (!useRealApi) {
       setStats(MOCK_PI_STATS);
       setDocuments(MOCK_PI_DOCS);
+      setTrace(null);
       setLoading(false);
       return;
     }
@@ -83,25 +119,39 @@ export function usePageIndexHubData(kbId: string) {
     hubApi.listPageIndexDocuments(kbId)
       .then(data => {
         const s = data?.stats ?? {};
+        const docs = (data?.documents ?? []).map(d => mapPiDoc(d));
+        const completed = Number(s.completed) || 0;
+        const total = Number(s.total) || docs.length;
+        const totalNodes = docs.reduce((sum, d) => sum + (d.nodes || 0), 0);
         setStats({
           ...MOCK_PI_STATS,
-          total: Number(s.total) || 0,
-          completed: Number(s.completed) || 0,
+          total,
+          completed,
           building: Number(s.building) || 0,
           pending: Number(s.pending) || 0,
           failed: Number(s.failed) || 0,
           buildRate: Number(s.build_rate) || 0,
+          totalNodes,
+          avgNodes: total ? Math.round(totalNodes / Math.max(completed, 1)) : 0,
         });
-        setDocuments((data?.documents ?? []).map(d => mapPiDoc(d)));
+        setDocuments(docs);
+        setTrace(normalizePiTrace(data?.trace as Record<string, unknown> | undefined));
       })
       .catch(() => {
         setStats(MOCK_PI_STATS);
         setDocuments([]);
+        setTrace(null);
       })
       .finally(() => setLoading(false));
   }, [kbId]);
 
   useEffect(() => { refresh(); }, [refresh]);
+
+  useEffect(() => {
+    if (!useRealApi || !trace?.running) return;
+    const timer = window.setInterval(() => { void refresh(); }, 3000);
+    return () => window.clearInterval(timer);
+  }, [useRealApi, trace?.running, refresh]);
 
   const getDoc = useCallback((id: string) => {
     if (!useRealApi) return mockGetPiDoc(id);
@@ -165,7 +215,20 @@ export function usePageIndexHubData(kbId: string) {
     refresh();
   }, [kbId, refresh]);
 
-  return { kb, stats, documents, loading, refresh, getDoc, getTree, runLibrarySearch, runTreeSearch, runBuild, isApiMode: useRealApi };
+  return {
+    kb,
+    stats,
+    documents,
+    trace,
+    loading,
+    refresh,
+    getDoc,
+    getTree,
+    runLibrarySearch,
+    runTreeSearch,
+    runBuild,
+    isApiMode: useRealApi,
+  };
 }
 
 export function useGraphHubData(kbId: string) {

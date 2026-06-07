@@ -8,6 +8,7 @@ import { mockConversations, mockKBs } from '../mockData';
 import type { ChatMessage, Citation, Conversation } from '../types';
 import { ChatSettingsPanel, DEFAULT_CHAT_SETTINGS, type ChatSettings } from '../components/ChatSettingsPanel';
 import { CONV_MESSAGES, CONV_PINNED, QUERY_TRACE_STEPS } from '../data/chatMock';
+import { consumePageIndexChatPrefill } from '../utils/pageIndexChatPrefill';
 
 const SAMPLE_RESPONSES = [
   {
@@ -188,6 +189,24 @@ export function ChatPage({ convId, onNavigate }: ChatPageProps) {
   const streamRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2200); };
+
+  useEffect(() => {
+    const prefill = consumePageIndexChatPrefill();
+    if (!prefill) return;
+    setInput(prefill.query);
+    setCurrentConv(null);
+    setMessages([]);
+    setChatSettings(s => ({
+      ...s,
+      kbIds: prefill.kbId ? [prefill.kbId] : s.kbIds,
+      convTitle: prefill.docName ? `PageIndex · ${prefill.docName}` : 'PageIndex 对话测试',
+    }));
+    showToast(
+      prefill.docName
+        ? `已载入 PageIndex 测试查询（${prefill.docName}），按 Enter 发送`
+        : '已载入 PageIndex 测试查询，按 Enter 发送',
+    );
+  }, []);
 
   const loadConversation = useCallback((id: string) => {
     const conv = conversations.find(c => c.conv_id === id);
