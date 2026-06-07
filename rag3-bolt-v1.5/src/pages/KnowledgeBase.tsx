@@ -5,10 +5,12 @@ import {
   CheckCircle, AlertCircle, Loader, BookOpen, Network,
   ChevronRight, GitBranch, Edit, LayoutGrid, List,
   FlaskConical, Activity, Archive, Copy, Download,
-  ChevronLeft, RotateCcw, AlertCircle as AlertIcon
+  ChevronLeft, AlertCircle as AlertIcon
 } from 'lucide-react';
 import { mockKBs, mockDocuments, mockChunks, mockIndexStatuses } from '../mockData';
 import type { KnowledgeBase } from '../types';
+import { KBCreateDialog, type KBCreateForm } from '../components/KBCreateDialog';
+import { addToRecycleBin, getRecycleBinCount } from '../data/kbRecycleBin';
 
 const statusConfig = {
   active: { label: '活跃', color: 'bg-green-100 text-green-700', dot: 'bg-green-500' },
@@ -65,8 +67,7 @@ export function KBListPage({ onNavigate }: KBListPageProps) {
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [page, setPage] = useState(1);
   const [showCreate, setShowCreate] = useState(false);
-  const [createName, setCreateName] = useState('');
-  const [createDesc, setCreateDesc] = useState('');
+  const [recycleCount, setRecycleCount] = useState(getRecycleBinCount);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<KnowledgeBase | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -101,13 +102,26 @@ export function KBListPage({ onNavigate }: KBListPageProps) {
     { icon: <Trash2 size={13} />, label: '删除', action: () => setDeleteTarget(kb), danger: true },
   ];
 
-  const handleCreate = () => {
-    if (!createName.trim()) return;
-    setShowCreate(false);
-    setCreateName('');
-    setCreateDesc('');
+  const handleCreate = async (form: KBCreateForm) => {
+    await new Promise(r => setTimeout(r, 900));
     onNavigate('kb-detail', { selectedKBId: 'kb-001' });
-    showToast(`知识库「${createName}」创建成功，已进入详情`);
+    showToast(`知识库「${form.name.trim()}」创建成功，已进入详情`);
+  };
+
+  const moveToRecycleBin = (kb: KnowledgeBase) => {
+    addToRecycleBin({
+      id: `rb-${Date.now()}`,
+      name: kb.name,
+      type: '知识库',
+      kb: '—',
+      deletedAt: new Date().toISOString(),
+      daysLeft: 30,
+      deletedBy: '当前用户',
+      docCount: kb.doc_count,
+    });
+    setRecycleCount(getRecycleBinCount());
+    showToast(`「${kb.name}」已移入回收站`);
+    setDeleteTarget(null);
   };
 
   const KBCard = ({ kb }: { kb: KnowledgeBase }) => {
@@ -226,10 +240,15 @@ export function KBListPage({ onNavigate }: KBListPageProps) {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => onNavigate('kb-recycle-bin')}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300"
+            onClick={() => { onNavigate('kb-recycle-bin'); setRecycleCount(getRecycleBinCount()); }}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 relative"
           >
             <Trash2 size={14} /> 回收站
+            {recycleCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                {recycleCount > 99 ? '99+' : recycleCount}
+              </span>
+            )}
           </button>
           <button
             type="button"
@@ -391,54 +410,7 @@ export function KBListPage({ onNavigate }: KBListPageProps) {
         </div>
       )}
 
-      {showCreate && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md">
-            <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
-              <h2 className="text-base font-bold text-gray-900 dark:text-gray-100">创建知识库</h2>
-              <button type="button" onClick={() => setShowCreate(false)} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500">✕</button>
-            </div>
-            <div className="px-6 py-4 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">知识库名称 <span className="text-red-500">*</span></label>
-                <input value={createName} onChange={e => setCreateName(e.target.value)} placeholder="2-50 字符" className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-gray-100" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">描述</label>
-                <textarea value={createDesc} onChange={e => setCreateDesc(e.target.value)} placeholder="选填，最多 200 字符" rows={2} className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none dark:bg-gray-800 dark:text-gray-100" />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div><label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">默认语言</label>
-                  <select className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-gray-100"><option>中文</option><option>English</option></select></div>
-                <div><label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">分块策略</label>
-                  <select className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-gray-100"><option>通用分块</option><option>表格优先</option><option>代码感知</option></select></div>
-                <div><label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">嵌入模型</label>
-                  <select className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-gray-100"><option>BAAI/bge-m3</option><option>BCE-Embedding</option></select></div>
-                <div><label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">LLM 模型</label>
-                  <select className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-gray-100"><option>DeepSeek-v4</option><option>Qwen3-72B</option></select></div>
-              </div>
-              <div>
-                <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Reranker 模型</label>
-                <select className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-gray-100"><option>bge-reranker-v2-m3</option><option>bce-reranker</option></select>
-              </div>
-              <div>
-                <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">可见性</label>
-                <div className="flex gap-4">
-                  {['仅我', '团队'].map(v => (
-                    <label key={v} className="flex items-center gap-1.5 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
-                      <input type="radio" name="visibility" defaultChecked={v === '团队'} className="text-blue-600" />{v}
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div className="px-6 py-4 border-t border-gray-100 dark:border-gray-700 flex justify-end gap-3">
-              <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300">取消</button>
-              <button type="button" onClick={handleCreate} disabled={!createName.trim()} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-40">创建</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <KBCreateDialog open={showCreate} onClose={() => setShowCreate(false)} onSubmit={handleCreate} />
 
       {deleteTarget && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -448,116 +420,8 @@ export function KBListPage({ onNavigate }: KBListPageProps) {
             <p className="text-xs text-gray-500 mb-4">将移入回收站，保留 30 天可恢复。</p>
             <div className="flex justify-end gap-2">
               <button type="button" onClick={() => setDeleteTarget(null)} className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg">取消</button>
-              <button type="button" onClick={() => { showToast(`「${deleteTarget.name}」已移入回收站`); setDeleteTarget(null); }} className="px-3 py-1.5 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700">移入回收站</button>
+              <button type="button" onClick={() => moveToRecycleBin(deleteTarget)} className="px-3 py-1.5 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700">移入回收站</button>
             </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-const RECYCLE_BIN_MOCK = [
-  { id: 'rb-1', name: '供应商合同V4.pdf', type: '文档', kb: '法务合同知识库', deletedAt: '2026-06-04T14:20:00Z', daysLeft: 28 },
-  { id: 'rb-2', name: '旧版合规政策库', type: '知识库', kb: '—', deletedAt: '2026-06-02T09:15:00Z', daysLeft: 26 },
-  { id: 'rb-3', name: '财务Q1报告.docx', type: '文档', kb: '财务报告知识库', deletedAt: '2026-05-28T10:00:00Z', daysLeft: 22 },
-];
-
-interface KBRecycleBinPageProps {
-  onNavigate: (page: string, extra?: any) => void;
-}
-
-export function KBRecycleBinPage({ onNavigate }: KBRecycleBinPageProps) {
-  const [search, setSearch] = useState('');
-  const [typeFilter, setTypeFilter] = useState('all');
-  const [selected, setSelected] = useState<string[]>([]);
-  const [items, setItems] = useState(RECYCLE_BIN_MOCK);
-  const [toast, setToast] = useState<string | null>(null);
-
-  const filtered = items.filter(it => {
-    const matchSearch = it.name.includes(search);
-    const matchType = typeFilter === 'all' || (typeFilter === 'kb' ? it.type === '知识库' : it.type === '文档');
-    return matchSearch && matchType;
-  });
-
-  const toggleSelect = (id: string) => setSelected(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
-  const toggleAll = () => setSelected(p => p.length === filtered.length ? [] : filtered.map(f => f.id));
-
-  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
-
-  return (
-    <div className="p-6 flex flex-col gap-4 h-full overflow-y-auto">
-      {toast && <div className="fixed top-16 right-6 z-50 px-4 py-2.5 bg-gray-900 text-white text-sm rounded-lg shadow-lg">{toast}</div>}
-
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-2">
-          <button type="button" onClick={() => onNavigate('kb-list')} className="text-gray-500 hover:text-gray-700 text-sm">← 返回列表</button>
-          <h1 className="text-lg font-bold text-gray-900 dark:text-gray-100">回收站</h1>
-        </div>
-        <div className="flex gap-2">
-          <button type="button" onClick={() => { setItems([]); showToast('回收站已清空'); }} className="px-3 py-1.5 text-xs border border-red-200 text-red-600 rounded-lg hover:bg-red-50">清空回收站</button>
-          <button type="button" disabled={selected.length === 0} onClick={() => { setItems(p => p.filter(i => !selected.includes(i.id))); showToast(`已恢复 ${selected.length} 项`); setSelected([]); }} className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg disabled:opacity-40 flex items-center gap-1"><RotateCcw size={12} /> 批量恢复</button>
-        </div>
-      </div>
-
-      <p className="text-xs text-amber-700 bg-amber-50 dark:bg-amber-900/20 dark:text-amber-300 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2">
-        回收站内容保留 30 天，到期自动永久删除。
-      </p>
-
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="relative flex-1 min-w-40">
-          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="搜索名称..." className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-200 dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-gray-100" />
-        </div>
-        <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} className="px-2.5 py-1.5 text-xs border border-gray-200 dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-gray-200">
-          <option value="all">全部类型</option>
-          <option value="kb">知识库</option>
-          <option value="doc">文档</option>
-        </select>
-      </div>
-
-      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-            <tr>
-              <th className="w-10 px-4 py-3"><input type="checkbox" checked={selected.length === filtered.length && filtered.length > 0} onChange={toggleAll} className="rounded" /></th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">名称</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">类型</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 hidden sm:table-cell">原属知识库</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">删除时间</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">剩余</th>
-              <th className="w-24" />
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.length === 0 ? (
-              <tr><td colSpan={7} className="px-4 py-12 text-center text-sm text-gray-500">回收站为空</td></tr>
-            ) : filtered.map(it => (
-              <tr key={it.id} className="border-b border-gray-50 dark:border-gray-800 hover:bg-gray-50/50">
-                <td className="px-4 py-3"><input type="checkbox" checked={selected.includes(it.id)} onChange={() => toggleSelect(it.id)} className="rounded" /></td>
-                <td className="px-4 py-3 font-medium text-gray-800 dark:text-gray-200">{it.name}</td>
-                <td className="px-4 py-3"><span className="text-xs px-2 py-0.5 bg-gray-100 dark:bg-gray-800 rounded">{it.type}</span></td>
-                <td className="px-4 py-3 text-xs text-gray-500 hidden sm:table-cell">{it.kb}</td>
-                <td className="px-4 py-3 text-xs text-gray-500">{formatTime(it.deletedAt)}</td>
-                <td className="px-4 py-3 text-xs text-amber-600">{it.daysLeft} 天</td>
-                <td className="px-4 py-3">
-                  <div className="flex gap-1">
-                    <button type="button" onClick={() => { setItems(p => p.filter(x => x.id !== it.id)); showToast(`已恢复「${it.name}」`); }} className="text-[10px] px-2 py-1 bg-blue-50 text-blue-600 rounded hover:bg-blue-100">恢复</button>
-                    <button type="button" onClick={() => setItems(p => p.filter(x => x.id !== it.id))} className="text-[10px] px-2 py-1 text-red-600 hover:bg-red-50 rounded">永久删除</button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {selected.length > 0 && (
-        <div className="sticky bottom-4 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg px-4 py-3 flex items-center justify-between">
-          <span className="text-xs text-gray-600">已选 {selected.length} 项</span>
-          <div className="flex gap-2">
-            <button type="button" onClick={() => { setItems(p => p.filter(i => !selected.includes(i.id))); showToast('批量恢复完成'); setSelected([]); }} className="text-xs px-3 py-1.5 bg-blue-600 text-white rounded-lg">恢复</button>
-            <button type="button" onClick={() => { setItems(p => p.filter(i => !selected.includes(i.id))); setSelected([]); }} className="text-xs px-3 py-1.5 border border-red-200 text-red-600 rounded-lg">永久删除</button>
           </div>
         </div>
       )}

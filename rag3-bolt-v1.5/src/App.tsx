@@ -1,7 +1,8 @@
 import { useAppState } from './store';
 import { Sidebar, TopBar, StatusBar } from './components/Layout';
 import { LoginPage } from './pages/Login';
-import { KBListPage, KBRecycleBinPage, KBDetailPage, DocumentPage, ChunkPreviewPage, IndexStatusPage } from './pages/KnowledgeBase';
+import { KBListPage, KBDetailPage, DocumentPage, ChunkPreviewPage, IndexStatusPage } from './pages/KnowledgeBase';
+import { KBRecycleBinPage } from './pages/KBRecycleBin';
 import { KBSettingsPage, RetrievalTestPage, WikiPage, PageIndexTreePage, WikiManagePage, PageIndexManagePage } from './pages/KBExtra';
 import { ChatPage } from './pages/Chat';
 import { SearchPage, AgentPage } from './pages/SearchAgent';

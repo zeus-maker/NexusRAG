@@ -131,3 +131,38 @@
 - `rag3-bolt-v1.5/src/store.ts` — `kb-recycle-bin` 路由
 - `rag3-bolt-v1.5/src/App.tsx` — 回收站页面注册
 - `rag3-bolt-v1.5/src/components/Layout.tsx` — KB 页分组与面包屑
+
+---
+
+## 5. 创建知识库向导与回收站页面深化
+
+### 背景与目标
+
+创建对话框仍为单页静态表单，无分步校验与模板；回收站仅 3 条 mock、缺时间筛选与永久删除确认，列表删除也未写入回收站。目标是对齐 PRD §3.1 创建流程（校验→提交→跳转详情）与 §3.7 回收站完整交互（筛选、批量、二次确认）。
+
+**用户可见变化**：创建改为三步向导（基础信息→解析与模型→确认），含场景模板、图标选择、描述字数、PageIndex/GraphRAG 开关与创建 loading；回收站增至 8 条样本、统计卡片、删除时间/排序筛选、即将到期高亮、批量操作底栏；列表删除真实追加回收项且回收站按钮显示数量角标。
+
+### 改动摘要
+
+- 新增 `KBCreateDialog`：三步进度条；模板一键填充（法务/财务/研发/通用）；名称 2–50 字校验、描述 200 字计数；第三步配置摘要后提交（模拟 900ms）。
+- 新增 `data/kbRecycleBin.ts`：扩展 mock 数据 + 模块级 `recycleBinState`（`addToRecycleBin` / `getRecycleBinCount` / `setRecycleBinItems`）。
+- 新增 `pages/KBRecycleBin.tsx`：统计四格、时间筛选（全部/30天/≤7天到期）、排序；行内展示删除人、文件大小/文档数；原知识库可点击跳转；永久删除批量需输入「永久删除」确认。
+- `KBListPage`：接入 `KBCreateDialog`；`moveToRecycleBin` 写入共享 state；回收站按钮角标。
+
+### 验证与风险
+
+- 验证：`npm run build` 通过；列表 →「创建知识库」走三步 → 创建中 loading → 跳转详情；删除知识库 → 回收站角标 +1 → 回收站筛选/恢复/永久删除确认。
+- 风险：回收站 state 为内存模块变量，刷新页面重置；创建仍跳转固定 `kb-001`，未生成新 mock KB 卡片。
+
+### 反思与沉淀
+
+- 将回收站从 `KnowledgeBase.tsx` 拆出避免单文件超千行；共享 state 是原型期最小联动方案，接 API 后应改为 React Query + `invalidateQueries(['recycle-bin'])`。
+- 创建向导第三步才提交，符合 PRD mermaid「校验通过再 POST」的前端预演，后续可对接真实 API 错误回显到 step 0。
+
+### 涉及文件
+
+- `rag3-bolt-v1.5/src/components/KBCreateDialog.tsx` — 三步创建向导
+- `rag3-bolt-v1.5/src/data/kbRecycleBin.ts` — 回收站数据与共享 state
+- `rag3-bolt-v1.5/src/pages/KBRecycleBin.tsx` — 回收站完整页
+- `rag3-bolt-v1.5/src/pages/KnowledgeBase.tsx` — 列表接入创建/删除联动
+- `rag3-bolt-v1.5/src/App.tsx` — 回收站 import 路径调整
