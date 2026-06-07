@@ -234,3 +234,38 @@
 - `rag3-bolt-v1.5/src/data/searchMock.ts` — 搜索 mock 数据
 - `rag3-bolt-v1.5/src/pages/SearchAgent.tsx` — 仅保留 Agent 页
 - `rag3-bolt-v1.5/src/App.tsx` — 路由 import 调整
+
+---
+
+## 8. Agent 编排功能增强（§10.7）
+
+### 背景与目标
+
+原 Agent 页为卡片列表 + 简易画布，缺 PRD 要求的表格式列表、模板库、版本历史、运行日志、Dataflow 结果页及 RAG 3.0 扩展节点属性表单。目标对齐 `/agent/:id` 画布编辑器体验。
+
+**用户可见变化**：列表改为表格（类型/最近运行/状态/[编辑][运行]）；顶栏含保存/运行/版本历史/发布；节点库分「基础」与「RAG 3.0 扩展」；运行时节点点亮 + 底部日志滚动；完成后弹出 DataflowTimeline 与节点详情；右侧按节点 type 动态属性面板。
+
+### 改动摘要
+
+- 新增 `agentMock.ts`：Agent 列表、画布节点/边、版本、运行日志、Dataflow 步骤。
+- 新增 `AgentNodePropertyPanel`：Begin/Categorize/Retrieval/RouteDecision/WikiRead/PageIndexSearch/Parser/Tool/Generate/Answer 表单。
+- 新建 `pages/Agent.tsx` 替换 `SearchAgent.tsx`；运行状态机 idle/saving/running/success；版本历史抽屉；Dataflow 结果 Modal。
+- 模板库 Modal、新建 Agent（Pipeline/Agent 类型）、列表搜索排序。
+
+### 验证与风险
+
+- 验证：`npm run build` 通过；侧栏「Agent 编排」→ 表格 [编辑] → 选 Retrieval 节点改 Top-K → [运行] 见节点高亮与日志 → Dataflow 弹窗查看 Retrieval Chunk。
+- 风险：画布拖拽添加节点为占位；无 React Flow 真实连线编辑；运行结果为 mock 时序。
+
+### 反思与沉淀
+
+- Dataflow 结果内嵌 Modal 而非独立路由，原型期足够；接 API 后可拆 `DataflowResultPage` 并 `navigate('dataflow-result', { runId })`。
+- 节点属性面板按 `node.type` switch 与 PRD §7.15 字段表一致，后续可抽共享 `NodePropertyPanel` 组件。
+
+### 涉及文件
+
+- `rag3-bolt-v1.5/src/pages/Agent.tsx` — Agent 列表 + 画布编辑器
+- `rag3-bolt-v1.5/src/components/AgentNodePropertyPanel.tsx` — 节点属性面板
+- `rag3-bolt-v1.5/src/data/agentMock.ts` — Agent mock 数据
+- `rag3-bolt-v1.5/src/App.tsx` — import 路径调整
+- 删除 `rag3-bolt-v1.5/src/pages/SearchAgent.tsx`
