@@ -54,7 +54,7 @@ type Page =
   | 'sys-traces'
   | 'login';
 
-export type KBSettingsTab = 'basic' | 'parsing' | 'index' | 'datasource' | 'tags';
+export type KBSettingsTab = 'basic' | 'models' | 'parsing' | 'index' | 'datasource' | 'tags';
 
 interface AppState {
   page: Page;

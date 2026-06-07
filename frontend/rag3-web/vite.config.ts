@@ -15,6 +15,11 @@ export default defineConfig({
         target: process.env.VITE_PROXY_TARGET ?? 'http://localhost:9380',
         changeOrigin: true,
       },
+      // LLM 厂商 / API KEY 配置走 /v1/llm/*（与上游 web 一致）
+      '/v1': {
+        target: process.env.VITE_PROXY_TARGET ?? 'http://localhost:9380',
+        changeOrigin: true,
+      },
     },
   },
 });

@@ -1,8 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ChevronLeft, ChevronRight, Loader, CheckCircle, Sparkles,
-  Scale, BarChart2, FlaskConical, BookOpen, X
+  Scale, BarChart2, FlaskConical, BookOpen, X, AlertTriangle
 } from 'lucide-react';
+import { LlmModelSelect } from './llm/LlmModelSelect';
+import { useLlmModels, useTenantModels } from '../hooks/useLlmData';
+import { useRealApi } from '../services/http';
 
 export interface KBCreateForm {
   name: string;
@@ -66,8 +69,27 @@ export function KBCreateDialog({ open, onClose, onSubmit }: KBCreateDialogProps)
   const [form, setForm] = useState<KBCreateForm>(DEFAULT_FORM);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
+  const { options: embeddingOptions, loading: embLoading } = useLlmModels('embedding');
+  const { options: chatOptions, loading: chatLoading } = useLlmModels('chat');
+  const { options: rerankOptions, loading: rerankLoading } = useLlmModels('rerank');
+  const { data: tenantModels, loading: tenantLoading } = useTenantModels();
+
+  useEffect(() => {
+    if (!useRealApi || !open) return;
+    const emb = tenantModels.embd_id || embeddingOptions.find(o => !o.disabled)?.value || '';
+    const chat = tenantModels.llm_id || chatOptions.find(o => !o.disabled)?.value || '';
+    const rerank = tenantModels.rerank_id || rerankOptions.find(o => !o.disabled)?.value || '';
+    setForm(f => ({
+      ...f,
+      embeddingModel: f.embeddingModel.includes('@') ? f.embeddingModel : emb,
+      llmModel: f.llmModel.includes('@') ? f.llmModel : chat,
+      rerankerModel: f.rerankerModel.includes('@') ? f.rerankerModel : rerank,
+    }));
+  }, [open, tenantModels, embeddingOptions, chatOptions, rerankOptions]);
 
   if (!open) return null;
+
+  const missingEmbedding = useRealApi && !tenantLoading && !form.embeddingModel.includes('@');
 
   const patch = (partial: Partial<KBCreateForm>) => setForm(f => ({ ...f, ...partial }));
 
@@ -235,22 +257,59 @@ export function KBCreateDialog({ open, onClose, onSubmit }: KBCreateDialogProps)
                 </div>
                 <div>
                   <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">嵌入模型</label>
-                  <select value={form.embeddingModel} onChange={e => patch({ embeddingModel: e.target.value })} className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-gray-100">
-                    <option>BAAI/bge-m3</option><option>BCE-Embedding</option><option>text-embedding-3-small</option>
-                  </select>
+                  {useRealApi ? (
+                    <LlmModelSelect
+                      value={form.embeddingModel}
+                      onChange={v => patch({ embeddingModel: v })}
+                      options={embeddingOptions}
+                      loading={embLoading || tenantLoading}
+                      className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-gray-100"
+                    />
+                  ) : (
+                    <select value={form.embeddingModel} onChange={e => patch({ embeddingModel: e.target.value })} className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-gray-100">
+                      <option>BAAI/bge-m3</option><option>BCE-Embedding</option><option>text-embedding-3-small</option>
+                    </select>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">LLM 模型</label>
-                  <select value={form.llmModel} onChange={e => patch({ llmModel: e.target.value })} className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-gray-100">
-                    <option>DeepSeek-v4</option><option>Qwen3-72B</option><option>Claude-4</option><option>gpt-4o</option>
-                  </select>
+                  {useRealApi ? (
+                    <LlmModelSelect
+                      value={form.llmModel}
+                      onChange={v => patch({ llmModel: v })}
+                      options={chatOptions}
+                      loading={chatLoading || tenantLoading}
+                      className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-gray-100"
+                    />
+                  ) : (
+                    <select value={form.llmModel} onChange={e => patch({ llmModel: e.target.value })} className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-gray-100">
+                      <option>DeepSeek-v4</option><option>Qwen3-72B</option><option>Claude-4</option><option>gpt-4o</option>
+                    </select>
+                  )}
                 </div>
               </div>
+              {missingEmbedding && (
+                <div className="flex items-start gap-2 p-2.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg text-xs text-amber-800 dark:text-amber-200">
+                  <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
+                  <span>请先在知识库配置 →「模型与 KEY」中添加平台 API KEY 并设置默认嵌入模型，否则文档无法解析。</span>
+                </div>
+              )}
               <div>
                 <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">Reranker 模型</label>
-                <select value={form.rerankerModel} onChange={e => patch({ rerankerModel: e.target.value })} className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-gray-100">
-                  <option>bge-reranker-v2-m3</option><option>bce-ranker-base_v1</option><option>cohere-rerank-v3</option>
-                </select>
+                {useRealApi ? (
+                  <LlmModelSelect
+                    value={form.rerankerModel}
+                    onChange={v => patch({ rerankerModel: v })}
+                    options={rerankOptions}
+                    loading={rerankLoading}
+                    emptyHint="可选"
+                    className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-gray-100"
+                  />
+                ) : (
+                  <select value={form.rerankerModel} onChange={e => patch({ rerankerModel: e.target.value })} className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-gray-100">
+                    <option>bge-reranker-v2-m3</option><option>bce-ranker-base_v1</option><option>cohere-rerank-v3</option>
+                  </select>
+                )}
               </div>
 
               <div className="space-y-2 pt-1">

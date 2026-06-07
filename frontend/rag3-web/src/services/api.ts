@@ -5,6 +5,7 @@ import { apiRequest, useRealApi } from './http';
 
 export { ApiError, useRealApi } from './http';
 export { kbApi } from './kbApi';
+export { llmApi } from './llmApi';
 export { login, logout } from './auth';
 
 /* ── RAG3 扩展 API ── */

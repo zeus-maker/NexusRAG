@@ -117,6 +117,36 @@ export async function apiRequestRaw<T>(
   return { data: json.data as T, headers: res.headers, status: res.status };
 }
 
+const LEGACY_API_BASE = import.meta.env.VITE_LEGACY_API_BASE ?? '/v1';
+
+function buildLegacyUrl(path: string) {
+  const normalized = path.startsWith('/') ? path : `/${path}`;
+  return `${LEGACY_API_BASE}${normalized}`;
+}
+
+/** RAGFlow 旧版 Web API（/v1/llm/* 等，与 /api/v1 并列） */
+export async function legacyApiRequest<T>(
+  path: string,
+  init?: RequestInit,
+): Promise<{ data: T; total?: number }> {
+  const res = await fetch(buildLegacyUrl(path), {
+    ...init,
+    headers: authHeaders({
+      'Content-Type': 'application/json',
+      ...init?.headers,
+    }),
+  });
+
+  const json = (await res.json().catch(() => ({}))) as ApiEnvelope<T>;
+  if (!res.ok) {
+    throw new ApiError(json?.message ?? res.statusText, res.status, json?.code);
+  }
+  if (json?.code !== undefined && json.code !== 0) {
+    throw new ApiError(json?.message ?? 'API error', res.status, json.code);
+  }
+  return { data: (json?.data ?? json) as T, total: json?.total };
+}
+
 /** multipart 上传（不设置 Content-Type，由浏览器自动带 boundary） */
 export async function apiUpload<T>(path: string, formData: FormData): Promise<T> {
   const res = await fetch(buildUrl(path), {

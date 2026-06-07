@@ -8,7 +8,10 @@ import {
 } from 'lucide-react';
 import { mockKBs } from '../mockData';
 import { KBDetailLayout } from '../components/KBDetailLayout';
+import { ModelProviderPanel } from '../components/llm/ModelProviderPanel';
+import { LlmModelSelect } from '../components/llm/LlmModelSelect';
 import { useKnowledgeBase, updateKnowledgeBase } from '../hooks/useKbData';
+import { useLlmModels, useTenantModels } from '../hooks/useLlmData';
 import { useRealApi } from '../services/http';
 import type { KBSettingsTab } from '../store';
 
@@ -46,10 +49,15 @@ interface KBSettingsPageProps {
 export function KBSettingsPage({ kbId, onNavigate, initialTab = 'parsing' }: KBSettingsPageProps) {
   const { data: apiKb, refresh: refreshKb } = useKnowledgeBase(kbId);
   const kb = useRealApi ? apiKb : (mockKBs.find(k => k.kb_id === kbId) || mockKBs[0]);
+  const { options: embeddingOptions, loading: embOptionsLoading } = useLlmModels('embedding');
+  const { options: chatOptions, loading: chatOptionsLoading } = useLlmModels('chat');
+  const { data: tenantModels } = useTenantModels();
   const [tab, setTab] = useState<KBSettingsTab>(initialTab);
   const [name, setName] = useState(kb.name);
   const [description, setDescription] = useState(kb.description);
   const [permission, setPermission] = useState<'me' | 'team'>('team');
+  const [embeddingModel, setEmbeddingModel] = useState(kb.embedding_model || '');
+  const [llmModel, setLlmModel] = useState(kb.llm_model || '');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [chunkMethod, setChunkMethod] = useState('General（通用）');
@@ -74,7 +82,9 @@ export function KBSettingsPage({ kbId, onNavigate, initialTab = 'parsing' }: KBS
   useEffect(() => {
     setName(kb.name);
     setDescription(kb.description);
-  }, [kb.name, kb.description]);
+    setEmbeddingModel(kb.embedding_model && kb.embedding_model !== '—' ? kb.embedding_model : tenantModels.embd_id || '');
+    setLlmModel(kb.llm_model && kb.llm_model !== '—' ? kb.llm_model : tenantModels.llm_id || '');
+  }, [kb.name, kb.description, kb.embedding_model, kb.llm_model, tenantModels.embd_id, tenantModels.llm_id]);
 
   const subNavKey = tab === 'datasource' ? 'kb-data-sources' : 'kb-settings';
 
@@ -87,7 +97,12 @@ export function KBSettingsPage({ kbId, onNavigate, initialTab = 'parsing' }: KBS
       setSaving(true);
       setSaveError(null);
       try {
-        await updateKnowledgeBase(kbId, { name, description, permission });
+        await updateKnowledgeBase(kbId, {
+          name,
+          description,
+          permission,
+          embedding_model: embeddingModel.includes('@') ? embeddingModel : undefined,
+        });
         refreshKb();
         setSaved(true);
         setTimeout(() => setSaved(false), 2000);
@@ -138,6 +153,7 @@ export function KBSettingsPage({ kbId, onNavigate, initialTab = 'parsing' }: KBS
       <div className="flex border-b border-gray-200 gap-1">
         {[
           { k: 'basic', l: '基础信息' },
+          ...(useRealApi ? [{ k: 'models', l: '模型与 KEY' }] : []),
           { k: 'parsing', l: '解析分块' },
           { k: 'index', l: '全局索引' },
           { k: 'datasource', l: '数据源' },
@@ -178,13 +194,32 @@ export function KBSettingsPage({ kbId, onNavigate, initialTab = 'parsing' }: KBS
                 ))}
               </div></div>
             <div><label className="block text-xs text-gray-600 mb-1">嵌入模型</label>
-              <select className="w-full px-2.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none dark:bg-gray-800 dark:border-gray-600">
-                <option>BAAI/bge-m3</option><option>BCE-Embedding</option>
-              </select></div>
+              {useRealApi ? (
+                <LlmModelSelect
+                  value={embeddingModel}
+                  onChange={setEmbeddingModel}
+                  options={embeddingOptions}
+                  loading={embOptionsLoading}
+                />
+              ) : (
+                <select className="w-full px-2.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none dark:bg-gray-800 dark:border-gray-600">
+                  <option>BAAI/bge-m3</option><option>BCE-Embedding</option>
+                </select>
+              )}</div>
             <div><label className="block text-xs text-gray-600 mb-1">默认 LLM 模型</label>
-              <select className="w-full px-2.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none dark:bg-gray-800 dark:border-gray-600">
-                <option>DeepSeek-v4</option><option>Qwen3-72B</option><option>Claude-4</option>
-              </select></div>
+              {useRealApi ? (
+                <LlmModelSelect
+                  value={llmModel}
+                  onChange={setLlmModel}
+                  options={chatOptions}
+                  loading={chatOptionsLoading}
+                  emptyHint="租户默认对话模型（在「模型与 KEY」配置）"
+                />
+              ) : (
+                <select className="w-full px-2.5 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none dark:bg-gray-800 dark:border-gray-600">
+                  <option>DeepSeek-v4</option><option>Qwen3-72B</option><option>Claude-4</option>
+                </select>
+              )}</div>
           </div>
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
             <h4 className="text-xs font-semibold text-amber-800 mb-1">权限与 ACL</h4>
@@ -198,6 +233,10 @@ export function KBSettingsPage({ kbId, onNavigate, initialTab = 'parsing' }: KBS
             </button>
           </div>
         </div>
+      )}
+
+      {tab === 'models' && useRealApi && (
+        <ModelProviderPanel onSaved={refreshKb} />
       )}
 
       {tab === 'parsing' && (
@@ -238,9 +277,19 @@ export function KBSettingsPage({ kbId, onNavigate, initialTab = 'parsing' }: KBS
             </div>
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-2">嵌入模型</label>
-              <select className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none">
-                <option>BAAI/bge-m3</option><option>BCE-Embedding</option><option>text-embedding-3-small</option>
-              </select>
+              {useRealApi ? (
+                <LlmModelSelect
+                  value={embeddingModel}
+                  onChange={setEmbeddingModel}
+                  options={embeddingOptions}
+                  loading={embOptionsLoading}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none dark:bg-gray-800 dark:border-gray-600"
+                />
+              ) : (
+                <select className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none">
+                  <option>BAAI/bge-m3</option><option>BCE-Embedding</option><option>text-embedding-3-small</option>
+                </select>
+              )}
             </div>
           </div>
 

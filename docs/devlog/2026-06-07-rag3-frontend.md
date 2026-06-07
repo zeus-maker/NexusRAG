@@ -917,3 +917,39 @@ P0 最后一项：检索测试页需从单通道混合结果升级为 PRD §10.5
 - `frontend/rag3-web/src/pages/KnowledgeBase.tsx`、`KBExtra.tsx`、`KBGovernancePages.tsx`、`RetrievalTestPage.tsx`
 - `frontend/rag3-web/src/components/kb/DocumentParsePreviewPanel.tsx`
 - `frontend/rag3-web/README.md`
+
+---
+
+## 31. 知识库模型配置对接 RAGFlow LLM API
+
+### 背景与目标
+
+文档解析失败根因为租户 `embd_id` 为空（task_executor: `No default embedding model is set`），而 KB 配置页嵌入/LLM 下拉仍为 mock。需迁移 RAGFlow 模型配置能力：配置平台 API KEY、选择嵌入/对话/重排模型，并与创建 KB、保存 KB 设置打通。
+
+### 改动摘要
+
+- **Vite 代理**：新增 `/v1` → `9380`，贯通 `POST /v1/llm/set_api_key`、`GET /v1/llm/list` 等旧版 Web API。
+- **`llmApi` + `useLlmData`**：`factories`、`list`、`my_llms`、`set_api_key`；租户默认模型 `GET/PATCH /api/v1/users/me/models`；`flattenLlmOptions` 产出 `model@factory` 选项。
+- **`ModelProviderPanel`**：KB 配置新增「模型与 KEY」Tab——厂商选择 + API KEY/Base URL 保存、已配置厂商列表、租户默认嵌入/对话/重排模型保存；未配置嵌入时展示解析失败预警。
+- **KB 配置/创建**：基础信息与解析分块页的嵌入模型下拉接真实 API；保存 KB 时传 `embedding_model`（须含 `@`）；创建向导自动继承租户默认模型，无嵌入时提示先去配置。
+
+### 验证与风险
+
+- `npm run build` 通过。
+- 验证路径：登录 → 知识库 → 配置 →「模型与 KEY」→ 保存 DeepSeek/OpenAI 等 KEY → 选默认嵌入模型 → 创建 KB 或解析文档。
+- `set_api_key` 会在线验证 KEY，失败时返回厂商错误信息；PATCH 租户模型要求 `embd_id` 等字段格式为 `name@factory` 且 KEY 已配置。
+- KB 级 `llm_model`/`reranker` 仍主要走租户默认，RAGFlow dataset 更新契约暂不支持单独 rerank 字段。
+
+### 反思与沉淀
+
+- RAGFlow 双轨 API：`/api/v1`（REST）与 `/v1/llm`（Web 遗留）并存，前端须分别代理；`legacyApiRequest` 与 `apiRequest` 分离可避免路径混淆。
+- 解析链路依赖租户级 `embd_id`，非仅 KB 级 `embedding_model`；UI 须引导用户先完成租户默认嵌入配置。
+
+### 涉及文件
+
+- `frontend/rag3-web/vite.config.ts` — `/v1` 代理
+- `frontend/rag3-web/src/services/http.ts`、`llmApi.ts`
+- `frontend/rag3-web/src/hooks/useLlmData.ts`
+- `frontend/rag3-web/src/components/llm/ModelProviderPanel.tsx`、`LlmModelSelect.tsx`
+- `frontend/rag3-web/src/pages/KBExtra.tsx`、`components/KBCreateDialog.tsx`
+- `frontend/rag3-web/src/store.ts` — `KBSettingsTab` 增加 `models`
