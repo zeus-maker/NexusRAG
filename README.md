@@ -25,17 +25,20 @@ npm install
 npm run dev          # http://localhost:5173
 ```
 
-### 后端（需 RAGFlow 基础服务）
+### 后端（本地源码）
+
+完整步骤见 **[backend/README.md](./backend/README.md)**（Docker 中间件 + `uv` 依赖 + API / task_executor）。
 
 ```bash
-# 1. 使用 ragflow-0.25.6/docker 启动 MySQL / ES / Redis / MinIO
-# 2. 启动 API
-cd backend/ragflow_rag30
-export PYTHONPATH=$(pwd)
-python api/ragflow_server.py
+# 中间件
+cd ragflow-0.25.6/docker && docker compose -f docker-compose-base.yml up -d
+
+# 依赖 + API（见 backend/README.md）
+./backend/ragflow_rag30/scripts/install.sh
+./backend/ragflow_rag30/scripts/start.sh
 ```
 
-RAG3 扩展健康检查：`GET /v1/rag3/health`
+RAG3 健康检查：`curl http://localhost:9380/v1/rag3/health`
 
 ### 原型参考
 

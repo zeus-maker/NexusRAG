@@ -789,3 +789,96 @@ P0 最后一项：检索测试页需从单通道混合结果升级为 PRD §10.5
 - `backend/ragflow_rag30/router/`、`pipelines/`、`fusion/`、`security/`、`api/apps/rag3_app.py`
 - `frontend/rag3-web/src/services/api.ts`、`vite.config.ts`、`package.json`
 - `scripts/sync-from-ragflow.sh`、`.gitignore`
+
+---
+
+## 27. 知识库管理对接 RAGFlow 正式 API
+
+### 背景与目标
+
+`frontend/rag3-web` 知识库管理页此前完全依赖 `mockKBs`/`mockDocuments`。需在 `VITE_USE_REAL_API=true` 时对接 RAGFlow `/v1/datasets` 与文档 API，保留 mock 模式供离线演示。
+
+**用户可见变化**：开启 API 模式后，登录页调用真实 `/v1/auth/login`；知识库列表/创建/删除、详情概览、文档列表与上传走 RAGFlow；列表页显示「API」徽章与刷新按钮。
+
+### 改动摘要
+
+- **HTTP 基座** `services/http.ts`：Authorization 存储、`apiRequest`/`apiUpload`、环境变量 `VITE_RAGFLOW_AUTH_TOKEN` 直登。
+- **认证** `services/auth.ts`：RSA 加密密码（与 RAGFlow Web 同公钥），登录后持久化 token。
+- **知识库 API** `services/kbApi.ts` + `kbMappers.ts`：Dataset ↔ `KnowledgeBase`、Document 字段映射；CRUD + 文档列表/上传。
+- **Hooks** `hooks/useKbData.ts`：`useKnowledgeBaseList` / `useKnowledgeBase` / `useDocuments`，`useRealApi` 时走 API，否则回落 mock。
+- **页面**：`Login.tsx`、`store.ts`（token 恢复会话）、`KnowledgeBase.tsx`（列表/详情/文档）、`KBDetailLayout.tsx`。
+
+### 验证与风险
+
+- 验证：`cd frontend/rag3-web && npm run build` 通过。
+- 手动（需 RAGFlow :9380）：`.env.local` 设 `VITE_USE_REAL_API=true` → 登录 → 列表刷新 → 创建 KB → 上传 PDF。
+- 风险：治理摘要/五态流水线/解析预览仍用 mock enrich；删除在 API 模式为硬删除非回收站；统计卡片在 API 模式仅汇总当前页。
+
+### 反思与沉淀
+
+- 适配层将 RAGFlow `chunk_method`/`run` 映射为原型 `KnowledgeBase`/`Document` 契约，后续 RAG3 扩展字段可在 mapper 增量追加而不改页面。
+- `useRealApi` 双模式让 bolt 原型演示与联调共存，建议按模块（Chat/Search/Eval）逐步替换。
+
+### 涉及文件
+
+- `frontend/rag3-web/src/services/http.ts`、`auth.ts`、`kbApi.ts`、`kbMappers.ts`、`api.ts`
+- `frontend/rag3-web/src/hooks/useKbData.ts`
+- `frontend/rag3-web/src/pages/Login.tsx`、`KnowledgeBase.tsx`
+- `frontend/rag3-web/src/store.ts`、`components/KBDetailLayout.tsx`
+- `frontend/rag3-web/.env.example`、`README.md`、`CLAUDE.md`
+
+---
+
+## 28. backend 本地源码启动教程 + ES 端口修正
+
+### 背景与目标
+
+`backend/README.md` 仅有三行启动命令，缺少与 monorepo 分工（`ragflow_rag30` 二开 + `ragflow-0.25.6` 依赖/Docker）对应的可复现步骤。
+
+### 改动摘要
+
+- 重写 `backend/README.md`：中间件 Docker、上游 `uv sync`、`service_conf` 对齐、API + task_executor、前端联调、FAQ。
+- `service_conf.yaml` 的 `es.hosts` 端口须与宿主机 `ES_PORT` 一致（Docker 映射 `ES_PORT:9200`，容器内 ES 始终监听 9200）；本仓库配置为 `http://localhost:9200`。
+- 根 `README.md`、`CLAUDE.md` 指向详细后端文档。
+
+### 验证与风险
+
+- 文档步骤与上游 README § Launch service from source 对齐；未在本机全量跑通 Docker 栈。
+- 风险：换 `DOC_ENGINE=infinity` 时端口需改 `infinity.uri` 而非 ES 段。
+
+### 涉及文件
+
+- `backend/README.md`、`backend/ragflow_rag30/conf/service_conf.yaml`
+- `README.md`、`CLAUDE.md`
+
+---
+
+## 29. ragflow_rag30 本地启动修复：strenum 迁移 + 补全 memory 包
+
+### 背景与目标
+
+在 `backend/ragflow_rag30` 用 `uv sync` 安装依赖后执行 `./scripts/start.sh`，先后遇到 `ModuleNotFoundError: No module named 'strenum'` 与 `No module named 'memory'`，API `:9380` 无法拉起。目标是在不改 RAG3 扩展模块的前提下，让 ragflow_server 与 RAG3 health 端点可本地复现启动。
+
+### 改动摘要
+
+- **strenum**：上游 Python 3.13 已从 `pyproject.toml` 移除 `strenum`，但 14 处 RAGFlow 核心代码仍 `from strenum import StrEnum`；统一改为 `from enum import StrEnum`（`common/constants.py`、`api/db/__init__.py`、`rag/llm/*`、`deepdoc/parser/mineru_parser.py` 等）。
+- **memory 包**：`common/settings.py` 与 memory 相关 API 依赖顶层 `memory/` Python 包；monorepo 迁移时未拷贝，从 `ragflow-0.25.6/memory/` 同步 `services/`、`utils/` 至 `backend/ragflow_rag30/memory/`。
+- **依赖与脚本**（接续 §28）：`pyproject.toml` + `uv.lock` 置于 `rag30` 根目录；`scripts/install.sh`、`start.sh`、`start-task-executor.sh` 在目录内 `uv sync` 并设置 `PYTHONPATH`、`HF_ENDPOINT`。
+
+### 验证与风险
+
+- `from api.apps import app` 导入成功（约 75s，含模型/词典加载警告，可忽略）。
+- `./scripts/start.sh` 后 `curl http://localhost:9380/v1/rag3/health` → `200`，`data.status=ok`，`modules=["router","pipelines","fusion","security"]`。
+- Docker 中间件（mysql/redis/minio/es01）须先 Up healthy；首次登录需 `--init-superuser`。
+- 风险：`Load term.freq FAIL!` 为词典缺失警告，不影响 RAG3 health；文档解析/task_executor 需另开 `start-task-executor.sh`。
+
+### 反思与沉淀
+
+- `strenum` 与 `memory` 均非 RAG3 自有依赖，而是 RAGFlow 0.25.6 基座在 monorepo 裁剪/迁移时的遗漏；后续从上游同步时应以 `comm` 对比顶层 Python 包目录。
+- RAG3 模块（`router/`、`pipelines/` 等）仍零第三方依赖，health 可独立验证。
+
+### 涉及文件
+
+- `backend/ragflow_rag30/memory/` — 从上游补全 Memory 功能 Python 包
+- `backend/ragflow_rag30/common/constants.py` 等 14 文件 — StrEnum 标准库迁移
+- `backend/ragflow_rag30/pyproject.toml`、`uv.lock`、`scripts/*.sh` — uv 本地环境与启动

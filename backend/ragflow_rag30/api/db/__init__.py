@@ -14,8 +14,7 @@
 #  limitations under the License.
 #
 
-from enum import IntEnum
-from strenum import StrEnum
+from enum import IntEnum, StrEnum
 
 
 class UserTenantRole(StrEnum):

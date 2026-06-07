@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import {
   Plus, Search, MoreHorizontal, Database, FileText,
   Cpu, Clock, TrendingUp, ArrowRight, RefreshCw, Trash2,
@@ -11,6 +11,15 @@ import { DocumentParsePreviewPanel } from '../components/kb/DocumentParsePreview
 import { getPageIndexDocIdForKbDoc } from '../data/pageIndexMock';
 import { mockKBs, mockDocuments, mockChunks, mockIndexStatuses } from '../mockData';
 import type { KnowledgeBase } from '../types';
+import {
+  useKnowledgeBaseList,
+  useKnowledgeBase,
+  useDocuments,
+  createKnowledgeBase,
+  deleteKnowledgeBase,
+  uploadKbDocuments,
+} from '../hooks/useKbData';
+import { useRealApi } from '../services/http';
 import { KBCreateDialog, type KBCreateForm } from '../components/KBCreateDialog';
 import { addToRecycleBin, getRecycleBinCount } from '../data/kbRecycleBin';
 import { PAGEINDEX_GLOBAL_FAILED_COUNT } from '../data/pageIndexMock';
@@ -80,8 +89,14 @@ export function KBListPage({ onNavigate }: KBListPageProps) {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<KnowledgeBase | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+
+  const { data: listResult, loading, error, refresh, isApiMode } = useKnowledgeBaseList(
+    sortBy, sortDesc, search, page, PAGE_SIZE, statusFilter,
+  );
 
   const filtered = useMemo(() => {
+    if (isApiMode) return listResult.items;
     const list = mockKBs.filter(kb => {
       const q = search.trim().toLowerCase();
       const matchSearch = !q || kb.name.toLowerCase().includes(q) || kb.description.toLowerCase().includes(q);
@@ -89,10 +104,20 @@ export function KBListPage({ onNavigate }: KBListPageProps) {
       return matchSearch && matchStatus;
     });
     return sortKBs(list, sortBy, sortDesc);
-  }, [search, statusFilter, sortBy, sortDesc]);
+  }, [isApiMode, listResult.items, search, statusFilter, sortBy, sortDesc]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const totalCount = isApiMode ? listResult.total : filtered.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const paged = isApiMode ? filtered : filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  const statsSource = isApiMode ? listResult.items : mockKBs;
+  const kbStats = useMemo(() => ({
+    total: isApiMode ? listResult.total : mockKBs.length,
+    active: statsSource.filter(k => k.status === 'active').length,
+    docs: statsSource.reduce((s, k) => s + k.doc_count, 0),
+    chunks: statsSource.reduce((s, k) => s + k.chunk_count, 0),
+    storage: statsSource.reduce((s, k) => s + k.total_size_bytes, 0),
+  }), [isApiMode, listResult.total, listResult.items, statsSource]);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -112,24 +137,49 @@ export function KBListPage({ onNavigate }: KBListPageProps) {
   ];
 
   const handleCreate = async (form: KBCreateForm) => {
-    await new Promise(r => setTimeout(r, 900));
-    onNavigate('kb-detail', { selectedKBId: 'kb-001' });
-    showToast(`知识库「${form.name.trim()}」创建成功，已进入详情`);
+    setCreating(true);
+    try {
+      if (isApiMode) {
+        const created = await createKnowledgeBase(form);
+        refresh();
+        onNavigate('kb-detail', { selectedKBId: created.kb_id });
+        showToast(`知识库「${created.name}」创建成功`);
+      } else {
+        await new Promise(r => setTimeout(r, 900));
+        onNavigate('kb-detail', { selectedKBId: 'kb-001' });
+        showToast(`知识库「${form.name.trim()}」创建成功，已进入详情`);
+      }
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : '创建失败');
+      throw e;
+    } finally {
+      setCreating(false);
+    }
   };
 
-  const moveToRecycleBin = (kb: KnowledgeBase) => {
-    addToRecycleBin({
-      id: `rb-${Date.now()}`,
-      name: kb.name,
-      type: '知识库',
-      kb: '—',
-      deletedAt: new Date().toISOString(),
-      daysLeft: 30,
-      deletedBy: '当前用户',
-      docCount: kb.doc_count,
-    });
-    setRecycleCount(getRecycleBinCount());
-    showToast(`「${kb.name}」已移入回收站`);
+  const moveToRecycleBin = async (kb: KnowledgeBase) => {
+    try {
+      if (isApiMode) {
+        await deleteKnowledgeBase([kb.kb_id]);
+        refresh();
+        showToast(`「${kb.name}」已删除`);
+      } else {
+        addToRecycleBin({
+          id: `rb-${Date.now()}`,
+          name: kb.name,
+          type: '知识库',
+          kb: '—',
+          deletedAt: new Date().toISOString(),
+          daysLeft: 30,
+          deletedBy: '当前用户',
+          docCount: kb.doc_count,
+        });
+        setRecycleCount(getRecycleBinCount());
+        showToast(`「${kb.name}」已移入回收站`);
+      }
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : '删除失败');
+    }
     setDeleteTarget(null);
   };
 
@@ -243,7 +293,14 @@ export function KBListPage({ onNavigate }: KBListPageProps) {
 
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">知识库管理</h1>
+          <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+            知识库管理
+            {isApiMode && (
+              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+                API
+              </span>
+            )}
+          </h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">管理企业知识库，配置解析分块与 RAG 3.0 增强索引</p>
         </div>
         <div className="flex items-center gap-2">
@@ -259,10 +316,21 @@ export function KBListPage({ onNavigate }: KBListPageProps) {
               </span>
             )}
           </button>
+          {isApiMode && (
+            <button
+              type="button"
+              onClick={refresh}
+              disabled={loading}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300"
+            >
+              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> 刷新
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setShowCreate(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 shadow-sm"
+            disabled={creating}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 shadow-sm disabled:opacity-60"
           >
             <Plus size={16} /> 创建知识库
           </button>
@@ -271,10 +339,10 @@ export function KBListPage({ onNavigate }: KBListPageProps) {
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: '知识库总数', value: mockKBs.length, sub: `${mockKBs.filter(k => k.status === 'active').length} 活跃`, icon: Database, color: 'text-blue-500', bg: 'bg-blue-50 dark:bg-blue-900/20' },
-          { label: '文档总数', value: mockKBs.reduce((s, k) => s + k.doc_count, 0).toLocaleString(), sub: '全库合计', icon: FileText, color: 'text-purple-500', bg: 'bg-purple-50 dark:bg-purple-900/20' },
-          { label: 'Chunk 总数', value: (mockKBs.reduce((s, k) => s + k.chunk_count, 0) / 1000).toFixed(1) + 'k', sub: '已向量化', icon: Cpu, color: 'text-orange-500', bg: 'bg-orange-50 dark:bg-orange-900/20' },
-          { label: '存储总量', value: formatBytes(mockKBs.reduce((s, k) => s + k.total_size_bytes, 0)), sub: '含原始文件', icon: TrendingUp, color: 'text-green-500', bg: 'bg-green-50 dark:bg-green-900/20' },
+          { label: '知识库总数', value: kbStats.total, sub: `${kbStats.active} 活跃`, icon: Database, color: 'text-blue-500', bg: 'bg-blue-50 dark:bg-blue-900/20' },
+          { label: '文档总数', value: kbStats.docs.toLocaleString(), sub: isApiMode ? '当前页合计' : '全库合计', icon: FileText, color: 'text-purple-500', bg: 'bg-purple-50 dark:bg-purple-900/20' },
+          { label: 'Chunk 总数', value: (kbStats.chunks / 1000).toFixed(1) + 'k', sub: '已向量化', icon: Cpu, color: 'text-orange-500', bg: 'bg-orange-50 dark:bg-orange-900/20' },
+          { label: '存储总量', value: formatBytes(kbStats.storage), sub: '含原始文件', icon: TrendingUp, color: 'text-green-500', bg: 'bg-green-50 dark:bg-green-900/20' },
         ].map((s, i) => {
           const Icon = s.icon;
           return (
@@ -332,7 +400,20 @@ export function KBListPage({ onNavigate }: KBListPageProps) {
         </div>
       </div>
 
-      {filtered.length === 0 ? (
+      {error && (
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl px-4 py-3 text-sm text-red-700 dark:text-red-300 flex items-center gap-2">
+          <AlertCircle size={16} />
+          <span>{error}</span>
+          <button type="button" onClick={refresh} className="ml-auto text-xs underline">重试</button>
+        </div>
+      )}
+
+      {loading && paged.length === 0 ? (
+        <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center">
+          <Loader size={32} className="mx-auto text-blue-500 animate-spin mb-3" />
+          <p className="text-sm text-gray-500">正在加载知识库列表…</p>
+        </div>
+      ) : filtered.length === 0 ? (
         <div className="bg-white dark:bg-gray-900 rounded-xl border border-dashed border-gray-300 dark:border-gray-600 p-12 text-center">
           <Database size={40} className="mx-auto text-gray-300 mb-3" />
           <p className="text-sm text-gray-600 dark:text-gray-400">未找到匹配的知识库</p>
@@ -444,17 +525,22 @@ interface KBDetailPageProps {
 }
 
 export function KBDetailPage({ kbId, onNavigate }: KBDetailPageProps) {
-  const kb = mockKBs.find(k => k.kb_id === kbId) || mockKBs[0];
+  const { data: kb, loading: kbLoading, error: kbError } = useKnowledgeBase(kbId);
   const governance = getGovernanceSummary(kbId);
   const health = getKBHealthScore(kbId);
 
   return (
-    <KBDetailLayout kbId={kbId} activeKey="kb-detail" onNavigate={onNavigate}>
+    <KBDetailLayout kbId={kbId} activeKey="kb-detail" onNavigate={onNavigate} kbOverride={kb}>
       <div className="p-6 flex flex-col gap-5">
+        {kbError && (
+          <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{kbError}</div>
+        )}
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2">
             <span className="text-xl">{kb.icon}</span>
-            <h1 className="text-lg font-bold text-gray-900 dark:text-gray-100">概览</h1>
+            <h1 className="text-lg font-bold text-gray-900 dark:text-gray-100">
+              概览{kbLoading && useRealApi ? '（加载中）' : ''}
+            </h1>
             <span className={`px-2 py-0.5 text-xs rounded-full ${statusConfig[kb.status].color}`}>{statusConfig[kb.status].label}</span>
           </div>
           <button
@@ -634,22 +720,64 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
   const [search, setSearch] = useState('');
   const [isDragging, setIsDragging] = useState(false);
   const [selectedDocs, setSelectedDocs] = useState<string[]>([]);
-  const [previewDocId, setPreviewDocId] = useState<string | null>('doc-001');
+  const [previewDocId, setPreviewDocId] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const { data: documents, loading: docsLoading, error: docsError, refresh: refreshDocs } = useDocuments(kbId, search);
   const governedMap = Object.fromEntries(getGovernedDocuments(kbId).map(g => [g.doc_id, g]));
   const uploadQueue = getUploadQueue();
 
-  const filtered = mockDocuments.filter(d => d.kb_id === kbId && d.original_name.includes(search));
-  const previewDoc = previewDocId ? mockDocuments.find(d => d.doc_id === previewDocId && d.kb_id === kbId) : null;
+  const filtered = useRealApi
+    ? documents
+    : mockDocuments.filter(d => d.kb_id === kbId && d.original_name.includes(search));
+  const previewDoc = previewDocId ? filtered.find(d => d.doc_id === previewDocId) : filtered[0] ?? null;
+
+  const handleFiles = async (files: FileList | File[]) => {
+    const list = Array.from(files);
+    if (!list.length) return;
+    if (!useRealApi) {
+      setToast('演示模式：上传已模拟');
+      return;
+    }
+    setUploading(true);
+    try {
+      await uploadKbDocuments(kbId, list);
+      refreshDocs();
+      setToast(`已上传 ${list.length} 个文件`);
+    } catch (e) {
+      setToast(e instanceof Error ? e.message : '上传失败');
+    } finally {
+      setUploading(false);
+    }
+  };
   const canPreview = previewDoc && getPageIndexDocIdForKbDoc(previewDoc.doc_id) && previewDoc.parse_status === 'parsed';
 
   return (
     <KBDetailLayout kbId={kbId} activeKey="kb-documents" onNavigate={onNavigate}>
     <div className="flex flex-col h-full min-h-0">
+    {toast && (
+      <div className="fixed top-16 right-6 z-50 px-4 py-2.5 bg-gray-900 text-white text-sm rounded-lg shadow-lg">{toast}</div>
+    )}
+    <input
+      ref={fileInputRef}
+      type="file"
+      multiple
+      className="hidden"
+      accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.csv,.txt,.md,.html"
+      onChange={e => { if (e.target.files) void handleFiles(e.target.files); e.target.value = ''; }}
+    />
     <div className="p-6 flex flex-col gap-4 flex-shrink-0">
+      {docsError && (
+        <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{docsError}</div>
+      )}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
-          <h1 className="text-base font-bold text-gray-900 dark:text-gray-100">文档管理</h1>
+          <h1 className="text-base font-bold text-gray-900 dark:text-gray-100">
+            文档管理{docsLoading && useRealApi ? '（加载中）' : ''}
+          </h1>
           <p className="text-xs text-gray-500 mt-0.5">五态流水线 + 解析预览三栏（§3.4 PageIndex bbox 联动）</p>
         </div>
         <div className="flex gap-2">
@@ -670,8 +798,14 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
           <button className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700">
             🔗 URL导入
           </button>
-          <button className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-            <Plus size={14} /> 上传文档
+          <button
+            type="button"
+            disabled={uploading}
+            onClick={() => fileInputRef.current?.click()}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60"
+          >
+            {uploading ? <Loader size={14} className="animate-spin" /> : <Plus size={14} />}
+            {uploading ? '上传中…' : '上传文档'}
           </button>
         </div>
       </div>
@@ -680,7 +814,8 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
       <div
         onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
         onDragLeave={() => setIsDragging(false)}
-        onDrop={e => { e.preventDefault(); setIsDragging(false); }}
+        onDrop={e => { e.preventDefault(); setIsDragging(false); if (e.dataTransfer.files.length) void handleFiles(e.dataTransfer.files); }}
+        onClick={() => fileInputRef.current?.click()}
         className={`border-2 border-dashed rounded-xl p-6 text-center transition-colors cursor-pointer ${isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'}`}
       >
         <div className="text-3xl mb-2">📂</div>

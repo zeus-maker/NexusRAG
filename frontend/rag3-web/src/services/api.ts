@@ -1,37 +1,11 @@
 /**
- * RAG 3.0 API 客户端 — 逐步替换 *Mock.ts
- * 开发代理: vite.config.ts → http://localhost:9380
+ * RAG 3.0 扩展 API + 重导出 HTTP 基座
  */
+import { apiRequest, useRealApi } from './http';
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? '/api';
-const API_VERSION = 'v1';
-
-export class ApiError extends Error {
-  constructor(
-    message: string,
-    public status: number,
-    public code?: number,
-  ) {
-    super(message);
-    this.name = 'ApiError';
-  }
-}
-
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const url = `${API_BASE}/${API_VERSION}${path}`;
-  const res = await fetch(url, {
-    headers: { 'Content-Type': 'application/json', ...init?.headers },
-    ...init,
-  });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new ApiError(json?.message ?? res.statusText, res.status, json?.code);
-  }
-  if (json?.code !== undefined && json.code !== 0) {
-    throw new ApiError(json?.message ?? 'API error', res.status, json.code);
-  }
-  return (json?.data ?? json) as T;
-}
+export { ApiError, useRealApi } from './http';
+export { kbApi } from './kbApi';
+export { login, logout } from './auth';
 
 /* ── RAG3 扩展 API ── */
 
@@ -89,5 +63,7 @@ export const rag3Api = {
     }),
 };
 
-/** 是否使用真实 API（环境变量开关，默认 mock） */
-export const useRealApi = import.meta.env.VITE_USE_REAL_API === 'true';
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const { data } = await apiRequest<T>(path, init);
+  return data;
+}

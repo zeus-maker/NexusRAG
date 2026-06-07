@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
+import { logout as clearAuth } from './services/auth';
+import { getStoredAuth, getStoredUser, useRealApi } from './services/http';
 
 type Page =
   | 'home'
@@ -66,17 +68,30 @@ interface AppState {
   currentUser: { name: string; role: string; email: string } | null;
 }
 
-const initialState: AppState = {
-  page: 'login',
-  selectedKBId: null,
-  selectedDocId: null,
-  selectedConvId: null,
-  kbSettingsTab: null,
-  monitorTab: null,
-  sidebarCollapsed: false,
-  theme: (typeof localStorage !== 'undefined' && localStorage.getItem('rag3-theme') === 'dark') ? 'dark' : 'light',
-  currentUser: null,
-};
+function buildInitialState(): AppState {
+  const theme =
+    typeof localStorage !== 'undefined' && localStorage.getItem('rag3-theme') === 'dark'
+      ? 'dark'
+      : 'light';
+  const base: AppState = {
+    page: 'login',
+    selectedKBId: null,
+    selectedDocId: null,
+    selectedConvId: null,
+    kbSettingsTab: null,
+    monitorTab: null,
+    sidebarCollapsed: false,
+    theme,
+    currentUser: null,
+  };
+  if (useRealApi && getStoredAuth()) {
+    const saved = getStoredUser();
+    if (saved) return { ...base, page: 'home', currentUser: saved };
+  }
+  return base;
+}
+
+const initialState: AppState = buildInitialState();
 
 type Listener = (state: AppState) => void;
 let globalState: AppState = { ...initialState };
@@ -96,10 +111,16 @@ export function useAppState() {
   const navigate = useCallback((page: Page, extra?: Partial<AppState>) => {
     setState({ page, ...extra });
   }, []);
-  const login = useCallback(() => {
-    setState({ page: 'home', currentUser: { name: '李婷', role: '平台管理员', email: 'li.ting@corp.com' } });
+  const login = useCallback((user?: AppState['currentUser']) => {
+    setState({
+      page: 'home',
+      currentUser: user ?? { name: '李婷', role: '平台管理员', email: 'li.ting@corp.com' },
+    });
   }, []);
-  const logout = useCallback(() => setState(initialState), []);
+  const logout = useCallback(() => {
+    clearAuth();
+    setState({ ...buildInitialState(), page: 'login', currentUser: null });
+  }, []);
   const toggleSidebar = useCallback(() => setState({ sidebarCollapsed: !globalState.sidebarCollapsed }), []);
   const toggleTheme = useCallback(() => {
     const theme = globalState.theme === 'light' ? 'dark' : 'light';

@@ -44,7 +44,7 @@
 - 技术栈：React 18 + TypeScript + Vite + Tailwind；暗色设计系统见 `rag3-bolt-v1.5` 原型。
 - 原型对照：`docs/prd/前端原型实现进度.md`；页面契约：`docs/prd/前端界面实现方案.md`。
 - API：统一走 `src/services/api.ts`；开发时代理到 `http://localhost:9380`（RAGFlow 默认端口）。
-- 替换 mock：按模块将 `src/data/*Mock.ts` 逐步换为 API 调用；保留 mock 作 Storybook/离线演示。
+- 替换 mock：按模块将 `src/data/*Mock.ts` 逐步换为 API 调用；保留 mock 作 Storybook/离线演示。`VITE_USE_REAL_API=true` 时知识库管理已接 `/v1/datasets/*`。
 - 命名：页面组件 `*Page.tsx`；Hub 页 `pages/Hub/`；系统子导航对齐 `SystemSubNav`。
 - 语言：UI 中文为主；代码与 commit 中文 subject。
 
@@ -54,14 +54,7 @@
 - RAG3 查询主路径：`router` → `pipelines`（并行）→ `fusion` → 生成；权限在 `security/chunk_acl` 各通道出口过滤。
 - 配置：`conf/service_conf.yaml` + 环境变量；RAG3 段见 `docs/prd/后端逻辑开发方案.md` §1.4。
 - 测试：`pytest`；lint：`ruff`（与 RAGFlow 一致）。
-- 启动（需 Docker 基础服务）：
-
-```bash
-cd backend/ragflow_rag30
-export PYTHONPATH=$(pwd)
-# 参考 ragflow-0.25.6/docker 启动 MySQL/ES/Redis/MinIO 后：
-python api/ragflow_server.py
-```
+- 本地源码启动：见 `backend/README.md`（Docker 中间件 + `ragflow_rag30` 内 `uv sync` + API/task_executor）。
 
 ## 通用开发原则
 

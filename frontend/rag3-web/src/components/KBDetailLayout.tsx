@@ -1,7 +1,8 @@
 import { ReactNode } from 'react';
-import { mockKBs } from '../mockData';
 import { PAGEINDEX_GLOBAL_FAILED_COUNT } from '../data/pageIndexMock';
+import { useKnowledgeBase } from '../hooks/useKbData';
 import { KBSubNav } from './KBSubNav';
+import type { KnowledgeBase } from '../types';
 
 interface KBDetailLayoutProps {
   kbId: string;
@@ -9,10 +10,12 @@ interface KBDetailLayoutProps {
   onNavigate: (page: string, extra?: Record<string, unknown>) => void;
   children: ReactNode;
   badges?: { wiki?: number; pageindex?: number };
+  kbOverride?: KnowledgeBase;
 }
 
-export function KBDetailLayout({ kbId, activeKey, onNavigate, children, badges }: KBDetailLayoutProps) {
-  const kb = mockKBs.find(k => k.kb_id === kbId) || mockKBs[0];
+export function KBDetailLayout({ kbId, activeKey, onNavigate, children, badges, kbOverride }: KBDetailLayoutProps) {
+  const { data: kbFetched, loading } = useKnowledgeBase(kbId);
+  const kb = kbOverride ?? kbFetched;
 
   return (
     <div className="h-full flex overflow-hidden">
@@ -39,7 +42,9 @@ export function KBDetailLayout({ kbId, activeKey, onNavigate, children, badges }
               className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 flex items-center gap-1.5"
             >
               <span>{kb.icon}</span>
-              <span className="font-medium text-gray-800 dark:text-gray-200">{kb.name}</span>
+              <span className="font-medium text-gray-800 dark:text-gray-200">
+                {loading && !kbOverride ? '加载中…' : kb.name}
+              </span>
             </button>
           </div>
         </div>

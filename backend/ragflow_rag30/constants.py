@@ -15,8 +15,7 @@
 #
 
 import os
-from enum import Enum, IntEnum
-from strenum import StrEnum
+from enum import Enum, IntEnum, StrEnum
 
 SERVICE_CONF = "service_conf.yaml"
 RAG_FLOW_SERVICE_NAME = "ragflow"

@@ -1,36 +1,45 @@
 import { useState } from 'react';
-import { Sparkles, Eye, EyeOff, ArrowRight } from 'lucide-react';
+import { Sparkles, Eye, EyeOff, ArrowRight, AlertCircle } from 'lucide-react';
+import { login as apiLogin } from '../services/auth';
+import { useRealApi } from '../services/http';
 
 interface LoginPageProps {
-  onLogin: () => void;
+  onLogin: (user?: { name: string; role: string; email: string }) => void;
 }
 
 export function LoginPage({ onLogin }: LoginPageProps) {
-  const [email, setEmail] = useState('li.ting@corp.com');
-  const [password, setPassword] = useState('password123');
+  const [email, setEmail] = useState(useRealApi ? '' : 'li.ting@corp.com');
+  const [password, setPassword] = useState(useRealApi ? '' : 'password123');
   const [showPwd, setShowPwd] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setTimeout(() => {
+    setError(null);
+    try {
+      if (useRealApi) {
+        const { user } = await apiLogin(email, password);
+        onLogin(user);
+      } else {
+        await new Promise(r => setTimeout(r, 800));
+        onLogin();
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '登录失败');
+    } finally {
       setLoading(false);
-      onLogin();
-    }, 800);
+    }
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 flex items-center justify-center p-4">
-      {/* Background grid */}
       <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '60px 60px' }}></div>
-
-      {/* Glow effects */}
       <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-600/20 rounded-full blur-3xl"></div>
       <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-indigo-600/20 rounded-full blur-3xl"></div>
 
       <div className="relative w-full max-w-sm">
-        {/* Logo */}
         <div className="text-center mb-8">
           <div className="w-14 h-14 bg-gradient-to-br from-blue-500 to-blue-700 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-2xl shadow-blue-500/50">
             <Sparkles size={26} className="text-white" />
@@ -39,9 +48,15 @@ export function LoginPage({ onLogin }: LoginPageProps) {
           <p className="text-blue-300/80 text-sm mt-1">企业知识库平台</p>
         </div>
 
-        {/* Login card */}
         <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl p-8 shadow-2xl">
           <h2 className="text-lg font-bold text-white mb-6 text-center">登录系统</h2>
+
+          {error && (
+            <div className="mb-4 flex items-start gap-2 text-xs text-red-200 bg-red-500/20 border border-red-400/30 rounded-lg px-3 py-2">
+              <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
+              <span>{error}</span>
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
@@ -99,14 +114,17 @@ export function LoginPage({ onLogin }: LoginPageProps) {
           </form>
 
           <div className="mt-6 pt-4 border-t border-white/10">
-            <p className="text-[10px] text-white/30 text-center">由 AI 平台事业部提供 · v3.0.1 · PROD</p>
+            <p className="text-[10px] text-white/30 text-center">
+              {useRealApi ? '对接 RAGFlow API · 需后端运行于 :9380' : '演示模式 · 直接登录即可'}
+            </p>
           </div>
         </div>
 
-        {/* Demo hint */}
-        <div className="mt-4 text-center">
-          <p className="text-[11px] text-blue-400/60">演示账号已预填，直接点击登录即可</p>
-        </div>
+        {!useRealApi && (
+          <div className="mt-4 text-center">
+            <p className="text-[11px] text-blue-400/60">演示账号已预填，直接点击登录即可</p>
+          </div>
+        )}
       </div>
     </div>
   );
