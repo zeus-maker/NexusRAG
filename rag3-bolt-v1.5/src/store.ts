@@ -12,6 +12,8 @@ type Page =
   | 'kb-permissions'
   | 'kb-data-sources'
   | 'kb-export'
+  | 'kb-governance-stale'
+  | 'kb-logs'
   | 'kb-retrieval-test'
   | 'kb-wiki'
   | 'kb-pageindex-tree'

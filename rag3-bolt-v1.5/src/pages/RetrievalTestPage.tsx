@@ -347,6 +347,12 @@ function FusionHitCard({ hit, showRerank, compact }: { hit: FusionHit; showReran
           <span className="font-bold text-gray-400">#{hit.rank}</span>
           <span className="font-semibold text-gray-800 dark:text-gray-200 truncate">{hit.doc}</span>
           {hit.page != null && <span className="text-gray-500">P{hit.page}</span>}
+          {hit.evalLabel === 'relevant' && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300">✅ 相关</span>
+          )}
+          {hit.evalLabel === 'false_positive' && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">❌ 误召回</span>
+          )}
           <div className="flex gap-1">
             {hit.sources.map(s => (
               <span key={s} className={`text-[9px] px-1 py-0.5 rounded ${CHANNEL_META[s].color}`}>{CHANNEL_META[s].label}</span>

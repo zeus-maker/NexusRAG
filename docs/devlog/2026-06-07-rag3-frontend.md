@@ -673,3 +673,44 @@ P0 最后一项：检索测试页需从单通道混合结果升级为 PRD §10.5
 
 - `rag3-bolt-v1.5/src/data/tracesMock.ts`
 - `rag3-bolt-v1.5/src/pages/TracesPage.tsx`
+
+---
+
+## 24. 知识库治理 enrich 原型首版（US-1.13–1.16）
+
+### 背景与目标
+
+在 `76e2e45` 将 US-1.13–1.16 治理设计写入 PRD 与 `前端界面实现方案.md` §3.12–3.15 后，本轮把设计落到可运行原型：运营人员可在知识库详情内看到治理摘要、五态流水线、陈旧队列、处理日志、五维健康分与 ACL 保真状态，并通过深链定位失败文档。
+
+**用户可见变化**：概览页出现治理摘要条与健康分指标；文档表显示流水线五态与认证状态；索引状态页展示综合健康分与可点击的失败归因；分块预览显示纯度/重叠信号并支持排除 toast；检索测试融合结果可标 ✅相关/❌误召回；权限页新增 batch/live ACL 同步与角色映射冲突。
+
+### 改动摘要
+
+- 新增 `kbGovernanceMock.ts`：治理摘要、健康分、五态流水线、陈旧队列、处理日志、Chunk 质量元数据、`ACL_SYNC_MOCK`。
+- 新增 `KBGovernancePages.tsx`：`KBStaleGovernancePage`（新鲜度筛选 + 批量认证/降权）、`KBProcessingLogsPage`（§10.10.2 审计字段列）。
+- `KnowledgeBase.tsx`：`KBDetailPage`/`DocumentPage`/`ChunkPreviewPage`/`IndexStatusPage` 统一 `KBDetailLayout`；概览五指标含健康分 + 治理摘要深链；文档上传队列与表列接入治理 mock。
+- `KBP0Pages.tsx`：权限页增加 US-1.16 ACL batch/live 同步区块。
+- `retrievalTestMock.ts` + `RetrievalTestPage.tsx`：融合 Hit 增加 `evalLabel` 与 ✅/❌ 徽章。
+- 路由：`store.ts` 新增 `kb-governance-stale`、`kb-logs`；`KBSubNav`「处理日志」去掉 Soon。
+
+### 验证与风险
+
+- 验证：`cd rag3-bolt-v1.5 && npm run build` 通过。
+- 手动：知识库概览 → 陈旧队列 / 处理日志；文档表五态列；索引状态健康分 → 失败归因「定位」；分块排除 toast；检索测试融合 Tab 见标注；权限页 ACL 同步模式切换。
+- 风险：治理数据为静态 mock，与监控 RAG3 Tab、真实 Knowledge Runtime API 未同源；陈旧队列侧栏高亮为「概览」子路由。
+
+### 反思与沉淀
+
+- 治理 mock 集中在 `kbGovernanceMock.ts`，与 `mockIndexStatuses`、Hub 失败数概念对齐，便于后续接 `/api/v1/kb/{id}/governance`。
+- 失败归因 `deep_link_page` 字段使索引页成为运营枢纽，无需在各 Hub 重复失败列表。
+
+### 涉及文件
+
+- `rag3-bolt-v1.5/src/data/kbGovernanceMock.ts` — 治理 mock 数据与标签常量
+- `rag3-bolt-v1.5/src/pages/KBGovernancePages.tsx` — 陈旧队列 + 处理日志页
+- `rag3-bolt-v1.5/src/pages/KnowledgeBase.tsx` — 详情/文档/分块/索引治理 UI
+- `rag3-bolt-v1.5/src/pages/KBP0Pages.tsx` — ACL batch/live 保真
+- `rag3-bolt-v1.5/src/data/retrievalTestMock.ts` — 融合 evalLabel
+- `rag3-bolt-v1.5/src/pages/RetrievalTestPage.tsx` — ✅/❌ 标注展示
+- `rag3-bolt-v1.5/src/store.ts` / `App.tsx` / `Layout.tsx` / `KBSubNav.tsx` — 路由与导航
+- `docs/prd/前端原型实现进度.md` — US-1.13–1.16 标 🟢

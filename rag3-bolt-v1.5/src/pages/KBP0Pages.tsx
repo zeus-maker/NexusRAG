@@ -13,6 +13,7 @@ import {
   type KBDataSource,
   type ExportTask,
 } from '../data/fusionMock';
+import { ACL_SYNC_MOCK } from '../data/kbGovernanceMock';
 
 interface KBP0PageProps {
   kbId: string;
@@ -24,6 +25,7 @@ interface KBP0PageProps {
 export function KBPermissionsPage({ kbId, onNavigate }: KBP0PageProps) {
   const [visibility, setVisibility] = useState(DEFAULT_KB_VISIBILITY.scope);
   const [rules, setRules] = useState(DEFAULT_KB_ACL_RULES);
+  const [syncMode, setSyncMode] = useState<'batch' | 'live'>(ACL_SYNC_MOCK.sync_mode);
   const [toast, setToast] = useState<string | null>(null);
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
 
@@ -69,6 +71,42 @@ export function KBPermissionsPage({ kbId, onNavigate }: KBP0PageProps) {
           <div className="space-y-2">
             {rules.map((rule, idx) => (
               <ACLRuleRow key={rule.id} rule={rule} index={idx + 1} onRemove={() => removeRule(rule.id)} />
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-5 space-y-4">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">外部数据源 ACL 保真（US-1.16）</h3>
+              <p className="text-xs text-gray-500 mt-0.5">batch / live 同步 · 角色映射 · acl_version</p>
+            </div>
+            <button type="button" onClick={() => showToast('ACL 同步已触发（原型）')} className="text-xs px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+              立即同步
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-4 text-sm">
+            {(['batch', 'live'] as const).map(mode => (
+              <label key={mode} className="flex items-center gap-2 text-gray-700 dark:text-gray-300 cursor-pointer">
+                <input type="radio" name="acl-sync" checked={syncMode === mode} onChange={() => setSyncMode(mode)} />
+                {mode === 'batch' ? 'Batch（定时全量）' : 'Live（增量推送）'}
+              </label>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-4 text-xs text-gray-500">
+            <span>acl_version: <strong className="text-gray-700 dark:text-gray-300">{ACL_SYNC_MOCK.acl_version}</strong></span>
+            <span>上次同步: {ACL_SYNC_MOCK.last_sync}</span>
+          </div>
+          <div className="space-y-2">
+            {ACL_SYNC_MOCK.role_mappings.map(m => (
+              <div key={m.source} className="flex items-center gap-3 p-2.5 bg-gray-50 dark:bg-gray-800 rounded-lg text-xs">
+                <span className="font-mono text-gray-600 dark:text-gray-400 flex-1">{m.source}</span>
+                <span className="text-gray-400">→</span>
+                <span className="font-semibold text-gray-800 dark:text-gray-200">{m.target}</span>
+                <span className={`px-2 py-0.5 rounded-full ${m.status === 'ok' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                  {m.status === 'ok' ? '正常' : '冲突'}
+                </span>
+              </div>
             ))}
           </div>
         </div>

@@ -19,6 +19,8 @@ export interface ChannelResult {
   hits: ChannelHit[];
 }
 
+export type EvalLabel = 'relevant' | 'false_positive';
+
 export interface FusionHit {
   rank: number;
   doc: string;
@@ -29,6 +31,7 @@ export interface FusionHit {
   snippet: string;
   chunkId: string;
   sources: RetrievalChannel[];
+  evalLabel?: EvalLabel;
 }
 
 export interface FullRetrievalResult {
@@ -98,7 +101,12 @@ function buildFusion(channels: ChannelResult[]): { fusion: FusionHit[]; fusionRe
   const fusion = [...merged.values()]
     .sort((a, b) => b.wrrfScore - a.wrrfScore)
     .slice(0, 5)
-    .map((h, i) => ({ ...h, rank: i + 1, wrrfScore: Number(h.wrrfScore.toFixed(3)) }));
+    .map((h, i) => ({
+      ...h,
+      rank: i + 1,
+      wrrfScore: Number(h.wrrfScore.toFixed(3)),
+      evalLabel: (i < 2 ? 'relevant' : i === 4 ? 'false_positive' : undefined) as EvalLabel | undefined,
+    }));
 
   const fusionReranked = fusion.map((h, i) => ({
     ...h,

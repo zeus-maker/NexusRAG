@@ -25,7 +25,7 @@ export const KB_SUB_NAV_ITEMS: KBSubNavItem[] = [
   { key: 'kb-data-sources', label: '数据源', icon: <Database size={15} /> },
   { key: 'kb-settings', label: '配置', icon: <Settings size={15} /> },
   { key: 'kb-permissions', label: '权限', icon: <Shield size={15} /> },
-  { key: 'kb-logs', label: '日志', icon: <ScrollText size={15} />, comingSoon: true },
+  { key: 'kb-logs', label: '处理日志', icon: <ScrollText size={15} /> },
 ];
 
 interface KBSubNavProps {

@@ -12,6 +12,12 @@ import type { KnowledgeBase } from '../types';
 import { KBCreateDialog, type KBCreateForm } from '../components/KBCreateDialog';
 import { addToRecycleBin, getRecycleBinCount } from '../data/kbRecycleBin';
 import { PAGEINDEX_GLOBAL_FAILED_COUNT } from '../data/pageIndexMock';
+import { KBDetailLayout } from '../components/KBDetailLayout';
+import {
+  getGovernanceSummary, getKBHealthScore, getKBHealthFailures,
+  getGovernedDocuments, getUploadQueue, PIPELINE_STAGE_LABELS, CERT_LABELS,
+  getAllChunkQuality, FAILURE_STAGE_LABELS,
+} from '../data/kbGovernanceMock';
 
 const statusConfig = {
   active: { label: '活跃', color: 'bg-green-100 text-green-700', dot: 'bg-green-500' },
@@ -437,61 +443,34 @@ interface KBDetailPageProps {
 
 export function KBDetailPage({ kbId, onNavigate }: KBDetailPageProps) {
   const kb = mockKBs.find(k => k.kb_id === kbId) || mockKBs[0];
-  const [tab, setTab] = useState<'overview' | 'documents' | 'index' | 'settings'>('overview');
-
-  const tabs = [
-    { key: 'overview', label: '概览' },
-    { key: 'documents', label: '文档' },
-    { key: 'index', label: '索引状态' },
-    { key: 'settings', label: '设置' },
-  ] as const;
+  const governance = getGovernanceSummary(kbId);
+  const health = getKBHealthScore(kbId);
 
   return (
-    <div className="p-6 flex flex-col gap-5 h-full overflow-y-auto">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <button onClick={() => onNavigate('kb-list')} className="text-gray-500 hover:text-gray-700 text-sm flex items-center gap-1">
-          ← 返回
-        </button>
-        <span className="text-gray-300">/</span>
-        <div className="flex items-center gap-2 flex-1">
-          <span className="text-xl">{kb.icon}</span>
-          <h1 className="text-lg font-bold text-gray-900">{kb.name}</h1>
-          <span className={`px-2 py-0.5 text-xs rounded-full ${statusConfig[kb.status].color}`}>{statusConfig[kb.status].label}</span>
-        </div>
-        <button
-          onClick={() => onNavigate('kb-documents', { selectedKBId: kb.kb_id })}
-          className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-1.5"
-        >
-          <FileText size={14} /> 管理文档
-        </button>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex border-b border-gray-200">
-        {tabs.map(t => (
+    <KBDetailLayout kbId={kbId} activeKey="kb-detail" onNavigate={onNavigate}>
+      <div className="p-6 flex flex-col gap-5">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">{kb.icon}</span>
+            <h1 className="text-lg font-bold text-gray-900 dark:text-gray-100">概览</h1>
+            <span className={`px-2 py-0.5 text-xs rounded-full ${statusConfig[kb.status].color}`}>{statusConfig[kb.status].label}</span>
+          </div>
           <button
-            key={t.key}
-            onClick={() => {
-              if (t.key === 'documents') onNavigate('kb-documents', { selectedKBId: kb.kb_id });
-              else if (t.key === 'index') onNavigate('kb-index-status', { selectedKBId: kb.kb_id });
-              else if (t.key === 'settings') onNavigate('kb-settings', { selectedKBId: kb.kb_id });
-              else setTab(t.key as 'overview');
-            }}
-            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${tab === t.key ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-800'}`}
+            type="button"
+            onClick={() => onNavigate('kb-documents', { selectedKBId: kb.kb_id })}
+            className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-1.5"
           >
-            {t.label}
+            <FileText size={14} /> 管理文档
           </button>
-        ))}
-      </div>
+        </div>
 
-      {tab === 'overview' && <>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         {[
-          { label: '文档总数', value: kb.doc_count, icon: '📄', color: 'bg-blue-50 text-blue-700' },
-          { label: 'Chunk 数', value: kb.chunk_count.toLocaleString(), icon: '📦', color: 'bg-purple-50 text-purple-700' },
-          { label: '存储大小', value: formatBytes(kb.total_size_bytes), icon: '💾', color: 'bg-green-50 text-green-700' },
-          { label: '解析质量', value: '92.5', icon: '⭐', color: 'bg-amber-50 text-amber-700' },
+          { label: '文档总数', value: kb.doc_count, icon: '📄', color: 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
+          { label: 'Chunk 数', value: kb.chunk_count.toLocaleString(), icon: '📦', color: 'bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' },
+          { label: '存储大小', value: formatBytes(kb.total_size_bytes), icon: '💾', color: 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300' },
+          { label: '解析质量', value: '92.5', icon: '⭐', color: 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' },
+          { label: '健康分', value: health.overall, icon: '💚', color: health.overall >= 70 ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-red-50 text-red-700' },
         ].map((s, i) => (
           <div key={i} className={`${s.color} rounded-xl p-4`}>
             <div className="text-2xl mb-1">{s.icon}</div>
@@ -499,6 +478,28 @@ export function KBDetailPage({ kbId, onNavigate }: KBDetailPageProps) {
             <div className="text-xs opacity-70 mt-0.5">{s.label}</div>
           </div>
         ))}
+      </div>
+
+      {/* 治理摘要 US-1.13 / US-1.15 */}
+      <div className="bg-amber-50/80 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4">
+        <h3 className="text-sm font-semibold text-amber-900 dark:text-amber-200 mb-2">治理摘要</h3>
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-amber-800 dark:text-amber-300 mb-3">
+          <span>⚠ 陈旧 <strong>{governance.stale_count}</strong></span>
+          <span>待认证 <strong>{governance.pending_certification}</strong></span>
+          <span>解析待复核 <strong>{governance.parse_review_count}</strong></span>
+          <span>ACL 异常 <strong>{governance.acl_anomaly_count}</strong></span>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={() => onNavigate('kb-governance-stale', { selectedKBId: kbId })} className="text-xs px-2.5 py-1 bg-white dark:bg-gray-900 border border-amber-300 rounded-lg hover:bg-amber-100 text-amber-900">
+            查看陈旧队列
+          </button>
+          <button type="button" onClick={() => onNavigate('kb-index-status', { selectedKBId: kbId })} className="text-xs px-2.5 py-1 bg-white dark:bg-gray-900 border border-amber-300 rounded-lg hover:bg-amber-100 text-amber-900">
+            失败归因 → 索引状态
+          </button>
+          <button type="button" onClick={() => onNavigate('kb-logs', { selectedKBId: kbId })} className="text-xs px-2.5 py-1 bg-white dark:bg-gray-900 border border-amber-300 rounded-lg hover:bg-amber-100 text-amber-900">
+            处理日志
+          </button>
+        </div>
       </div>
 
       {/* 增强索引 Hub 入口 */}
@@ -617,8 +618,8 @@ export function KBDetailPage({ kbId, onNavigate }: KBDetailPageProps) {
           </div>
         </div>
       </div>
-      </>}
-    </div>
+      </div>
+    </KBDetailLayout>
   );
 }
 
@@ -632,24 +633,18 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
   const [search, setSearch] = useState('');
   const [isDragging, setIsDragging] = useState(false);
   const [selectedDocs, setSelectedDocs] = useState<string[]>([]);
-
-  const parseStatusConfig = {
-    pending: { label: '等待中', color: 'bg-gray-100 text-gray-600', icon: <Clock size={11} /> },
-    parsing: { label: '解析中', color: 'bg-blue-100 text-blue-700', icon: <Loader size={11} className="animate-spin" /> },
-    parsed: { label: '已解析', color: 'bg-green-100 text-green-700', icon: <CheckCircle size={11} /> },
-    failed: { label: '失败', color: 'bg-red-100 text-red-700', icon: <AlertCircle size={11} /> },
-  };
+  const governedMap = Object.fromEntries(getGovernedDocuments(kbId).map(g => [g.doc_id, g]));
+  const uploadQueue = getUploadQueue();
 
   const filtered = mockDocuments.filter(d => d.kb_id === kbId && d.original_name.includes(search));
 
   return (
-    <div className="p-6 flex flex-col gap-4 h-full overflow-y-auto">
-      {/* Header */}
+    <KBDetailLayout kbId={kbId} activeKey="kb-documents" onNavigate={onNavigate}>
+    <div className="p-6 flex flex-col gap-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-2">
-          <button onClick={() => onNavigate('kb-detail', { selectedKBId: kbId })} className="text-gray-500 hover:text-gray-700 text-sm">← 返回</button>
-          <span className="text-gray-300">/</span>
-          <h1 className="text-base font-bold text-gray-900">{kb.name} · 文档管理</h1>
+        <div>
+          <h1 className="text-base font-bold text-gray-900 dark:text-gray-100">文档管理</h1>
+          <p className="text-xs text-gray-500 mt-0.5">五态流水线：上传 → 解析 → 分块 → 索引 → 已索引</p>
         </div>
         <div className="flex gap-2">
           <button
@@ -680,29 +675,24 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
         <p className="text-xs text-gray-500 mt-1">支持 PDF / DOCX / PPTX / XLSX / CSV / TXT / MD / HTML 等16+格式 · 单文件上限 100MB · 批量上传最多100个</p>
       </div>
 
-      {/* Upload queue simulation */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between">
-          <span className="text-xs font-semibold text-gray-700">上传队列 (2/3)</span>
-          <button className="text-xs text-gray-500 hover:text-gray-700">清空已完成</button>
+      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div className="px-4 py-2.5 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
+          <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">上传队列 ({uploadQueue.filter(f => f.stage !== 'indexed').length}/{uploadQueue.length})</span>
+          <button type="button" className="text-xs text-gray-500 hover:text-gray-700">清空已完成</button>
         </div>
-        {[
-          { name: '合同模板V6.pdf', size: '2.3 MB', progress: 100, status: 'done' },
-          { name: '审计报告.pdf', size: '5.0 MB', progress: 58, status: 'parsing' },
-          { name: '数据表.xlsx', size: '1.2 MB', progress: 22, status: 'uploading' },
-        ].map((f, i) => (
-          <div key={i} className="px-4 py-2.5 flex items-center gap-3 border-b border-gray-50 last:border-0">
+        {uploadQueue.map((f, i) => {
+          const st = PIPELINE_STAGE_LABELS[f.stage];
+          return (
+          <div key={i} className="px-4 py-2.5 flex items-center gap-3 border-b border-gray-50 dark:border-gray-800 last:border-0">
             <FileText size={14} className="text-gray-400 flex-shrink-0" />
-            <span className="text-xs text-gray-700 flex-1 truncate">{f.name}</span>
+            <span className="text-xs text-gray-700 dark:text-gray-300 flex-1 truncate">{f.name}</span>
             <span className="text-[10px] text-gray-400 flex-shrink-0">{f.size}</span>
             <div className="w-24 h-1.5 bg-gray-100 rounded-full overflow-hidden flex-shrink-0">
-              <div className={`h-full rounded-full transition-all ${f.status === 'done' ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${f.progress}%` }}></div>
+              <div className={`h-full rounded-full transition-all ${f.stage === 'indexed' ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${f.progress}%` }}></div>
             </div>
-            <span className={`text-[10px] flex-shrink-0 ${f.status === 'done' ? 'text-green-600' : f.status === 'parsing' ? 'text-blue-600' : 'text-gray-500'}`}>
-              {f.status === 'done' ? '✅完成' : f.status === 'parsing' ? '🔄解析中' : '⬆上传中'}
-            </span>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0 ${st.color}`}>{st.label}</span>
           </div>
-        ))}
+        );})}
       </div>
 
       {/* Filters */}
@@ -727,15 +717,18 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">文件名</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 hidden sm:table-cell">类型</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 hidden md:table-cell">大小</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">状态</th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 hidden lg:table-cell">质量评分</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">流水线</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 hidden lg:table-cell">认证</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 hidden lg:table-cell">质量</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 hidden xl:table-cell">上传时间</th>
               <th className="w-10"></th>
             </tr>
           </thead>
           <tbody>
             {filtered.map((doc, i) => {
-              const sc = parseStatusConfig[doc.parse_status];
+              const gov = governedMap[doc.doc_id];
+              const stage = gov ? PIPELINE_STAGE_LABELS[gov.pipeline_stage] : PIPELINE_STAGE_LABELS.indexed;
+              const cert = gov ? CERT_LABELS[gov.certification_status] : CERT_LABELS.draft;
               return (
                 <tr key={doc.doc_id} className={`border-b border-gray-50 hover:bg-gray-50/70 transition-colors ${i % 2 === 0 ? '' : 'bg-gray-50/30'}`}>
                   <td className="px-4 py-3">
@@ -760,9 +753,12 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
                   </td>
                   <td className="px-4 py-3 text-xs text-gray-500 hidden md:table-cell">{formatBytes(doc.file_size)}</td>
                   <td className="px-4 py-3">
-                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${sc.color}`}>
-                      {sc.icon}{sc.label}
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${stage.color}`}>
+                      {gov?.is_stale && <AlertIcon size={10} />}{stage.label}
                     </span>
+                  </td>
+                  <td className="px-4 py-3 hidden lg:table-cell">
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${cert.color}`}>{cert.label}</span>
                   </td>
                   <td className="px-4 py-3 hidden lg:table-cell">
                     {doc.parse_quality_score > 0 ? (
@@ -787,6 +783,7 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
         </table>
       </div>
     </div>
+    </KBDetailLayout>
   );
 }
 
@@ -797,10 +794,13 @@ interface ChunkPreviewPageProps {
 }
 
 export function ChunkPreviewPage({ kbId, docId, onNavigate }: ChunkPreviewPageProps) {
-  const kb = mockKBs.find(k => k.kb_id === kbId) || mockKBs[0];
   const doc = mockDocuments.find(d => d.doc_id === docId) || mockDocuments[0];
   const [strategy, setStrategy] = useState('通用分块');
   const [chunkSize, setChunkSize] = useState('512');
+  const [toast, setToast] = useState<string | null>(null);
+  const [excluded, setExcluded] = useState<Set<string>>(new Set());
+  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
+  const qualityMap = Object.fromEntries(getAllChunkQuality().map(q => [q.chunk_id, q]));
 
   const contentTypeConfig = {
     text: { label: '文本', color: 'bg-gray-100 text-gray-600', icon: '📄' },
@@ -818,19 +818,28 @@ export function ChunkPreviewPage({ kbId, docId, onNavigate }: ChunkPreviewPagePr
   };
 
   return (
-    <div className="p-6 flex flex-col gap-4 h-full overflow-y-auto">
-      {/* Header */}
+    <KBDetailLayout kbId={kbId} activeKey="kb-documents" onNavigate={onNavigate}>
+    {toast && (
+      <div className="fixed top-4 right-4 z-50 px-4 py-2 bg-gray-900 text-white text-sm rounded-lg shadow-lg">{toast}</div>
+    )}
+    <div className="p-6 flex flex-col gap-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-2 flex-wrap">
-          <button onClick={() => onNavigate('kb-documents', { selectedKBId: kbId })} className="text-gray-500 hover:text-gray-700 text-sm">← 返回</button>
-          <span className="text-gray-300">/</span>
-          <span className="text-sm font-medium text-gray-800 truncate max-w-48">{doc.original_name}</span>
-          <span className="text-gray-300">/</span>
-          <span className="text-sm font-bold text-gray-900">分块预览</span>
+        <div>
+          <h1 className="text-base font-bold text-gray-900 dark:text-gray-100 truncate max-w-md">{doc.original_name} · 分块预览</h1>
+          <p className="text-xs text-gray-500 mt-0.5">主题纯度 / 跨节 / 重叠 · 排除块不参与检索（US-1.14）</p>
         </div>
-        <button className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-1.5 text-gray-700">
-          <RefreshCw size={13} /> 重新分块
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onNavigate('kb-retrieval-test', { selectedKBId: kbId })}
+            className="px-3 py-1.5 text-sm border border-blue-200 text-blue-600 rounded-lg hover:bg-blue-50 flex items-center gap-1.5"
+          >
+            <FlaskConical size={13} /> 检索测试
+          </button>
+          <button type="button" onClick={() => showToast('重新分块任务已提交（原型）')} className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-1.5 text-gray-700">
+            <RefreshCw size={13} /> 重新分块
+          </button>
+        </div>
       </div>
 
       {/* Config row */}
@@ -863,14 +872,28 @@ export function ChunkPreviewPage({ kbId, docId, onNavigate }: ChunkPreviewPagePr
       <div className="space-y-3">
         {mockChunks.map(chunk => {
           const tc = contentTypeConfig[chunk.content_type];
+          const q = qualityMap[chunk.chunk_id];
+          const isExcluded = excluded.has(chunk.chunk_id) || q?.excluded_from_retrieval;
           return (
-            <div key={chunk.chunk_id} className="bg-white rounded-xl border border-gray-200 hover:border-gray-300 transition-colors overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 bg-gray-50/50">
+            <div key={chunk.chunk_id} className={`bg-white dark:bg-gray-900 rounded-xl border transition-colors overflow-hidden ${isExcluded ? 'border-red-200 opacity-60' : 'border-gray-200 hover:border-gray-300'}`}>
+              <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/50">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs font-bold text-gray-600">#{chunk.chunk_index}</span>
-                  <span className="text-xs font-medium text-gray-800">{chunk.section_title}</span>
+                  <span className="text-xs font-bold text-gray-600 dark:text-gray-400">#{chunk.chunk_index}</span>
+                  <span className="text-xs font-medium text-gray-800 dark:text-gray-200">{chunk.section_title}</span>
                   <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${tc.color}`}>{tc.icon} {tc.label}</span>
                   <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${aclConfig[chunk.acl_level] || 'bg-gray-100 text-gray-600'}`}>🔒 {chunk.acl_level}</span>
+                  {q && (
+                    <>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${q.topical_purity >= 0.9 ? 'bg-green-100 text-green-700' : q.topical_purity >= 0.8 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                        纯度 {(q.topical_purity * 100).toFixed(0)}%
+                      </span>
+                      {q.crosses_section && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700">跨节</span>}
+                      {(q.overlap_prev > 0 || q.overlap_next > 0) && (
+                        <span className="text-[10px] text-gray-500">重叠 {q.overlap_prev}/{q.overlap_next} tok</span>
+                      )}
+                    </>
+                  )}
+                  {isExcluded && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-700">已排除检索</span>}
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{chunk.token_count} Token</span>
@@ -903,16 +926,23 @@ export function ChunkPreviewPage({ kbId, docId, onNavigate }: ChunkPreviewPagePr
                   <p className="text-xs text-gray-700 leading-relaxed line-clamp-3">{chunk.content_preview}</p>
                 )}
               </div>
-              <div className="flex items-center justify-end gap-2 px-4 py-2 border-t border-gray-100">
-                <button className="text-[10px] px-2 py-1 border border-gray-200 rounded hover:bg-gray-50 text-gray-600">拆分</button>
-                <button className="text-[10px] px-2 py-1 border border-gray-200 rounded hover:bg-gray-50 text-gray-600">合并↓</button>
-                <button className="text-[10px] px-2 py-1 border border-red-100 rounded hover:bg-red-50 text-red-600">排除</button>
+              <div className="flex items-center justify-end gap-2 px-4 py-2 border-t border-gray-100 dark:border-gray-800">
+                <button type="button" onClick={() => showToast(`Chunk #${chunk.chunk_index} 已拆分（原型）`)} className="text-[10px] px-2 py-1 border border-gray-200 rounded hover:bg-gray-50 text-gray-600">拆分</button>
+                <button type="button" onClick={() => showToast(`Chunk #${chunk.chunk_index} 已与下一块合并（原型）`)} className="text-[10px] px-2 py-1 border border-gray-200 rounded hover:bg-gray-50 text-gray-600">合并↓</button>
+                <button
+                  type="button"
+                  onClick={() => { setExcluded(prev => new Set(prev).add(chunk.chunk_id)); showToast(`Chunk #${chunk.chunk_index} 已排除，不参与检索`); }}
+                  className="text-[10px] px-2 py-1 border border-red-100 rounded hover:bg-red-50 text-red-600"
+                >
+                  排除
+                </button>
               </div>
             </div>
           );
         })}
       </div>
     </div>
+    </KBDetailLayout>
   );
 }
 
@@ -922,8 +952,8 @@ interface IndexStatusPageProps {
 }
 
 export function IndexStatusPage({ kbId, onNavigate }: IndexStatusPageProps) {
-  const kb = mockKBs.find(k => k.kb_id === kbId) || mockKBs[0];
-  // mockIndexStatuses imported above
+  const health = getKBHealthScore(kbId);
+  const failures = getKBHealthFailures(kbId);
   const statusConfig2 = {
     running: { label: '索引中', color: 'text-blue-600', bg: 'bg-blue-50', dot: 'bg-blue-500 animate-pulse' },
     completed: { label: '已完成', color: 'text-green-600', bg: 'bg-green-50', dot: 'bg-green-500' },
@@ -932,17 +962,34 @@ export function IndexStatusPage({ kbId, onNavigate }: IndexStatusPageProps) {
     not_started: { label: '未开始', color: 'text-gray-600', bg: 'bg-gray-50', dot: 'bg-gray-400' },
   };
 
+  const healthColor = health.overall >= 85 ? 'text-green-600' : health.overall >= 70 ? 'text-amber-600' : 'text-red-600';
+
   return (
-    <div className="p-6 flex flex-col gap-4 h-full overflow-y-auto">
+    <KBDetailLayout kbId={kbId} activeKey="kb-index-status" onNavigate={onNavigate}>
+    <div className="p-6 flex flex-col gap-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-2">
-          <button onClick={() => onNavigate('kb-detail', { selectedKBId: kbId })} className="text-gray-500 hover:text-gray-700 text-sm">← 返回</button>
-          <span className="text-gray-300">/</span>
-          <h1 className="text-base font-bold text-gray-900">{kb.name} · 索引状态</h1>
+        <div>
+          <h1 className="text-base font-bold text-gray-900 dark:text-gray-100">索引状态</h1>
+          <p className="text-xs text-gray-500 mt-0.5">五维健康分 + 失败归因深链（US-1.15）</p>
         </div>
-        <button className="px-3 py-1.5 text-sm bg-orange-500 text-white rounded-lg hover:bg-orange-600 flex items-center gap-1.5">
+        <button type="button" className="px-3 py-1.5 text-sm bg-orange-500 text-white rounded-lg hover:bg-orange-600 flex items-center gap-1.5">
           <RefreshCw size={13} /> 全部重建索引
         </button>
+      </div>
+
+      <div className="bg-gradient-to-r from-indigo-50 to-blue-50 dark:from-indigo-950/40 dark:to-blue-950/40 rounded-xl border border-indigo-100 dark:border-indigo-900 p-4 flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">综合健康分</div>
+          <div className={`text-3xl font-bold ${healthColor}`}>{health.overall}</div>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          {Object.entries(health.dimensions).map(([key, val]) => (
+            <div key={key} className="text-center min-w-[56px]">
+              <div className="text-[10px] text-gray-500 uppercase">{key}</div>
+              <div className={`text-sm font-bold ${val >= 85 ? 'text-green-600' : val >= 70 ? 'text-amber-600' : 'text-red-600'}`}>{val}</div>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Index status cards */}
@@ -973,29 +1020,35 @@ export function IndexStatusPage({ kbId, onNavigate }: IndexStatusPageProps) {
         })}
       </div>
 
-      {/* Failed docs */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-gray-800">失败文档</h3>
-          <span className="text-xs text-gray-500">共 2 个</span>
+      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">失败归因</h3>
+          <span className="text-xs text-gray-500">共 {failures.length} 项</span>
         </div>
-        {[
-          { name: '复杂表格报告.pdf', pipeline: '向量索引', reason: '嵌入请求超时' },
-          { name: '扫描件合同.pdf', pipeline: 'PageIndex', reason: 'LLM 解析超时' },
-        ].map((f, i) => (
-          <div key={i} className="px-4 py-3 flex items-center gap-3 border-b border-gray-50 last:border-0">
+        {failures.map((f, i) => (
+          <div key={i} className="px-4 py-3 flex items-center gap-3 border-b border-gray-50 dark:border-gray-800 last:border-0">
             <FileText size={14} className="text-gray-400" />
             <div className="flex-1 min-w-0">
-              <div className="text-sm text-gray-800 font-medium">{f.name}</div>
-              <div className="text-xs text-gray-500">{f.pipeline} · {f.reason}</div>
+              <div className="text-sm text-gray-800 dark:text-gray-200 font-medium">{f.doc_name}</div>
+              <div className="text-xs text-gray-500">
+                <span className="px-1.5 py-0.5 rounded bg-red-50 text-red-600 mr-1">{FAILURE_STAGE_LABELS[f.stage]}</span>
+                {f.reason}
+              </div>
             </div>
             <div className="flex gap-2">
-              <button className="text-xs px-2.5 py-1 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100">重试</button>
-              <button className="text-xs px-2.5 py-1 bg-gray-50 text-gray-600 rounded-lg hover:bg-gray-100">跳过</button>
+              <button
+                type="button"
+                onClick={() => onNavigate(f.deep_link_page, f.deep_link_extra ?? { selectedKBId: kbId })}
+                className="text-xs px-2.5 py-1 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100"
+              >
+                定位
+              </button>
+              <button type="button" className="text-xs px-2.5 py-1 bg-gray-50 text-gray-600 rounded-lg hover:bg-gray-100">重试</button>
             </div>
           </div>
         ))}
       </div>
     </div>
+    </KBDetailLayout>
   );
 }

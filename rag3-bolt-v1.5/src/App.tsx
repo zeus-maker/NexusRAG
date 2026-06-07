@@ -20,6 +20,7 @@ import { FusionConfigPage } from './pages/FusionConfigPage';
 import { RetrievalStrategyPage } from './pages/RetrievalStrategyPage';
 import { GenerationStrategyPage } from './pages/GenerationStrategyPage';
 import { KBPermissionsPage, KBDataSourcesPage, KBExportPage } from './pages/KBP0Pages';
+import { KBStaleGovernancePage, KBProcessingLogsPage } from './pages/KBGovernancePages';
 import { HomePage } from './pages/Home';
 import WikiHubPage from './pages/Hub/WikiHubPage';
 import PageIndexHubPage from './pages/Hub/PageIndexHubPage';
@@ -62,6 +63,10 @@ export default function App() {
         return <KBDataSourcesPage kbId={state.selectedKBId || 'kb-001'} onNavigate={navigate} />;
       case 'kb-export':
         return <KBExportPage kbId={state.selectedKBId || 'kb-001'} onNavigate={navigate} />;
+      case 'kb-governance-stale':
+        return <KBStaleGovernancePage kbId={state.selectedKBId || 'kb-001'} onNavigate={navigate} />;
+      case 'kb-logs':
+        return <KBProcessingLogsPage kbId={state.selectedKBId || 'kb-001'} onNavigate={navigate} />;
       case 'kb-retrieval-test':
         return <RetrievalTestPage kbId={state.selectedKBId || 'kb-001'} onNavigate={navigate} />;
       case 'kb-wiki':

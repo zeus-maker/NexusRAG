@@ -50,7 +50,7 @@ const SYSTEM_PAGES = [
 const HUB_PAGES = ['wiki-hub', 'pageindex-hub', 'graphrag-hub'];
 const KB_PAGES = [
   'kb-list', 'kb-recycle-bin', 'kb-detail', 'kb-documents', 'kb-chunks', 'kb-index-status', 'kb-settings',
-  'kb-permissions', 'kb-data-sources', 'kb-export',
+  'kb-permissions', 'kb-data-sources', 'kb-export', 'kb-governance-stale', 'kb-logs',
   'kb-retrieval-test', 'kb-wiki', 'kb-pageindex-tree', 'kb-wiki-manage', 'kb-pageindex-manage',
   ...HUB_PAGES,
 ];
