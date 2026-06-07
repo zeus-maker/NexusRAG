@@ -18,7 +18,11 @@ import {
   type DocumentUploadConfig,
 } from '../data/documentUploadConfig';
 import { ChunkSplitDialog } from '../components/kb/ChunkSplitDialog';
+import { DocumentParseQueuePanel } from '../components/kb/DocumentParseQueuePanel';
+import { EnhancementLogModal } from '../components/kb/EnhancementLogModal';
 import { ParseProgressLogModal } from '../components/kb/ParseProgressLogModal';
+import { getDocEnhancement, listEnhancementsForKb } from '../data/documentEnhancementStore';
+import { useParseQueuePolling } from '../hooks/useParseQueuePolling';
 import { KnowledgeChunkWorkspace } from '../components/kb/KnowledgeChunkWorkspace';
 import { formatRelativeTime, formatDateTime } from '../utils/timeFormat';
 import { parseProgressPercent } from '../utils/documentUtil';
@@ -780,6 +784,7 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
   const [menuDocId, setMenuDocId] = useState<string | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<DOMRect | null>(null);
   const [logModalDoc, setLogModalDoc] = useState<Document | null>(null);
+  const [indexLogModal, setIndexLogModal] = useState<{ title: string; message: string } | null>(null);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [showUploadConfig, setShowUploadConfig] = useState(false);
   const [uploadConfig, setUploadConfig] = useState<DocumentUploadConfig>(DEFAULT_UPLOAD_CONFIG);
@@ -814,15 +819,38 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
     return () => { cancelled = true; };
   }, [kbId, kb?.chunk_strategy]);
   const governedMap = useRealApi ? {} : Object.fromEntries(getGovernedDocuments(kbId).map(g => [g.doc_id, g]));
-  const uploadQueue = useRealApi
-    ? documents.filter(d => d.parse_status === 'parsing' || d.parse_status === 'pending').map(d => ({
-        name: d.original_name,
-        size: formatBytes(d.file_size),
-        progress: parseProgressPercent(d.progress, d.parse_status),
-        stage: d.parse_status === 'parsing' ? 'parsing' as const : 'uploading' as const,
-        doc: d,
-      }))
-    : getUploadQueue();
+  const parseQueuePolling = useParseQueuePolling(
+    kbId,
+    documents,
+    refreshDocs,
+    useRealApi,
+  );
+
+  const parseQueueRows = useMemo(() => {
+    if (!useRealApi) return [];
+    const enhancements = listEnhancementsForKb(kbId);
+    const enhancementDocIds = new Set(enhancements.map(e => e.docId));
+    const graphRunning = parseQueuePolling.graphTrace?.running;
+    const raptorRunning = parseQueuePolling.raptorTrace?.running;
+
+    return documents
+      .filter(d => {
+        if (d.parse_status === 'parsing' || d.parse_status === 'pending') return true;
+        if (!enhancementDocIds.has(d.doc_id)) return false;
+        const rec = getDocEnhancement(d.doc_id);
+        if (!rec) return false;
+        if (!rec.indexTriggered && d.parse_status === 'parsed') return true;
+        if (rec.config.enableGraphRag && graphRunning) return true;
+        if (rec.config.enableRaptor && raptorRunning) return true;
+        return false;
+      })
+      .map(doc => ({
+        doc,
+        enhancement: getDocEnhancement(doc.doc_id),
+      }));
+  }, [documents, kbId, parseQueuePolling.graphTrace?.running, parseQueuePolling.raptorTrace?.running]);
+
+  const uploadQueue = useRealApi ? [] : getUploadQueue();
 
   const filtered = useMemo(() => {
     const base = useRealApi
@@ -833,14 +861,6 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
   }, [documents, statusFilter, kbId, search]);
 
   const previewDoc = previewDocId ? filtered.find(d => d.doc_id === previewDocId) : filtered[0] ?? null;
-
-  useEffect(() => {
-    if (!useRealApi) return;
-    const hasParsing = documents.some(d => d.parse_status === 'parsing' || d.parse_status === 'pending');
-    if (!hasParsing) return;
-    const timer = window.setInterval(() => refreshDocs(), 4000);
-    return () => window.clearInterval(timer);
-  }, [documents, refreshDocs]);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2800); };
 
@@ -1084,19 +1104,28 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
         <p className="text-xs text-gray-500 mt-1">支持 PDF / DOCX / PPTX / XLSX / CSV / TXT / MD / HTML 等16+格式 · 单文件上限 100MB · 批量上传最多100个</p>
       </div>
 
-      {uploadQueue.length > 0 && (
+      {useRealApi && parseQueueRows.length > 0 && (
+        <DocumentParseQueuePanel
+          rows={parseQueueRows}
+          graphTrace={parseQueuePolling.graphTrace}
+          raptorTrace={parseQueuePolling.raptorTrace}
+          pollCount={parseQueuePolling.pollCount}
+          pollIntervalMs={parseQueuePolling.pollIntervalMs}
+          onRefresh={refreshDocs}
+          onOpenDocLog={setLogModalDoc}
+          onOpenIndexLog={(title, message) => setIndexLogModal({ title, message })}
+        />
+      )}
+
+      {!useRealApi && uploadQueue.length > 0 && (
         <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
           <div className="px-4 py-2.5 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
             <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">
-              {useRealApi ? '解析队列' : '上传队列'} ({uploadQueue.filter(f => f.stage !== 'indexed').length}/{uploadQueue.length})
+              上传队列 ({uploadQueue.filter(f => f.stage !== 'indexed').length}/{uploadQueue.length})
             </span>
-            {useRealApi && (
-              <button type="button" onClick={() => refreshDocs()} className="text-xs text-gray-500 hover:text-gray-700">刷新</button>
-            )}
           </div>
           {uploadQueue.map((f, i) => {
             const st = PIPELINE_STAGE_LABELS[f.stage] ?? PIPELINE_STAGE_LABELS.parsing;
-            const queueDoc = useRealApi && 'doc' in f ? (f as { doc?: Document }).doc : undefined;
             return (
               <div key={i} className="px-4 py-2.5 flex items-center gap-3 border-b border-gray-50 dark:border-gray-800 last:border-0">
                 <FileText size={14} className="text-gray-400 flex-shrink-0" />
@@ -1106,15 +1135,6 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
                   <div className={`h-full rounded-full transition-all ${f.stage === 'indexed' ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${f.progress}%` }}></div>
                 </div>
                 <span className={`text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0 ${st.color}`}>{st.label}</span>
-                {queueDoc?.progress_msg && (
-                  <button
-                    type="button"
-                    onClick={() => setLogModalDoc(queueDoc)}
-                    className="text-[10px] text-cyan-600 hover:underline flex-shrink-0"
-                  >
-                    日志
-                  </button>
-                )}
               </div>
             );
           })}
@@ -1372,6 +1392,13 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
 
     {logModalDoc && (
       <ParseProgressLogModal doc={logModalDoc} onClose={() => setLogModalDoc(null)} />
+    )}
+    {indexLogModal && (
+      <EnhancementLogModal
+        title={indexLogModal.title}
+        message={indexLogModal.message}
+        onClose={() => setIndexLogModal(null)}
+      />
     )}
     {showPreview && previewDoc && !canPreview && (
       <div className="flex-1 min-h-[120px] flex items-center justify-center border-t border-gray-200 dark:border-gray-700 text-sm text-gray-500 p-6">

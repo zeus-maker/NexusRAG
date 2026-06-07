@@ -1486,3 +1486,40 @@ PDF 已能渲染，但左栏预览区不出现滚动条，多页内容随容器�
 - `frontend/rag3-web/src/services/kbApi.ts`、`hooks/useKbData.ts`
 - `backend/ragflow_rag30/api/apps/restful_apis/document_api.py`
 - `backend/ragflow_rag30/api/db/services/file_service.py`
+
+---
+
+## 51. 解析队列实时刷新与增强索引进度（GraphRAG / PageIndex / Wiki）
+
+### 背景与目标
+
+上传时勾选 LLM Wiki、PageIndex、知识图谱等配置后队列仅显示主解析进度，约 4s 才刷新一次，且 GraphRAG 从未真正触发（配置只写在文档级 `parser_config`，索引任务读知识库级配置且需 `POST /index`）。用户需要约 3s 轮询、分阶段进度条，以及各增强项的日志入口。
+
+### 改动摘要
+
+- 新增 `useParseQueuePolling`：每 **3s** 刷新文档列表，并 `traceIndex` 轮询 graph/raptor；向量解析完成后自动 `syncKbParserConfigFromUpload` + `runIndex`。
+- 新增 `DocumentParseQueuePanel`：每文档展开多阶段（向量 / PageIndex / LLM Wiki / 知识图谱 / RAPTOR），独立进度条与「日志」按钮。
+- `documentEnhancementStore` 记录上传批次与配置；`EnhancementLogModal` 展示 GraphRAG/RAPTOR 的 `progress_msg`。
+- PageIndex/Wiki：配置写入后即标「已启用」（检索路由生效）；图谱/RAPTOR 展示真实任务进度。
+
+### 验证与风险
+
+- `npm run build` 通过。
+- 文档管理：上传并勾选 Wiki+PageIndex+Graph → 队列每 3s 更新；向量完成后图谱阶段出现进度；点击日志可看 `progress_msg`。
+- 风险：`runIndex` 为数据集级任务，多批次上传可能复用同一 graph 任务；PageIndex/Wiki 尚无独立 ingest API，进度为「配置就绪」语义而非构建任务。
+
+### 反思与沉淀
+
+- RAGFlow 增强索引与向量解析解耦：须同步 KB `parser_config` 并显式 `POST /datasets/:id/index?type=graph|raptor`。
+- 后续可在 RAG3 后端为 pageindex/wiki 增加 ingest 任务与 trace API，替换当前「检索启用」占位进度。
+
+### 涉及文件
+
+- `frontend/rag3-web/src/hooks/useParseQueuePolling.ts`（新建）
+- `frontend/rag3-web/src/components/kb/DocumentParseQueuePanel.tsx`（新建）
+- `frontend/rag3-web/src/components/kb/EnhancementLogModal.tsx`（新建）
+- `frontend/rag3-web/src/data/documentEnhancementStore.ts`（新建）
+- `frontend/rag3-web/src/hooks/useKbData.ts`
+- `frontend/rag3-web/src/services/kbApi.ts`
+- `frontend/rag3-web/src/pages/KnowledgeBase.tsx`
+- `frontend/rag3-web/src/utils/documentUtil.ts`

@@ -4,6 +4,7 @@ import {
   buildParserConfigPayload,
   type DocumentUploadConfig,
 } from '../data/documentUploadConfig';
+import { registerDocEnhancements } from '../data/documentEnhancementStore';
 import { mockKBs, mockDocuments, mockChunks } from '../mockData';
 import { kbApi } from '../services/kbApi';
 import { useRealApi } from '../services/http';
@@ -237,6 +238,34 @@ export async function applyKbDocumentUploadConfig(
   }
 }
 
+export async function syncKbParserConfigFromUpload(
+  kbId: string,
+  config: DocumentUploadConfig,
+): Promise<void> {
+  if (!useRealApi) return;
+  const payload = buildParserConfigPayload(config);
+  await kbApi.updateParserConfig(kbId, payload);
+}
+
+export async function triggerKbEnhancementIndexes(
+  kbId: string,
+  config: DocumentUploadConfig,
+): Promise<void> {
+  if (!useRealApi) return;
+  const tasks: Promise<unknown>[] = [];
+  if (config.enableGraphRag) {
+    tasks.push(
+      kbApi.runIndex(kbId, 'graph').catch(() => undefined),
+    );
+  }
+  if (config.enableRaptor) {
+    tasks.push(
+      kbApi.runIndex(kbId, 'raptor').catch(() => undefined),
+    );
+  }
+  await Promise.all(tasks);
+}
+
 export async function uploadKbDocumentsWithConfig(
   kbId: string,
   files: File[],
@@ -251,6 +280,15 @@ export async function uploadKbDocumentsWithConfig(
   const ids = uploaded.map(d => d.doc_id);
   if (ids.length) {
     await applyKbDocumentUploadConfig(kbId, ids, config);
+    registerDocEnhancements(kbId, ids, config);
+    if (
+      config.enableGraphRag
+      || config.enableRaptor
+      || config.enablePageIndex
+      || config.enableWiki
+    ) {
+      await syncKbParserConfigFromUpload(kbId, config);
+    }
   }
   if (config.autoParse && ids.length) {
     await kbApi.parseDocuments(kbId, ids);

@@ -45,6 +45,13 @@ export function renderProgressLogLines(text: string): { text: string; isError: b
   }));
 }
 
+export function formatBytes(bytes: number): string {
+  if (!bytes || bytes < 0) return '—';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export function parseProgressPercent(progress?: number, status?: string): number {
   if (typeof progress === 'number' && progress > 0) {
     return Math.min(100, Math.round(progress <= 1 ? progress * 100 : progress));

@@ -112,6 +112,14 @@ export const kbApi = {
     return mapDatasetToKB(data);
   },
 
+  async updateParserConfig(datasetId: string, parserConfig: Record<string, unknown>): Promise<KnowledgeBase> {
+    const { data } = await apiRequest<RagflowDataset>(`/datasets/${datasetId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ parser_config: parserConfig }),
+    });
+    return mapDatasetToKB(data);
+  },
+
   async delete(ids: string[]): Promise<void> {
     await apiRequest('/datasets', {
       method: 'DELETE',
