@@ -1149,3 +1149,28 @@ P0 最后一项：检索测试页需从单通道混合结果升级为 PRD §10.5
 - `frontend/rag3-web/src/components/kb/KnowledgeChunkWorkspace.tsx`
 - `frontend/rag3-web/src/components/kb/ChunkListCard.tsx`
 - `frontend/rag3-web/src/pages/KnowledgeBase.tsx`
+
+---
+
+## 39. PDF 滚动懒加载与分块缩略图左右并排
+
+### 背景与目标
+
+用户反馈 PDF 不应在左栏全部铺开撑高页面，应在固定区域内滑动浏览；分块缩略图应贴在正文左右侧，不占独立整行。
+
+### 改动摘要
+
+- `PdfPreviewWithHighlights`：左栏 `overflow-y-auto` 滚动容器；IntersectionObserver 懒加载可见页；顶栏页码与上下页按钮；选中分块自动滚至对应页。
+- `KnowledgeChunkWorkspace`：PDF 区 `min-h-0 overflow-hidden`，约束在左栏高度内滚动。
+- `ChunkListCard` / `ChunkContentView`：正文 flex-1 + 右侧 72px 缩略图并排，点击仍可灯箱放大。
+
+### 验证与风险
+
+- `npm run build` 通过。
+- 多页 PDF 在左栏内纵向滑动，未进视口页显示占位；分块卡片图文横排。
+
+### 涉及文件
+
+- `frontend/rag3-web/src/components/kb/PdfPreviewWithHighlights.tsx`
+- `frontend/rag3-web/src/components/kb/KnowledgeChunkWorkspace.tsx`
+- `frontend/rag3-web/src/components/kb/ChunkListCard.tsx`、`ChunkContentView.tsx`
