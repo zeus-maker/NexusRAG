@@ -1820,3 +1820,27 @@ Wiki Hub 各 Tab 仍直接读 `WIKI_*` mock；`useWikiHubData` 虽调 `listWikiE
 - `frontend/rag3-web/src/pages/Hub/WikiHubPage.tsx` — 设置/统计 Tab
 - `frontend/rag3-web/src/pages/KBExtra.tsx` — WikiPage / WikiManagePage
 - `frontend/rag3-web/src/services/hubApi.ts`、`data/wikiMock.ts` — API 与默认设置
+
+---
+
+## 61. 前端 dev 启动打印局域网 IP 并开放本机网卡访问
+
+### 背景与目标
+
+`npm run dev` 默认仅监听 localhost，手机/同网段设备无法用局域网 IP 访问；终端也未明确打印可分享的 Local IP。需在 `rag3-bolt-v1.5` 与 `frontend/rag3-web` 启动时绑定 `0.0.0.0` 并输出本机与局域网 URL。
+
+### 改动摘要
+
+- 两项目 `vite.config.ts` 增加 `server.host: true`（监听全部网卡）。
+- 新增 `vite.printLocalIp.ts` 插件：服务 `listening` 后打印 `localhost` 与各非回环 IPv4 地址。
+- bolt 原型默认端口改为 **5174**，与生产前端 **5173** 并行开发时不冲突。
+
+### 验证与风险
+
+- 验证：`npm run dev` 后终端应出现「本机访问」「局域网访问（Local IP）」及 Vite 自带 Network 行；同网段设备可用打印的 IP 打开页面。
+- 风险：开发服暴露局域网需防火墙/公司网络策略允许；端口被占用时 Vite 会自动递增（bolt 可能非 5174）。
+
+### 涉及文件
+
+- `rag3-bolt-v1.5/vite.config.ts`、`vite.printLocalIp.ts`
+- `frontend/rag3-web/vite.config.ts`、`vite.printLocalIp.ts`

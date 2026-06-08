@@ -1,13 +1,15 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { printLocalIpPlugin } from './vite.printLocalIp';
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), printLocalIpPlugin()],
   optimizeDeps: {
     exclude: ['lucide-react'],
   },
   server: {
+    host: true,
     port: 5173,
     proxy: {
       // RAGFlow REST 接口在 /api/v1/*，勿剥离 /api 前缀（与上游 web 一致）
