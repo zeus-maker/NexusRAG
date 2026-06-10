@@ -28,7 +28,7 @@ export interface ChatSettings {
 
 export const DEFAULT_CHAT_SETTINGS: ChatSettings = {
   convTitle: '新对话',
-  kbIds: ['kb-001'],
+  kbIds: [],
   systemPrompt: PROMPT_TEMPLATES[0].prompt,
   opener: '您好，我可以帮您查询合同条款与合规政策，请直接提问。',
   similarityThreshold: 0.2,

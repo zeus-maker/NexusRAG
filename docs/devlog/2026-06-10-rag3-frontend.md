@@ -64,3 +64,29 @@ P0/P1 智能对话已接通会话与 SSE，但计划 Phase 5 四项 P2 仍空缺
 - `backend/ragflow_rag30/security/chunk_acl.py`、`api/apps/rag3_app.py`
 - `frontend/rag3-web/src/components/ChatQuerySyntax.tsx`、`pages/Chat.tsx`
 - `frontend/rag3-web/src/services/chatService.ts`、`hooks/useChatData.ts`
+
+---
+
+## 3. 修复对话 Redis 封装不匹配与 API 模式默认 kb-001
+
+### 背景与目标
+
+`GET /conversations` 报 `RedisDB` 无 `zrevrange`；`POST /conversations` 因默认 `kb-001` mock ID 返回「知识库不存在」。根因是 `conversation_store` 直接调用了 `RedisDB` 未封装的方法，且 `zadd` 参数签名错误；前端 API 模式仍沿用 mock 默认知识库。
+
+### 改动摘要
+
+- `conversation_store.py`：新增 `_zrevrange/_zadd/_zrem/_lrange/_rpush/_expire` 辅助函数，经 `REDIS_CONN.REDIS` 调用原生 redis-py；`zadd` 改为 `(key, member, score)` 三参数。
+- `useChatData`：KB 列表加载后将 mock `kb-*` 替换为首个真实 dataset id；`resolveKbIds()` 在设置为空时回退 `kbs[0]`。
+- `ChatSettingsPanel` 默认 `kbIds` 改为 `[]`，避免 API 模式误提交 mock id。
+
+### 验证与风险
+
+- `python3 -m py_compile rag3/conversation_store.py` 通过；`npm run build` 通过。
+- 手动：重启后端后 `GET /conversations` 应 200 且 `items: []`；选真实 KB 后新建对话不再 3001。
+- 风险：日志中 `your-token` JWT 警告为前端未配置有效登录 token，需单独登录/配置 `Authorization`。
+
+### 涉及文件
+
+- `backend/ragflow_rag30/rag3/conversation_store.py`
+- `frontend/rag3-web/src/hooks/useChatData.ts`
+- `frontend/rag3-web/src/components/ChatSettingsPanel.tsx`

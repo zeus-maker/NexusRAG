@@ -117,16 +117,33 @@ export function useChatData(initialConvId: string | null) {
 
   useEffect(() => { void refreshConversations(); }, [refreshConversations]);
 
+  // API 模式：将默认 mock kb-001 替换为真实数据集 ID
+  useEffect(() => {
+    if (!useRealApi || !kbs.length) return;
+    setChatSettings(s => {
+      const onlyMock = s.kbIds.every(id => id.startsWith('kb-'));
+      if (!onlyMock && s.kbIds.length) return s;
+      return { ...s, kbIds: [kbs[0].kb_id] };
+    });
+  }, [kbs]);
+
+  const resolveKbIds = useCallback((): string[] => {
+    const selected = chatSettings.kbIds.filter(Boolean);
+    if (selected.length) return selected;
+    if (useRealApi && kbs[0]?.kb_id) return [kbs[0].kb_id];
+    return [];
+  }, [chatSettings.kbIds, kbs]);
+
   const ensureConversation = useCallback(async (): Promise<string | null> => {
     if (currentConv) return currentConv;
     if (!useRealApi) return null;
-    const kbIds = chatSettings.kbIds.filter(Boolean);
+    const kbIds = resolveKbIds();
     if (!kbIds.length) throw new Error('请先选择知识库');
     const conv = await chatService.createConversation(kbIds, chatSettings.convTitle);
     setCurrentConv(conv.conversation_id);
     setConversations(prev => [mapApiConv(conv), ...prev]);
     return conv.conversation_id;
-  }, [currentConv, chatSettings.kbIds, chatSettings.convTitle]);
+  }, [currentConv, chatSettings.convTitle, resolveKbIds]);
 
   const loadConversation = useCallback(async (id: string) => {
     setCurrentConv(id);
@@ -221,7 +238,7 @@ export function useChatData(initialConvId: string | null) {
     };
     setMessages(prev => [...prev, userMsg]);
 
-    if (useRealApi && chatSettings.kbIds.length) {
+    if (useRealApi && resolveKbIds().length) {
       try {
         const convId = await ensureConversation();
         if (!convId) return;
@@ -311,7 +328,7 @@ export function useChatData(initialConvId: string | null) {
         created_at: new Date().toISOString(),
       }]);
     }
-  }, [isStreaming, chatSettings, ensureConversation, mockStream, refreshConversations]);
+  }, [isStreaming, chatSettings, ensureConversation, mockStream, refreshConversations, resolveKbIds]);
 
   const saveSettings = useCallback(async () => {
     if (!useRealApi || !currentConv) return;

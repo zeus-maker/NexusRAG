@@ -18,12 +18,72 @@ logger = logging.getLogger(__name__)
 _TTL = 365 * 24 * 3600
 
 
+def _redis():
+    return REDIS_CONN.REDIS
+
+
 def _decode(raw) -> str | None:
     if raw is None:
         return None
     if isinstance(raw, bytes):
         return raw.decode("utf-8")
     return str(raw)
+
+
+def _zadd(key: str, member: str, score: float) -> None:
+    REDIS_CONN.zadd(key, member, float(score))
+
+
+def _zrevrange(key: str, start: int, end: int) -> list:
+    client = _redis()
+    if not client:
+        return []
+    try:
+        return client.zrevrange(key, start, end) or []
+    except Exception as e:
+        logger.warning("conversation_store zrevrange %s failed: %s", key, e)
+        return []
+
+
+def _zrem(key: str, member: str) -> None:
+    client = _redis()
+    if not client:
+        return
+    try:
+        client.zrem(key, member)
+    except Exception as e:
+        logger.warning("conversation_store zrem %s failed: %s", key, e)
+
+
+def _lrange(key: str, start: int, end: int) -> list:
+    client = _redis()
+    if not client:
+        return []
+    try:
+        return client.lrange(key, start, end) or []
+    except Exception as e:
+        logger.warning("conversation_store lrange %s failed: %s", key, e)
+        return []
+
+
+def _rpush(key: str, value: str) -> None:
+    client = _redis()
+    if not client:
+        return
+    try:
+        client.rpush(key, value)
+    except Exception as e:
+        logger.warning("conversation_store rpush %s failed: %s", key, e)
+
+
+def _expire(key: str, ttl: int) -> None:
+    client = _redis()
+    if not client:
+        return
+    try:
+        client.expire(key, ttl)
+    except Exception as e:
+        logger.warning("conversation_store expire %s failed: %s", key, e)
 
 
 def _conv_key(conv_id: str) -> str:
@@ -77,12 +137,12 @@ def create_conversation(
         "updated_at": now,
     }
     REDIS_CONN.set(_conv_key(conv_id), json.dumps(conv, ensure_ascii=False), _TTL)
-    REDIS_CONN.zadd(_list_key(tenant_id, user_id), {conv_id: int(time.time() * 1000)})
+    _zadd(_list_key(tenant_id, user_id), conv_id, int(time.time() * 1000))
     return conv
 
 
 def list_conversations(tenant_id: str, user_id: str, *, search: str = "") -> list[dict[str, Any]]:
-    raw_ids = REDIS_CONN.zrevrange(_list_key(tenant_id, user_id), 0, -1)
+    raw_ids = _zrevrange(_list_key(tenant_id, user_id), 0, -1)
     convs: list[dict[str, Any]] = []
     for raw_id in raw_ids or []:
         cid = _decode(raw_id)
@@ -125,7 +185,7 @@ def delete_conversation(conv_id: str) -> bool:
         return False
     REDIS_CONN.delete(_conv_key(conv_id))
     REDIS_CONN.delete(_msg_key(conv_id))
-    REDIS_CONN.zrem(_list_key(conv["tenant_id"], conv["user_id"]), conv_id)
+    _zrem(_list_key(conv["tenant_id"], conv["user_id"]), conv_id)
     return True
 
 
@@ -150,7 +210,7 @@ def save_settings(conv_id: str, settings: dict[str, Any]) -> dict[str, Any]:
 
 
 def list_messages(conv_id: str, *, limit: int = 50, before_id: str | None = None) -> list[dict[str, Any]]:
-    raw = REDIS_CONN.lrange(_msg_key(conv_id), 0, -1)
+    raw = _lrange(_msg_key(conv_id), 0, -1)
     messages: list[dict[str, Any]] = []
     for item in raw or []:
         try:
@@ -183,8 +243,8 @@ def append_message(conv_id: str, message: dict[str, Any]) -> dict[str, Any]:
         "metadata": message.get("metadata") or {},
         "created_at": now,
     }
-    REDIS_CONN.rpush(_msg_key(conv_id), json.dumps(record, ensure_ascii=False))
-    REDIS_CONN.expire(_msg_key(conv_id), _TTL)
+    _rpush(_msg_key(conv_id), json.dumps(record, ensure_ascii=False))
+    _expire(_msg_key(conv_id), _TTL)
 
     conv = get_conversation(conv_id)
     if conv:
@@ -197,7 +257,7 @@ def append_message(conv_id: str, message: dict[str, Any]) -> dict[str, Any]:
 
 
 def save_feedback(conv_id: str, msg_id: str, feedback_type: str, *, correction_text: str = "") -> dict[str, Any] | None:
-    raw = REDIS_CONN.lrange(_msg_key(conv_id), 0, -1)
+    raw = _lrange(_msg_key(conv_id), 0, -1)
     updated: dict[str, Any] | None = None
     new_list: list[str] = []
     for item in raw or []:
@@ -217,6 +277,6 @@ def save_feedback(conv_id: str, msg_id: str, feedback_type: str, *, correction_t
         return None
     REDIS_CONN.delete(_msg_key(conv_id))
     for s in new_list:
-        REDIS_CONN.rpush(_msg_key(conv_id), s)
-    REDIS_CONN.expire(_msg_key(conv_id), _TTL)
+        _rpush(_msg_key(conv_id), s)
+    _expire(_msg_key(conv_id), _TTL)
     return updated
