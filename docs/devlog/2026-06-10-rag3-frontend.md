@@ -148,3 +148,35 @@ P0/P1 智能对话已接通会话与 SSE，但计划 Phase 5 四项 P2 仍空缺
 - `frontend/rag3-web/src/services/kbMappers.ts`
 - `frontend/rag3-web/src/hooks/useKbData.ts`、`useChatData.ts`
 - `frontend/rag3-web/src/pages/Chat.tsx`
+
+---
+
+## 6. 修复智能对话 SSE 流式无输出
+
+### 背景与目标
+
+用户发送消息后助手气泡仅有光标闪烁、无文字流式出现。根因包括：`LLMBundle.async_chat_streamly` 返回累积全文而前端按 delta 拼接导致错乱；同步检索阻塞 asyncio 事件循环使 SSE 无法及时 flush；LLM 无 token 时无回退；`conversations_api` 保存消息时错误拼接 token；Vite 代理可能缓冲 event-stream。
+
+### 改动摘要
+
+- **generation_service**：改用 `async_chat_streamly_delta` 输出增量 token；无 token 时回退 `template_answer`。
+- **chat_service**：`tid` 优先 `kb.tenant_id`；检索/精排放入 `thread_pool_exec`；各 SSE 事件后 `asyncio.sleep(0)` 促 flush。
+- **conversations_api**：token 合并兼容 delta/cumulative；补 `Content-Type: text/event-stream; charset=utf-8`。
+- **前端**：`mergeStreamToken` 兼容两种 token 格式；处理 `error`/`routing` 事件；SSE 解析支持 `\r\n`；Vite 代理对 event-stream 禁用缓冲；流式时展示路由标签。
+
+### 验证与风险
+
+- `python3 -m py_compile` + `npm run build` 通过。
+- 手动：重启后端 → 登录 → 智能对话发消息 → 应先见 routing/检索，再逐字流式输出；LLM 未配置时应回退模板答案而非空白。
+- 风险：未配置 Chat 模型时始终走模板回退；长检索阶段仍可能数秒无 token（属正常，现已有 routing 提示）。
+
+### 反思与沉淀
+
+- RAGFlow 流式 LLM 应统一走 `async_chat_streamly_delta`，勿直接把 `async_chat_streamly` 当 delta 用。
+- 在 async SSE 生成器内跑同步 pipeline 必须 `thread_pool_exec`，否则 Quart 无法向客户端推送中间事件。
+
+### 涉及文件
+
+- `backend/ragflow_rag30/rag3/generation_service.py`、`chat_service.py`
+- `backend/ragflow_rag30/api/apps/restful_apis/conversations_api.py`
+- `frontend/rag3-web/src/hooks/useChatData.ts`、`services/sseClient.ts`、`vite.config.ts`、`pages/Chat.tsx`
