@@ -25,14 +25,4 @@ class WikiPipeline(BasePipeline):
             ]
             return PipelineResult(channel=self.channel, hits=hits, latency_ms=25)
 
-        mock_hits = [
-            PipelineHit(
-                chunk_id="c-w1",
-                doc_id="wiki-penalty",
-                doc_name="Wiki: 供应商违约金",
-                score=0.98,
-                snippet="标准：每日 0.5%，上限 20%。适用于采购类合同。",
-                channel=self.channel,
-            ),
-        ]
-        return PipelineResult(channel=self.channel, hits=mock_hits[:top_k], latency_ms=18)
+        return PipelineResult(channel=self.channel, hits=[], latency_ms=1)

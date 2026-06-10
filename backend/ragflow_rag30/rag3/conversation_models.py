@@ -37,7 +37,7 @@ DEFAULT_CONVERSATION_SETTINGS: ConversationSettings = {
     "vector_weight": 0.7,
     "top_k": 10,
     "use_rerank": True,
-    "rerank_model": "bge-reranker-v2-m3",
+    "rerank_model": "",
     "channel_graph": False,
     "channel_wiki": True,
     "channel_pageindex": True,

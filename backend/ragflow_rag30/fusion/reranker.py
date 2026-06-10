@@ -15,6 +15,7 @@ def rerank(
     *,
     tenant_id: str | None = None,
     use_rerank: bool = True,
+    rerank_model: str | None = None,
 ) -> list[FusedHit]:
     if not hits:
         return []
@@ -22,11 +23,17 @@ def rerank(
         return hits[:top_n]
 
     try:
-        from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type
+        from api.db.joint_services.tenant_model_service import (
+            get_model_config_by_type_and_name,
+            get_tenant_default_model_by_type,
+        )
         from api.db.services.llm_service import LLMBundle
         from common.constants import LLMType
 
-        rerank_cfg = get_tenant_default_model_by_type(tenant_id, LLMType.RERANK)
+        if rerank_model:
+            rerank_cfg = get_model_config_by_type_and_name(tenant_id, LLMType.RERANK, rerank_model)
+        else:
+            rerank_cfg = get_tenant_default_model_by_type(tenant_id, LLMType.RERANK)
         rerank_mdl = LLMBundle(tenant_id, rerank_cfg)
         texts = [h.snippet or h.doc_name or "" for h in hits]
         scores, _ = rerank_mdl.similarity(query, texts)

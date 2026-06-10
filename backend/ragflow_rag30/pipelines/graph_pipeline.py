@@ -87,15 +87,8 @@ class GraphPipeline(BasePipeline):
             except Exception:
                 logger.debug("graph pipeline kg retrieval failed", exc_info=True)
 
-        mock_hits = [
-            PipelineHit(
-                chunk_id="c-g1",
-                doc_id="entity-penalty",
-                doc_name="实体「违约金」",
-                score=0.89,
-                snippet="实体关系：违约金 —[定义于]→ 合同V5 第五条",
-                channel=self.channel,
-                metadata={"source": "mock", "acl_level": "internal"},
-            ),
-        ]
-        return PipelineResult(channel=self.channel, hits=mock_hits[:top_k], latency_ms=820)
+        return PipelineResult(
+            channel=self.channel,
+            hits=[],
+            latency_ms=int((time.time() - t0) * 1000) or 1,
+        )

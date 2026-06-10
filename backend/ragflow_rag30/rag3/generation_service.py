@@ -8,6 +8,7 @@ import re
 from typing import Any, AsyncIterator
 
 from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type
+from api.db.services.dialog_service import _stream_with_think_delta
 from api.db.services.llm_service import LLMBundle
 from common.constants import LLMType
 from fusion.rrf_fusion import FusedHit
@@ -146,13 +147,23 @@ async def generate_answer_stream(
     gen_conf = {"temperature": temperature, "max_tokens": max_tokens}
     total_tokens = 0
     token_emitted = False
-    async for chunk in chat_mdl.async_chat_streamly_delta(system, history, gen_conf):
-        if isinstance(chunk, int):
-            total_tokens = chunk
-            continue
-        if chunk:
+
+    async def _llm_chunk_iter():
+        nonlocal total_tokens
+        async for chunk in chat_mdl.async_chat_streamly_delta(system, history, gen_conf):
+            if isinstance(chunk, int):
+                total_tokens = chunk
+            elif chunk:
+                yield chunk
+
+    # Qwen/DeepSeek 推理流每个 delta 会附带 </think>，需与 Dialog 一致做 think 清洗
+    async for kind, value, _state in _stream_with_think_delta(_llm_chunk_iter()):
+        if kind == "marker":
             token_emitted = True
-            yield ("token", chunk)
+            yield ("token", value)
+        elif kind == "text" and value:
+            token_emitted = True
+            yield ("token", value)
     if not token_emitted:
         fallback = template_answer(query, hits)
         yield ("token", fallback["content"])

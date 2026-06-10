@@ -29,15 +29,4 @@ class PageIndexPipeline(BasePipeline):
             ]
             return PipelineResult(channel=self.channel, hits=hits, latency_ms=120)
 
-        mock_hits = [
-            PipelineHit(
-                chunk_id="c-p1",
-                doc_id="doc-001",
-                doc_name="供应商合同模板V5.pdf",
-                score=0.867,
-                snippet="第五条 违约责任 §5.1 迟延交货违约金…",
-                channel=self.channel,
-                metadata={"page": 3, "node_id": "ch5-1-1"},
-            ),
-        ]
-        return PipelineResult(channel=self.channel, hits=mock_hits[:top_k], latency_ms=210)
+        return PipelineResult(channel=self.channel, hits=[], latency_ms=1)

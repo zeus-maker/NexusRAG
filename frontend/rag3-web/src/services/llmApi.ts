@@ -108,6 +108,18 @@ export function flattenLlmOptions(
   return options.sort((a, b) => a.label.localeCompare(b.label, 'zh-CN'));
 }
 
+/** 将当前值校正为租户已配置模型（name@factory）；无效时回退租户默认或首个可用项 */
+export function resolveLlmSelectValue(
+  current: string,
+  options: LlmSelectOption[],
+  tenantDefault?: string,
+): string {
+  const available = options.filter(o => !o.disabled);
+  if (current && available.some(o => o.value === current)) return current;
+  if (tenantDefault && available.some(o => o.value === tenantDefault)) return tenantDefault;
+  return available[0]?.value ?? '';
+}
+
 export const llmApi = {
   factories: async () => {
     const { data } = await legacyApiRequest<LlmFactory[]>('/llm/factories');

@@ -838,18 +838,31 @@ def get_wiki_hub_analytics(dataset_id: str, tenant_id: str) -> tuple[bool, dict[
     )
 
 
+def _wiki_query_tokens(query: str) -> list[str]:
+    q = (query or "").strip().lower()
+    if not q:
+        return []
+    spaced = [t for t in q.split() if len(t) > 1]
+    if spaced:
+        return spaced
+    if len(q) >= 2:
+        return [q] + [q[i : i + 2] for i in range(len(q) - 1)]
+    return [q]
+
+
 def search_wiki_hits(kb_id: str, query: str, top_k: int = 10) -> list[dict[str, Any]]:
-    q = (query or "").lower()
+    tokens = _wiki_query_tokens(query)
     entries = load_wiki_entries(kb_id)
     hits: list[dict[str, Any]] = []
     for entry in entries:
         title = (entry.get("title") or "").lower()
         content = (entry.get("content") or "").lower()
         text = f"{title} {content}"
-        if not q:
+        if not tokens:
             score = 0.5
         else:
-            score = sum(1 for tok in q.split() if len(tok) > 1 and tok in text) / max(len(q.split()), 1)
+            matched = sum(1 for tok in tokens if tok in text)
+            score = matched / len(tokens)
             if score <= 0:
                 continue
         hits.append({

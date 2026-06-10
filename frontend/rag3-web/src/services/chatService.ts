@@ -44,6 +44,32 @@ export interface QueryParseResult {
   autocomplete_hints?: Array<{ field: string; value: string }>;
 }
 
+/** 后端会话 settings → 前端 ChatSettings 字段 */
+export function mapApiSettingsToChat(
+  raw: Record<string, unknown>,
+  base: ChatSettings,
+): ChatSettings {
+  return {
+    ...base,
+    systemPrompt: String(raw.system_prompt ?? base.systemPrompt),
+    opener: String(raw.opener ?? base.opener),
+    topK: Number(raw.top_k) || base.topK,
+    rerankEnabled: Boolean(raw.use_rerank ?? base.rerankEnabled),
+    rerankModel: String(raw.rerank_model ?? base.rerankModel),
+    temperature: Number(raw.temperature) || base.temperature,
+    maxTokens: Number(raw.max_tokens) || base.maxTokens,
+    llmModel: String(raw.llm_model ?? base.llmModel),
+    similarityThreshold: Number(raw.similarity_threshold) || base.similarityThreshold,
+    vectorWeight: Number(raw.vector_weight) || base.vectorWeight,
+    channelWiki: Boolean(raw.channel_wiki ?? base.channelWiki),
+    channelPageIndex: Boolean(raw.channel_pageindex ?? base.channelPageIndex),
+    channelGraph: Boolean(raw.channel_graph ?? base.channelGraph),
+    showCitations: Boolean(raw.show_citations ?? base.showCitations),
+    showTrace: Boolean(raw.show_trace ?? base.showTrace),
+    streaming: Boolean(raw.streaming ?? base.streaming),
+  };
+}
+
 export function mapSettingsToApi(
   settings: ChatSettings,
   extra?: { metadataFilters?: QueryParseResult['metadata_filters']; userRoles?: string[] },
@@ -139,6 +165,7 @@ export const chatService = {
           metadataFilters: options?.metadataFilters,
           userRoles: options?.userRoles,
         }),
+        kb_ids: settings.kbIds,
         pipeline_ids: options?.pipelineIds,
         user_roles: options?.userRoles,
       }),
@@ -167,6 +194,7 @@ export const chatService = {
           metadataFilters: handlers.metadataFilters,
           userRoles: handlers.userRoles,
         }),
+        kb_ids: settings.kbIds,
         pipeline_ids: handlers.pipelineIds,
         user_roles: handlers.userRoles,
       },

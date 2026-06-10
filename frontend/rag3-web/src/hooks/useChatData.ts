@@ -2,7 +2,9 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { mockConversations } from '../mockData';
 import { CONV_MESSAGES, CONV_PINNED, QUERY_TRACE_STEPS } from '../data/chatMock';
 import { DEFAULT_CHAT_SETTINGS, type ChatSettings } from '../components/ChatSettingsPanel';
-import { chatService, type ConversationRecord, type QueryParseResult } from '../services/chatService';
+import { chatService, mapApiSettingsToChat, type ConversationRecord, type QueryParseResult } from '../services/chatService';
+import { useLlmModels, useTenantModels } from './useLlmData';
+import { resolveLlmSelectValue } from '../services/llmApi';
 import { useApiMode } from '../services/http';
 import { useKnowledgeBaseList } from './useKbData';
 import type { ChatMessage, Citation, Conversation } from '../types';
@@ -92,6 +94,9 @@ export function useChatData(initialConvId: string | null) {
   const apiMode = useApiMode();
   const { data: kbList, loading: kbLoading, error: kbError } = useKnowledgeBaseList('name', false, '', 1, 100, 'all');
   const kbs = kbList?.items ?? [];
+  const { options: chatOptions, loading: chatOptsLoading } = useLlmModels('chat');
+  const { options: rerankOptions, loading: rerankOptsLoading } = useLlmModels('rerank');
+  const { data: tenantModels } = useTenantModels();
 
   const [conversations, setConversations] = useState<Conversation[]>(apiMode ? [] : mockConversations);
   const [pinned, setPinned] = useState<Set<string>>(new Set(CONV_PINNED));
@@ -136,11 +141,23 @@ export function useChatData(initialConvId: string | null) {
     const validSet = new Set(kbs.map(k => k.kb_id));
     setChatSettings(s => {
       const valid = s.kbIds.filter(id => validSet.has(id));
-      const next = valid.length ? valid : [kbs[0].kb_id];
-      if (next.join(',') === s.kbIds.join(',')) return s;
-      return { ...s, kbIds: next };
+      const nextKbIds = valid.length ? valid : [kbs[0].kb_id];
+      const primaryKb = kbs.find(k => nextKbIds.includes(k.kb_id)) ?? kbs[0];
+      const kbLlm = primaryKb?.llm_model && primaryKb.llm_model !== '—' ? primaryKb.llm_model : '';
+      let changed = nextKbIds.join(',') !== s.kbIds.join(',');
+      const patch: Partial<typeof s> = { kbIds: nextKbIds };
+      if (!chatOptsLoading && chatOptions.length) {
+        const llm = resolveLlmSelectValue(s.llmModel || kbLlm, chatOptions, tenantModels.llm_id);
+        if (llm !== s.llmModel) { patch.llmModel = llm; changed = true; }
+      }
+      if (!rerankOptsLoading && rerankOptions.length) {
+        const rerank = resolveLlmSelectValue(s.rerankModel, rerankOptions, tenantModels.rerank_id);
+        if (rerank !== s.rerankModel) { patch.rerankModel = rerank; changed = true; }
+      }
+      if (!changed) return s;
+      return { ...s, ...patch };
     });
-  }, [apiMode, kbs]);
+  }, [apiMode, kbs, chatOptions, rerankOptions, chatOptsLoading, rerankOptsLoading, tenantModels.llm_id, tenantModels.rerank_id]);
 
   const resolveKbIds = useCallback((): string[] => {
     const validSet = new Set(kbs.map(k => k.kb_id));
@@ -185,27 +202,19 @@ export function useChatData(initialConvId: string | null) {
       ]);
       setMessages(msgs.map(mapApiMessage));
       if (settings && Object.keys(settings).length) {
-        setChatSettings(s => ({
-          ...s,
-          systemPrompt: String(settings.system_prompt ?? s.systemPrompt),
-          opener: String(settings.opener ?? s.opener),
-          topK: Number(settings.top_k) || s.topK,
-          rerankEnabled: Boolean(settings.use_rerank ?? s.rerankEnabled),
-          temperature: Number(settings.temperature) || s.temperature,
-          maxTokens: Number(settings.max_tokens) || s.maxTokens,
-          llmModel: String(settings.llm_model ?? s.llmModel),
-          similarityThreshold: Number(settings.similarity_threshold) || s.similarityThreshold,
-          vectorWeight: Number(settings.vector_weight) || s.vectorWeight,
-          channelWiki: Boolean(settings.channel_wiki ?? s.channelWiki),
-          channelPageIndex: Boolean(settings.channel_pageindex ?? s.channelPageIndex),
-          channelGraph: Boolean(settings.channel_graph ?? s.channelGraph),
-          streaming: Boolean(settings.streaming ?? s.streaming),
-        }));
+        setChatSettings(s => {
+          const merged = mapApiSettingsToChat(settings, s);
+          return {
+            ...merged,
+            llmModel: resolveLlmSelectValue(merged.llmModel, chatOptions, tenantModels.llm_id),
+            rerankModel: resolveLlmSelectValue(merged.rerankModel, rerankOptions, tenantModels.rerank_id),
+          };
+        });
       }
     } finally {
       setLoading(false);
     }
-  }, [conversations]);
+  }, [conversations, chatOptions, rerankOptions, tenantModels.llm_id, tenantModels.rerank_id]);
 
   const stopStream = useCallback(() => {
     abortRef.current?.abort();

@@ -1,8 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { X, Save, RotateCcw } from 'lucide-react';
 import { mockKBs } from '../mockData';
 import { useApiMode } from '../services/http';
 import { useKnowledgeBaseList } from '../hooks/useKbData';
+import { useLlmModels, useTenantModels } from '../hooks/useLlmData';
+import { LlmModelSelect } from './llm/LlmModelSelect';
+import { resolveLlmSelectValue } from '../services/llmApi';
 import { PROMPT_TEMPLATES } from '../data/chatMock';
 
 export interface ChatSettings {
@@ -35,13 +38,13 @@ export const DEFAULT_CHAT_SETTINGS: ChatSettings = {
   vectorWeight: 0.7,
   topK: 10,
   rerankEnabled: true,
-  rerankModel: 'bge-reranker-v2-m3',
+  rerankModel: '',
   channelGraph: false,
   channelWiki: true,
   channelPageIndex: true,
   temperature: 0.3,
   maxTokens: 2048,
-  llmModel: 'DeepSeek-v4',
+  llmModel: '',
   showCitations: true,
   showTrace: true,
   streaming: true,
@@ -59,9 +62,30 @@ export function ChatSettingsPanel({ open, settings, onChange, onClose, onSave }:
   const [saved, setSaved] = useState(false);
   const apiMode = useApiMode();
   const { data: kbList, loading: kbLoading } = useKnowledgeBaseList('name', false, '', 1, 100, 'all');
+  const { options: chatOptions, loading: chatLoading } = useLlmModels('chat');
+  const { options: rerankOptions, loading: rerankLoading } = useLlmModels('rerank');
+  const { data: tenantModels } = useTenantModels();
   const kbOptions = apiMode
     ? (kbList?.items ?? []).map(kb => ({ kb_id: kb.kb_id, name: kb.name, icon: kb.icon || '📚' }))
     : mockKBs.map(kb => ({ kb_id: kb.kb_id, name: kb.name, icon: kb.icon }));
+  useEffect(() => {
+    if (!apiMode || chatLoading || rerankLoading) return;
+    const nextLlm = resolveLlmSelectValue(settings.llmModel, chatOptions, tenantModels.llm_id);
+    const nextRerank = resolveLlmSelectValue(settings.rerankModel, rerankOptions, tenantModels.rerank_id);
+    if (nextLlm === settings.llmModel && nextRerank === settings.rerankModel) return;
+    onChange({
+      ...settings,
+      llmModel: nextLlm,
+      rerankModel: nextRerank,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    apiMode, chatLoading, rerankLoading,
+    chatOptions, rerankOptions,
+    tenantModels.llm_id, tenantModels.rerank_id,
+    settings.llmModel, settings.rerankModel,
+  ]);
+
   if (!open) return null;
 
   const patch = (p: Partial<ChatSettings>) => onChange({ ...settings, ...p });
@@ -157,9 +181,21 @@ export function ChatSettingsPanel({ open, settings, onChange, onClose, onSave }:
               </div>
               <div>
                 <label className="text-xs text-gray-600 dark:text-gray-400">Rerank 模型</label>
-                <select value={settings.rerankModel} onChange={e => patch({ rerankModel: e.target.value })} disabled={!settings.rerankEnabled} className="w-full px-2 py-1 text-xs border border-gray-200 dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-gray-100 disabled:opacity-50">
-                  <option>bge-reranker-v2-m3</option><option>bce-ranker</option>
-                </select>
+                {apiMode ? (
+                  <LlmModelSelect
+                    value={settings.rerankModel}
+                    onChange={v => patch({ rerankModel: v })}
+                    options={rerankOptions}
+                    loading={rerankLoading}
+                    disabled={!settings.rerankEnabled}
+                    placeholder="选择 Rerank 模型…"
+                    className="w-full px-2 py-1 text-xs border border-gray-200 dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-gray-100 disabled:opacity-50"
+                  />
+                ) : (
+                  <select value={settings.rerankModel || 'bge-reranker-v2-m3'} onChange={e => patch({ rerankModel: e.target.value })} disabled={!settings.rerankEnabled} className="w-full px-2 py-1 text-xs border border-gray-200 dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-gray-100 disabled:opacity-50">
+                    <option>bge-reranker-v2-m3</option><option>bce-ranker</option>
+                  </select>
+                )}
               </div>
             </div>
             <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
@@ -199,9 +235,20 @@ export function ChatSettingsPanel({ open, settings, onChange, onClose, onSave }:
             </div>
             <div>
               <label className="text-xs text-gray-600 dark:text-gray-400">LLM 模型</label>
-              <select value={settings.llmModel} onChange={e => patch({ llmModel: e.target.value })} className="w-full px-2 py-1.5 text-xs border border-gray-200 dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-gray-100">
-                <option>DeepSeek-v4</option><option>Qwen3-72B</option><option>Claude-4</option>
-              </select>
+              {apiMode ? (
+                <LlmModelSelect
+                  value={settings.llmModel}
+                  onChange={v => patch({ llmModel: v })}
+                  options={chatOptions}
+                  loading={chatLoading}
+                  placeholder="选择对话模型…"
+                  className="w-full px-2 py-1.5 text-xs border border-gray-200 dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-gray-100"
+                />
+              ) : (
+                <select value={settings.llmModel || 'DeepSeek-v4'} onChange={e => patch({ llmModel: e.target.value })} className="w-full px-2 py-1.5 text-xs border border-gray-200 dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-gray-100">
+                  <option>DeepSeek-v4</option><option>Qwen3-72B</option><option>Claude-4</option>
+                </select>
+              )}
             </div>
             <div className="space-y-1.5">
               {[

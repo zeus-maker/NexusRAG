@@ -25,6 +25,7 @@ class PipelineResult:
     hits: list[PipelineHit]
     latency_ms: int
     error: str | None = None
+    debug: dict | None = None
 
 
 class BasePipeline(ABC):

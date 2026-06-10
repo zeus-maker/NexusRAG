@@ -70,6 +70,8 @@ def _build_trace(plan, channel_results, fused, reranked, extra: dict[str, Any] |
                 "channel": r.channel,
                 "hit_count": len(r.hits),
                 "latency_ms": r.latency_ms,
+                "error": r.error,
+                "debug": r.debug,
             }
             for r in channel_results
         ],
@@ -82,12 +84,16 @@ def _build_trace(plan, channel_results, fused, reranked, extra: dict[str, Any] |
 
 
 def _prepare_query(query: str, settings: dict[str, Any]) -> tuple[str, dict[str, Any] | None, dict[str, Any] | None]:
+    """仅使用显式传入的 metadata_filters；不因查询中含 ':' 自动套标签过滤。"""
     metadata_filters = settings.get("metadata_filters")
+    conditions = (metadata_filters or {}).get("conditions") or []
+    if not conditions:
+        metadata_filters = None
+
     parsed = None
-    if metadata_filters or ":" in query or re.search(r"\b(AND|OR|NOT)\b", query, flags=re.I):
+    if ":" in query or re.search(r"\b(AND|OR|NOT)\b", query, flags=re.I) or metadata_filters:
         parsed = parse_advanced_query(query)
-        if not metadata_filters and parsed.get("metadata_filters", {}).get("conditions"):
-            metadata_filters = parsed["metadata_filters"]
+
     search_query = (parsed or {}).get("free_text") or query
     return search_query, metadata_filters, parsed
 
@@ -136,27 +142,37 @@ async def execute_chat_turn(
 
     top_k = int(settings.get("top_k") or 10)
     use_rerank = bool(settings.get("use_rerank", True))
+    rerank_model = (settings.get("rerank_model") or "").strip() or None
     ctx = {
         "tenant_id": tid,
-        "similarity_threshold": float(settings.get("similarity_threshold") or 0.2),
-        "vector_weight": float(settings.get("vector_weight") or 0.7),
+        "requester_user_id": tenant_id,
+        "similarity_threshold": float(settings.get("similarity_threshold", 0.2)),
+        "vector_weight": float(settings.get("vector_weight", 0.7)),
         "use_rerank": use_rerank,
+        "rerank_model": rerank_model,
         "metadata_filters": metadata_filters,
     }
 
     t_retrieve = time.time()
     channel_results = run_pipelines(plan.pipeline_ids, search_query, kb_id, top_k=top_k, **ctx)
     fused = reciprocal_rank_fusion(channel_results)
+    fused_before_filter = len(fused)
     fused = apply_metadata_filters(fused, metadata_filters)
-    reranked = rerank(search_query, fused, top_n=min(5, top_k), tenant_id=tid, use_rerank=use_rerank)
+    reranked = rerank(
+        search_query, fused, top_n=min(5, top_k),
+        tenant_id=tid, use_rerank=use_rerank, rerank_model=rerank_model,
+    )
     acl_before = len(reranked)
     reranked = filter_fused_hits_by_acl(reranked, user_roles)
     lat["retrieve"] = int((time.time() - t_retrieve) * 1000)
     lat["rerank"] = 0
 
     trace = _build_trace(plan, channel_results, fused, reranked, {
+        "kb_id": kb_id,
+        "search_query": search_query,
         "parsed_query": parsed,
         "metadata_filters": metadata_filters,
+        "metadata_filter_dropped": fused_before_filter - len(fused),
         "acl_filtered_count": acl_before - len(reranked),
     })
 
@@ -261,22 +277,29 @@ async def execute_chat_turn_stream(
 
     top_k = int(settings.get("top_k") or 10)
     use_rerank = bool(settings.get("use_rerank", True))
+    rerank_model = (settings.get("rerank_model") or "").strip() or None
     ctx = {
         "tenant_id": tid,
-        "similarity_threshold": float(settings.get("similarity_threshold") or 0.2),
-        "vector_weight": float(settings.get("vector_weight") or 0.7),
+        "requester_user_id": tenant_id,
+        "similarity_threshold": float(settings.get("similarity_threshold", 0.2)),
+        "vector_weight": float(settings.get("vector_weight", 0.7)),
         "use_rerank": use_rerank,
+        "rerank_model": rerank_model,
         "metadata_filters": metadata_filters,
     }
 
     def _retrieve_and_rank():
         results = run_pipelines(plan.pipeline_ids, search_query, kb_id, top_k=top_k, **ctx)
         fused_hits = reciprocal_rank_fusion(results)
+        fused_before = len(fused_hits)
         fused_hits = apply_metadata_filters(fused_hits, metadata_filters)
-        ranked = rerank(search_query, fused_hits, top_n=min(5, top_k), tenant_id=tid, use_rerank=use_rerank)
-        return results, fused_hits, ranked
+        ranked = rerank(
+            search_query, fused_hits, top_n=min(5, top_k),
+            tenant_id=tid, use_rerank=use_rerank, rerank_model=rerank_model,
+        )
+        return results, fused_hits, ranked, fused_before
 
-    channel_results, fused, reranked = await thread_pool_exec(_retrieve_and_rank)
+    channel_results, fused, reranked, fused_before = await thread_pool_exec(_retrieve_and_rank)
     for r in channel_results:
         yield {
             "event": "searching",
@@ -292,8 +315,11 @@ async def execute_chat_turn_stream(
     acl_before = len(reranked)
     reranked = filter_fused_hits_by_acl(reranked, user_roles)
     trace = _build_trace(plan, channel_results, fused, reranked, {
+        "kb_id": kb_id,
+        "search_query": search_query,
         "parsed_query": parsed,
         "metadata_filters": metadata_filters,
+        "metadata_filter_dropped": fused_before - len(fused),
         "acl_filtered_count": acl_before - len(reranked),
     })
 

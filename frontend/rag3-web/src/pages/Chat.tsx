@@ -5,14 +5,17 @@ import {
   Settings, Paperclip, GitCompare, Square, Check, MessageSquare
 } from 'lucide-react';
 import { mockKBs } from '../mockData';
-import type { ChatMessage, Citation, Conversation } from '../types';
+import type { ChatMessage, Conversation } from '../types';
 import { ChatSettingsPanel, DEFAULT_CHAT_SETTINGS } from '../components/ChatSettingsPanel';
 import { ChatQuerySyntax } from '../components/ChatQuerySyntax';
 import { QUERY_TRACE_STEPS } from '../data/chatMock';
 import { consumePageIndexChatPrefill, type PageIndexChatPrefill } from '../utils/pageIndexChatPrefill';
+import { ChatThinkingBlock } from '../components/ChatThinkingBlock';
+import { ChatMarkdownContent } from '../components/ChatMarkdownContent';
 import { useChatData, traceFromMetadata, type TraceStep } from '../hooks/useChatData';
 import { kbApi } from '../services/kbApi';
 import type { QueryParseResult } from '../services/chatService';
+import { parseAssistantContent } from '../utils/thinkContent';
 
 const SAMPLE_RESPONSES = [
   {
@@ -59,83 +62,6 @@ const SAMPLE_RESPONSES = [
     compareB: '标准保密期为合同期内及终止后 **3–5 年**[1]，具体年限需查阅各版本模板。',
   },
 ];
-
-function formatCitationText(content: string) {
-  const parts: Array<{ type: 'text' | 'cite'; value: string; idx?: number }> = [];
-  let lastIndex = 0;
-  const regex = /\[(\d+)\]/g;
-  let match;
-  while ((match = regex.exec(content)) !== null) {
-    if (match.index > lastIndex) parts.push({ type: 'text', value: content.slice(lastIndex, match.index) });
-    parts.push({ type: 'cite', value: match[0], idx: parseInt(match[1]) });
-    lastIndex = match.index + match[0].length;
-  }
-  if (lastIndex < content.length) parts.push({ type: 'text', value: content.slice(lastIndex) });
-  return parts;
-}
-
-function MarkdownContent({ text, citations, onCiteClick }: { text: string; citations: Citation[]; onCiteClick?: (c: Citation) => void }) {
-  const [activeCite, setActiveCite] = useState<Citation | null>(null);
-
-  const renderInline = (line: string, key: number) => {
-    const parts = formatCitationText(line);
-    return (
-      <span key={key}>
-        {parts.map((p, i) => {
-          if (p.type === 'cite' && p.idx) {
-            const cite = citations.find(c => c.index === p.idx);
-            return (
-              <button
-                key={i}
-                type="button"
-                onClick={() => { if (cite) { setActiveCite(activeCite?.index === cite.index ? null : cite); onCiteClick?.(cite); } }}
-                className="inline-flex items-center justify-center w-4 h-4 bg-blue-600 text-white text-[9px] font-bold rounded mx-0.5 hover:bg-blue-700 align-middle"
-              >
-                {p.idx}
-              </button>
-            );
-          }
-          const seg = p.value;
-          if (seg.includes('**')) {
-            return <span key={i}>{seg.split('**').map((s, j) => j % 2 === 1 ? <strong key={j} className="font-semibold">{s}</strong> : s)}</span>;
-          }
-          return <span key={i}>{seg}</span>;
-        })}
-      </span>
-    );
-  };
-
-  return (
-    <div className="text-sm text-gray-800 dark:text-gray-200 leading-relaxed">
-      {text.split('\n').map((line, i) => {
-        if (line.startsWith('**') && line.endsWith('**')) return <p key={i} className="font-semibold text-gray-900 dark:text-gray-100 mt-3 mb-0.5">{line.slice(2, -2)}</p>;
-        if (line.startsWith('- ')) return <li key={i} className="ml-4 list-disc">{renderInline(line.slice(2), i)}</li>;
-        if (line === '') return <br key={i} />;
-        return <p key={i} className="mb-0.5">{renderInline(line, i)}</p>;
-      })}
-      {activeCite && (
-        <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg">
-          <div className="flex justify-between gap-2">
-            <div className="flex-1">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="w-4 h-4 bg-blue-600 text-white text-[9px] font-bold rounded flex items-center justify-center">{activeCite.index}</span>
-                <span className="text-xs font-semibold text-blue-800 dark:text-blue-200">{activeCite.doc_name}</span>
-                <span className="text-[10px] text-blue-600">P{activeCite.page_number}</span>
-              </div>
-              <p className="text-xs text-gray-600 dark:text-gray-400 italic">"{activeCite.snippet}"</p>
-              <div className="flex items-center gap-2 mt-2">
-                <div className="flex-1 h-1 bg-blue-200 rounded-full"><div className="h-full bg-blue-600 rounded-full" style={{ width: `${activeCite.relevance_score * 100}%` }} /></div>
-                <span className="text-[10px] text-blue-700">{(activeCite.relevance_score * 100).toFixed(1)}%</span>
-                <button type="button" className="text-[10px] text-blue-600 hover:underline">查看原文</button>
-              </div>
-            </div>
-            <button type="button" onClick={() => setActiveCite(null)} className="text-gray-400"><X size={13} /></button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
 
 function QueryTraceTimeline({ expanded, onViewFull, steps }: { expanded: boolean; onViewFull?: () => void; steps?: TraceStep[] }) {
   if (!expanded) return null;
@@ -477,7 +403,12 @@ export function ChatPage({ convId, onNavigate }: ChatPageProps) {
             </div>
           )}
 
-          {messages.map(msg => (
+          {messages.map(msg => {
+            const parsedAssistant = msg.role === 'assistant'
+              ? parseAssistantContent(msg.content, msg.is_streaming)
+              : null;
+            const displayAnswer = parsedAssistant?.answer ?? msg.content;
+            return (
             <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} gap-3`}>
               {msg.role === 'assistant' && (
                 <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center flex-shrink-0 mt-1">
@@ -500,11 +431,17 @@ export function ChatPage({ convId, onNavigate }: ChatPageProps) {
                         )}
                       </div>
                     )}
-                    {showCompare && !msg.is_streaming && msg.content && (
+                    {parsedAssistant && (parsedAssistant.thinking || parsedAssistant.isThinking) && (
+                      <ChatThinkingBlock
+                        content={parsedAssistant.thinking}
+                        isStreaming={parsedAssistant.isThinking}
+                      />
+                    )}
+                    {showCompare && !msg.is_streaming && displayAnswer && (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3 p-2 bg-violet-50/50 dark:bg-violet-900/20 rounded-lg border border-violet-100 dark:border-violet-800">
                         <div className="text-[10px]">
                           <span className="font-semibold text-violet-700 dark:text-violet-300">策略 A · PageIndex 主通道</span>
-                          <p className="text-gray-600 dark:text-gray-400 mt-1 line-clamp-4">{msg.content.slice(0, 120)}…</p>
+                          <p className="text-gray-600 dark:text-gray-400 mt-1 line-clamp-4">{displayAnswer.slice(0, 120)}…</p>
                         </div>
                         <div className="text-[10px]">
                           <span className="font-semibold text-violet-700 dark:text-violet-300">策略 B · 纯向量</span>
@@ -512,15 +449,19 @@ export function ChatPage({ convId, onNavigate }: ChatPageProps) {
                         </div>
                       </div>
                     )}
-                    <MarkdownContent
-                      text={msg.content}
-                      citations={msg.citations || []}
-                      onCiteClick={(c) => onNavigate('kb-documents', {
-                        selectedKBId: chatSettings.kbIds[0] || 'kb-001',
-                        selectedDocId: c.doc_id,
-                      })}
-                    />
-                    {msg.is_streaming && <span className="inline-block w-1 h-4 bg-blue-600 animate-pulse ml-0.5 align-middle rounded-sm" />}
+                    {(displayAnswer || (!parsedAssistant?.isThinking && msg.is_streaming)) && (
+                      <ChatMarkdownContent
+                        text={displayAnswer}
+                        citations={msg.citations || []}
+                        onCiteClick={(c) => onNavigate('kb-documents', {
+                          selectedKBId: chatSettings.kbIds[0] || 'kb-001',
+                          selectedDocId: c.doc_id,
+                        })}
+                      />
+                    )}
+                    {msg.is_streaming && !parsedAssistant?.isThinking && (
+                      <span className="inline-block w-1 h-4 bg-blue-600 animate-pulse ml-0.5 align-middle rounded-sm" />
+                    )}
                     {chatSettings.showCitations && !msg.is_streaming && msg.citations && msg.citations.length > 0 && (
                       <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
                         <p className="text-[10px] text-gray-500 font-medium mb-2">引用来源 ({msg.citations.length})</p>
@@ -565,7 +506,7 @@ export function ChatPage({ convId, onNavigate }: ChatPageProps) {
                           <button type="button" onClick={() => { void submitFeedback(msg.id, 'thumbs_up'); showToast('感谢反馈'); }} className="p-1.5 rounded hover:bg-green-50 text-gray-400 hover:text-green-600"><ThumbsUp size={12} /></button>
                           <button type="button" onClick={() => { setFeedbackMsg(msg.id); setFeedbackType('down'); }} className="p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-600"><ThumbsDown size={12} /></button>
                           <button type="button" onClick={() => setFeedbackMsg(msg.id)} className="p-1.5 rounded hover:bg-gray-100 text-gray-400" title="纠错"><Edit3 size={12} /></button>
-                          <button type="button" onClick={() => copyMessage(msg.content)} className="p-1.5 rounded hover:bg-gray-100 text-gray-400"><Copy size={12} /></button>
+                          <button type="button" onClick={() => copyMessage(displayAnswer || msg.content)} className="p-1.5 rounded hover:bg-gray-100 text-gray-400"><Copy size={12} /></button>
                           <button type="button" onClick={regenerateLast} disabled={isStreaming} className="p-1.5 rounded hover:bg-gray-100 text-gray-400 disabled:opacity-40" title="重新生成"><RefreshCw size={12} /></button>
                         </div>
                       </div>
@@ -579,7 +520,8 @@ export function ChatPage({ convId, onNavigate }: ChatPageProps) {
                 </div>
               )}
             </div>
-          ))}
+          );
+          })}
           <div ref={messagesEndRef} />
         </div>
 

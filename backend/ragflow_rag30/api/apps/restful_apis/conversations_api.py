@@ -170,7 +170,13 @@ async def send_message(conv_id):
         if isinstance(req.get("settings"), dict):
             settings = save_settings(conv_id, req["settings"])
 
-        kb_id = (conv.get("kb_ids") or [None])[0]
+        req_kb_ids = req.get("kb_ids")
+        if isinstance(req_kb_ids, list) and req_kb_ids:
+            kb_id = str(req_kb_ids[0])
+            if kb_id != (conv.get("kb_ids") or [None])[0]:
+                update_conversation(conv_id, {"kb_ids": [str(k) for k in req_kb_ids]})
+        else:
+            kb_id = (conv.get("kb_ids") or [None])[0]
         if not kb_id:
             return get_data_error_result(message="对话未关联知识库")
 
