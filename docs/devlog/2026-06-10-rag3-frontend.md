@@ -118,3 +118,33 @@ P0/P1 智能对话已接通会话与 SSE，但计划 Phase 5 四项 P2 仍空缺
 - `frontend/rag3-web/src/hooks/useKbData.ts`、`useChatData.ts`
 - `frontend/rag3-web/src/pages/Chat.tsx`、`components/ChatSettingsPanel.tsx`
 - `frontend/rag3-web/.env.development`
+
+---
+
+## 5. 修复知识库列表 orderby=name 导致 code 101
+
+### 背景与目标
+
+登录后智能对话提示「知识库加载失败」，左侧对话列表也为空。`GET /api/v1/datasets` 返回 `code:101`：`orderby` 仅接受 `create_time` 或 `update_time`，前端 `sortKeyToOrderby` 将 `name` 原样传给后端导致整表请求失败，进而 KB 选择器无数据、无法创建会话。
+
+### 改动摘要
+
+- **kbMappers**：`sortKeyToOrderby` 仅映射为 `create_time` | `update_time`；新增 `sortKnowledgeBases` 对 `name`/`docs`/`chunks`/`updated` 做客户端排序。
+- **useKbData**：列表拉取成功后按 `sortBy`/`sortDesc` 客户端排序再返回。
+- **useChatData / Chat**：`refreshConversations` 增加 catch 与 `convError`；侧栏展示加载失败提示与「暂无历史对话」空态。
+
+### 验证与风险
+
+- 验证：`npm run build` 通过。
+- 手动：登录 → 智能对话 → 知识库下拉应显示真实 dataset；侧栏无历史时显示「点击新对话开始」；若 conversations API 失败则显示「对话加载失败」。
+- 风险：大列表（>100）客户端排序仅作用于当前页；分页场景下 name 排序非全局。
+
+### 反思与沉淀
+
+- RAGFlow `BaseListReq.orderby` 白名单与 UI 排序字段不一致时，应在 mapper 层收敛 API 参数，排序语义在前端补齐，避免静默 101。
+
+### 涉及文件
+
+- `frontend/rag3-web/src/services/kbMappers.ts`
+- `frontend/rag3-web/src/hooks/useKbData.ts`、`useChatData.ts`
+- `frontend/rag3-web/src/pages/Chat.tsx`

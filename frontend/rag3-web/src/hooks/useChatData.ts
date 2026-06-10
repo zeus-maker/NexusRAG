@@ -95,6 +95,7 @@ export function useChatData(initialConvId: string | null) {
   const [lastCompareB, setLastCompareB] = useState('');
   const [rewriteInfo, setRewriteInfo] = useState<{ original: string; rewritten: string } | null>(null);
   const [loading, setLoading] = useState(apiMode);
+  const [convError, setConvError] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   const streamRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -105,12 +106,16 @@ export function useChatData(initialConvId: string | null) {
       return;
     }
     setLoading(true);
+    setConvError(null);
     try {
       const items = await chatService.listConversations(search);
       setConversations(items.map(mapApiConv));
       const pinSet = new Set<string>();
       items.forEach(c => { if (c.pinned) pinSet.add(c.conversation_id); });
       if (pinSet.size) setPinned(pinSet);
+    } catch (e) {
+      setConvError(e instanceof Error ? e.message : '对话列表加载失败');
+      setConversations([]);
     } finally {
       setLoading(false);
     }
@@ -408,6 +413,7 @@ export function useChatData(initialConvId: string | null) {
     isApiMode: apiMode,
     kbLoading,
     kbError,
+    convError,
     refreshConversations,
     loadConversation,
     sendMessage,

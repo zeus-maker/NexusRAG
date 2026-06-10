@@ -183,14 +183,38 @@ export function mapCreateFormToPayload(form: KBCreateForm) {
   return payload;
 }
 
-export function sortKeyToOrderby(sortBy: string): string {
-  const map: Record<string, string> = {
-    updated: 'update_time',
-    name: 'name',
-    docs: 'document_count',
-    chunks: 'chunk_count',
-  };
-  return map[sortBy] || 'update_time';
+/** RAGFlow ListDatasetReq 仅接受 create_time | update_time */
+export function sortKeyToOrderby(sortBy: string): 'create_time' | 'update_time' {
+  return sortBy === 'updated' ? 'update_time' : 'create_time';
+}
+
+/** API 不支持的排序字段在前端补排 */
+export function sortKnowledgeBases(
+  items: KnowledgeBase[],
+  sortBy: string,
+  desc: boolean,
+): KnowledgeBase[] {
+  const sorted = [...items].sort((a, b) => {
+    let cmp = 0;
+    switch (sortBy) {
+      case 'name':
+        cmp = a.name.localeCompare(b.name, 'zh-CN');
+        break;
+      case 'docs':
+        cmp = a.doc_count - b.doc_count;
+        break;
+      case 'chunks':
+        cmp = a.chunk_count - b.chunk_count;
+        break;
+      case 'updated':
+        cmp = new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime();
+        break;
+      default:
+        cmp = 0;
+    }
+    return desc ? -cmp : cmp;
+  });
+  return sorted;
 }
 
 export interface RagflowChunk {

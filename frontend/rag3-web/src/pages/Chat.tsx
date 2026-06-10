@@ -177,7 +177,7 @@ export function ChatPage({ convId, onNavigate }: ChatPageProps) {
     currentConv, setCurrentConv, isStreaming, lastCompareB, rewriteInfo, kbOptions, isApiMode,
     loadConversation, sendMessage: sendChatMessage, stopStream, saveSettings,
     deleteConversation, togglePin, runCompare, submitFeedback, fetchRewrite,
-    kbLoading, kbError,
+    kbLoading, kbError, convError,
   } = chat;
 
   const [input, setInput] = useState('');
@@ -388,6 +388,12 @@ export function ChatPage({ convId, onNavigate }: ChatPageProps) {
           </div>
         </div>
         <div className="flex-1 overflow-y-auto px-2">
+          {convError && (
+            <p className="text-[10px] text-red-500 px-2 py-2" title={convError}>对话加载失败</p>
+          )}
+          {!convError && filteredConvs.length === 0 && isApiMode && !loading && (
+            <p className="text-[10px] text-gray-400 px-2 py-4 text-center">暂无历史对话<br />点击「新对话」开始</p>
+          )}
           {groupConvs.pinned.length > 0 && (
             <>
               <p className="text-[10px] text-gray-400 font-medium px-2 py-1">置顶</p>

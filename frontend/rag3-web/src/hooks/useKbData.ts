@@ -7,6 +7,7 @@ import {
 import { registerDocEnhancements } from '../data/documentEnhancementStore';
 import { mockKBs, mockDocuments, mockChunks } from '../mockData';
 import { kbApi } from '../services/kbApi';
+import { sortKnowledgeBases } from '../services/kbMappers';
 import { getRealApiMode, useApiMode } from '../services/http';
 import type { Chunk, Document, KnowledgeBase } from '../types';
 import type { KBCreateForm } from '../components/KBCreateDialog';
@@ -93,7 +94,8 @@ export function useKnowledgeBaseList(
         statusFilter === 'all'
           ? res.items
           : res.items.filter(kb => kb.status === statusFilter);
-      return { items: filtered, total: res.total };
+      const sorted = sortKnowledgeBases(filtered, sortBy, sortDesc);
+      return { items: sorted, total: res.total };
     },
     { items: mockFiltered, total: mockFiltered.length },
     EMPTY_KB_LIST,
