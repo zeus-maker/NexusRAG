@@ -5,6 +5,7 @@ import { apiRequest, useRealApi } from './http';
 
 export { ApiError, useRealApi } from './http';
 export { kbApi } from './kbApi';
+export { chatService } from './chatService';
 export { llmApi } from './llmApi';
 export { login, logout } from './auth';
 

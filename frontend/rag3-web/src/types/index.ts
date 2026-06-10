@@ -79,6 +79,8 @@ export interface ChatMessage {
   is_streaming?: boolean;
   created_at: string;
   latency_ms?: number;
+  trace?: Record<string, unknown>;
+  feedback_status?: string;
 }
 
 export interface Citation {
@@ -88,6 +90,8 @@ export interface Citation {
   section: string;
   snippet: string;
   relevance_score: number;
+  doc_id?: string;
+  chunk_id?: string;
 }
 
 export interface Conversation {

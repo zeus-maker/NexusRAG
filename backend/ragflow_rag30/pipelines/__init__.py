@@ -17,10 +17,10 @@ PIPELINE_REGISTRY: dict[str, BasePipeline] = {
 }
 
 
-def run_pipelines(pipeline_ids: list[str], query: str, kb_id: str, top_k: int = 10) -> list[PipelineResult]:
+def run_pipelines(pipeline_ids: list[str], query: str, kb_id: str, top_k: int = 10, **ctx) -> list[PipelineResult]:
     results: list[PipelineResult] = []
     for pid in pipeline_ids:
         pipe = PIPELINE_REGISTRY.get(pid)
         if pipe:
-            results.append(pipe.run(query, kb_id, top_k=top_k))
+            results.append(pipe.run(query, kb_id, top_k=top_k, **ctx))
     return results

@@ -4,12 +4,12 @@ import {
   BookOpen, Layers, Zap, Copy, RefreshCw, X, Clock, Trash2, Pin, PinOff,
   Settings, Paperclip, GitCompare, Square, Check, MessageSquare
 } from 'lucide-react';
-import { mockConversations, mockKBs } from '../mockData';
+import { mockKBs } from '../mockData';
 import type { ChatMessage, Citation, Conversation } from '../types';
-import { ChatSettingsPanel, DEFAULT_CHAT_SETTINGS, type ChatSettings } from '../components/ChatSettingsPanel';
-import { CONV_MESSAGES, CONV_PINNED, QUERY_TRACE_STEPS } from '../data/chatMock';
+import { ChatSettingsPanel, DEFAULT_CHAT_SETTINGS } from '../components/ChatSettingsPanel';
+import { QUERY_TRACE_STEPS } from '../data/chatMock';
 import { consumePageIndexChatPrefill, type PageIndexChatPrefill } from '../utils/pageIndexChatPrefill';
-import { rag3Api, useRealApi } from '../services/api';
+import { useChatData, traceFromMetadata, type TraceStep } from '../hooks/useChatData';
 
 const SAMPLE_RESPONSES = [
   {
@@ -134,14 +134,15 @@ function MarkdownContent({ text, citations, onCiteClick }: { text: string; citat
   );
 }
 
-function QueryTraceTimeline({ expanded, onViewFull }: { expanded: boolean; onViewFull?: () => void }) {
+function QueryTraceTimeline({ expanded, onViewFull, steps }: { expanded: boolean; onViewFull?: () => void; steps?: TraceStep[] }) {
   if (!expanded) return null;
-  const total = QUERY_TRACE_STEPS.reduce((s, x) => s + x.ms, 0);
+  const traceSteps = steps?.length ? steps : QUERY_TRACE_STEPS;
+  const total = traceSteps.reduce((s, x) => s + x.ms, 0);
   return (
     <div className="mt-2 p-2.5 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-100 dark:border-gray-700">
       <p className="text-[10px] font-semibold text-gray-500 mb-2">查询链路 Trace · 总计 {(total / 1000).toFixed(1)}s</p>
       <div className="space-y-1.5">
-        {QUERY_TRACE_STEPS.map((step, i) => (
+        {traceSteps.map((step, i) => (
           <div key={i} className="flex items-center gap-2 text-[10px]">
             <span className="w-14 text-gray-500 flex-shrink-0">{step.stage}</span>
             <div className="flex-1 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
@@ -151,7 +152,7 @@ function QueryTraceTimeline({ expanded, onViewFull }: { expanded: boolean; onVie
           </div>
         ))}
       </div>
-      <p className="text-[9px] text-gray-400 mt-1.5">{QUERY_TRACE_STEPS.map(s => s.detail).join(' → ')}</p>
+      <p className="text-[9px] text-gray-400 mt-1.5">{traceSteps.map(s => s.detail).join(' → ')}</p>
       {onViewFull && (
         <button type="button" onClick={onViewFull} className="mt-2 text-[10px] text-blue-600 hover:underline">
           查看完整 Trace →
@@ -167,16 +168,18 @@ interface ChatPageProps {
 }
 
 export function ChatPage({ convId, onNavigate }: ChatPageProps) {
-  const [conversations, setConversations] = useState<Conversation[]>(mockConversations);
-  const [pinned, setPinned] = useState<Set<string>>(new Set(CONV_PINNED));
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const chat = useChatData(convId);
+  const {
+    conversations, pinned, messages, setMessages, chatSettings, setChatSettings,
+    currentConv, setCurrentConv, isStreaming, lastCompareB, rewriteInfo, kbOptions, isApiMode,
+    loadConversation, sendMessage: sendChatMessage, stopStream, saveSettings,
+    deleteConversation, togglePin, runCompare, submitFeedback, fetchRewrite,
+  } = chat;
+
   const [input, setInput] = useState('');
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [chatSettings, setChatSettings] = useState<ChatSettings>(DEFAULT_CHAT_SETTINGS);
   const [showSettings, setShowSettings] = useState(false);
   const [showPanel, setShowPanel] = useState(false);
   const [showCompare, setShowCompare] = useState(false);
-  const [currentConv, setCurrentConv] = useState<string | null>(convId);
   const [convSearch, setConvSearch] = useState('');
   const [showKBPicker, setShowKBPicker] = useState(false);
   const [expandedTrace, setExpandedTrace] = useState<Set<string>>(new Set());
@@ -184,10 +187,8 @@ export function ChatPage({ convId, onNavigate }: ChatPageProps) {
   const [feedbackType, setFeedbackType] = useState<'up' | 'down' | null>(null);
   const [correctionText, setCorrectionText] = useState('');
   const [toast, setToast] = useState<string | null>(null);
-  const [lastCompareB, setLastCompareB] = useState('');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const streamRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const prefillRef = useRef<PageIndexChatPrefill | null>(null);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2200); };
@@ -215,184 +216,28 @@ export function ChatPage({ convId, onNavigate }: ChatPageProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const loadConversation = useCallback((id: string) => {
-    const conv = conversations.find(c => c.conv_id === id);
-    if (!conv) return;
-    setCurrentConv(id);
-    setMessages(CONV_MESSAGES[id] ? [...CONV_MESSAGES[id]] : []);
-    setChatSettings(s => ({
-      ...s,
-      convTitle: conv.title,
-      kbIds: [...conv.kb_ids],
-    }));
+  const handleLoadConversation = useCallback((id: string) => {
+    void loadConversation(id);
     onNavigate('chat', { selectedConvId: id });
-  }, [conversations, onNavigate]);
+  }, [loadConversation, onNavigate]);
 
   useEffect(() => {
-    if (convId && convId !== currentConv) loadConversation(convId);
+    if (convId && convId !== currentConv) void loadConversation(convId);
   }, [convId, currentConv, loadConversation]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const stopStream = () => {
-    if (streamRef.current) clearInterval(streamRef.current);
-    streamRef.current = null;
-    setIsStreaming(false);
-    setMessages(prev => prev.map(m => m.is_streaming ? { ...m, is_streaming: false } : m));
-  };
-
   const sendMessage = (text: string = input) => {
     if (!text.trim() || isStreaming) return;
-    if (!chatSettings.streaming) {
-      setInput('');
-      const userMsg: ChatMessage = { id: Date.now().toString(), role: 'user', content: text, created_at: new Date().toISOString() };
-      setMessages(prev => [...prev, userMsg]);
-      finishResponse(text, messages.length);
-      return;
-    }
     setInput('');
-    const userMsg: ChatMessage = { id: Date.now().toString(), role: 'user', content: text, created_at: new Date().toISOString() };
-    setMessages(prev => [...prev, userMsg]);
-    startStreamingResponse(text, messages.length + 1);
-  };
-
-  const resolveMockSample = (text: string, msgCount: number) => (
-    SAMPLE_RESPONSES.find(s => text.includes(s.question.slice(0, 8))) || SAMPLE_RESPONSES[msgCount % 2] || SAMPLE_RESPONSES[0]
-  );
-
-  const fetchRag3Answer = async (text: string) => {
-    const kbId = chatSettings.kbIds[0] || prefillRef.current?.kbId;
-    if (!kbId) throw new Error('请先选择知识库');
-    const result = await rag3Api.query(text, kbId, {
-      pipeline_ids: prefillRef.current?.pipelineIds,
-      top_k: 8,
-    });
-    const citations: Citation[] = (result.citations ?? result.fusion.slice(0, 5).map((h, i) => ({
-      index: i + 1,
-      doc_name: h.doc_name,
-      page_number: Number((h.metadata as Record<string, unknown> | undefined)?.page) || 0,
-      section: (h.snippet || '').slice(0, 48),
-      snippet: (h.snippet || '').slice(0, 200),
-      relevance_score: h.wrrf_score,
-    })));
-    return {
-      content: result.answer || result.fusion.map(h => h.snippet).join('\n\n') || '未找到相关内容。',
-      citations,
-      confidence: result.fusion[0]?.wrrf_score ?? 0.75,
-      tier: result.classification,
-      channels: result.channels ?? result.pipelines,
-      latency: result.latency_ms,
-      compareB: result.fusion[1]?.snippet?.slice(0, 120) ?? '',
-    };
-  };
-
-  const streamAssistantContent = (
-    aiMsgId: string,
-    fullContent: string,
-    meta: {
-      citations: Citation[];
-      confidence: number;
-      tier: string;
-      channels: string[];
-      latency: number;
-    },
-  ) => {
-    setIsStreaming(true);
-    let charIndex = 0;
-    streamRef.current = setInterval(() => {
-      charIndex += Math.floor(Math.random() * 6) + 3;
-      if (charIndex >= fullContent.length) {
-        if (streamRef.current) clearInterval(streamRef.current);
-        streamRef.current = null;
-        setMessages(prev => prev.map(m => m.id === aiMsgId ? {
-          ...m,
-          content: fullContent,
-          citations: meta.citations,
-          confidence: meta.confidence,
-          confidence_level: 'high',
-          routing_tier: meta.tier,
-          channels: meta.channels,
-          latency_ms: meta.latency,
-          is_streaming: false,
-        } : m));
-        setIsStreaming(false);
-      } else {
-        setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: fullContent.slice(0, charIndex) } : m));
-      }
-    }, 25);
-  };
-
-  const startStreamingResponse = (text: string, msgCount: number) => {
-    const aiMsgId = (Date.now() + 1).toString();
-    setMessages(prev => [...prev, { id: aiMsgId, role: 'assistant', content: '', citations: [], confidence: 0, is_streaming: true, created_at: new Date().toISOString() }]);
-
-    if (useRealApi) {
-      setIsStreaming(true);
-      void fetchRag3Answer(text)
-        .then(answer => {
-          setLastCompareB(answer.compareB);
-          streamAssistantContent(aiMsgId, answer.content, {
-            citations: answer.citations,
-            confidence: answer.confidence,
-            tier: answer.tier,
-            channels: answer.channels,
-            latency: answer.latency,
-          });
-        })
-        .catch(err => {
-          setIsStreaming(false);
-          setMessages(prev => prev.map(m => m.id === aiMsgId ? {
-            ...m,
-            content: `检索失败：${err instanceof Error ? err.message : '未知错误'}`,
-            is_streaming: false,
-          } : m));
-          showToast('RAG3 查询失败');
-        });
-      return;
-    }
-
-    const sample = resolveMockSample(text, msgCount);
-    setLastCompareB(sample.compareB || '');
-    streamAssistantContent(aiMsgId, sample.content, {
-      citations: sample.citations,
-      confidence: sample.confidence,
-      tier: sample.tier,
-      channels: sample.channels,
-      latency: sample.latency,
-    });
-  };
-
-  const finishResponse = (text: string, msgCount: number) => {
-    if (useRealApi) {
-      void fetchRag3Answer(text)
-        .then(answer => {
-          setLastCompareB(answer.compareB);
-          setMessages(prev => [...prev, {
-            id: (Date.now() + 1).toString(),
-            role: 'assistant',
-            content: answer.content,
-            citations: answer.citations,
-            confidence: answer.confidence,
-            confidence_level: 'high',
-            routing_tier: answer.tier,
-            channels: answer.channels,
-            latency_ms: answer.latency,
-            created_at: new Date().toISOString(),
-          }]);
-        })
-        .catch(err => showToast(err instanceof Error ? err.message : 'RAG3 查询失败'));
-      return;
-    }
-    const sample = resolveMockSample(text, msgCount);
-    setLastCompareB(sample.compareB || '');
-    setMessages(prev => [...prev, {
-      id: (Date.now() + 1).toString(), role: 'assistant', content: sample.content,
-      citations: sample.citations, confidence: sample.confidence, confidence_level: 'high',
-      routing_tier: sample.tier, channels: sample.channels, latency_ms: sample.latency,
-      created_at: new Date().toISOString(),
-    }]);
+    void sendChatMessage(text, {
+      pipelineIds: prefillRef.current?.pipelineIds,
+      kbId: prefillRef.current?.kbId,
+    }).catch(err => showToast(err instanceof Error ? err.message : '发送失败'));
+    if (showPanel) void fetchRewrite(text);
+    if (showCompare) void runCompare(text);
   };
 
   const regenerateLast = () => {
@@ -402,7 +247,7 @@ export function ChatPage({ convId, onNavigate }: ChatPageProps) {
       const idx = prev.findLastIndex(m => m.role === 'assistant');
       return idx >= 0 ? prev.slice(0, idx) : prev;
     });
-    startStreamingResponse(lastUser.content, messages.length);
+    void sendChatMessage(lastUser.content, { pipelineIds: prefillRef.current?.pipelineIds });
   };
 
   const copyMessage = (content: string) => {
@@ -418,18 +263,15 @@ export function ChatPage({ convId, onNavigate }: ChatPageProps) {
     onNavigate('chat', { selectedConvId: null });
   };
 
-  const deleteConversation = (id: string) => {
-    setConversations(prev => prev.filter(c => c.conv_id !== id));
-    if (currentConv === id) newConversation();
-    showToast('对话已删除');
+  const handleDeleteConversation = (id: string) => {
+    void deleteConversation(id).then(() => {
+      if (currentConv === id) newConversation();
+      showToast('对话已删除');
+    });
   };
 
-  const togglePin = (id: string) => {
-    setPinned(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
+  const handleTogglePin = (id: string) => {
+    void togglePin(id);
   };
 
   const filteredConvs = useMemo(() => {
@@ -445,7 +287,8 @@ export function ChatPage({ convId, onNavigate }: ChatPageProps) {
     return { pinned: pinnedList, today: rest.slice(0, 2), yesterday: rest.slice(2, 4), earlier: rest.slice(4) };
   }, [filteredConvs, pinned]);
 
-  const selectedKBNames = chatSettings.kbIds.map(id => mockKBs.find(k => k.kb_id === id)?.name).filter(Boolean);
+  const kbSource = isApiMode && kbOptions.length ? kbOptions : mockKBs.map(k => ({ kb_id: k.kb_id, name: k.name, icon: k.icon }));
+  const selectedKBNames = chatSettings.kbIds.map(id => kbSource.find(k => k.kb_id === id)?.name).filter(Boolean);
 
   const suggestions = [
     { text: '供应商违约金上限是多少？', tag: '精确化' },
@@ -458,7 +301,7 @@ export function ChatPage({ convId, onNavigate }: ChatPageProps) {
     <div key={conv.conv_id} className={`group relative mb-0.5 ${currentConv === conv.conv_id ? 'bg-blue-50 dark:bg-blue-900/30 rounded-lg' : ''}`}>
       <button
         type="button"
-        onClick={() => loadConversation(conv.conv_id)}
+        onClick={() => handleLoadConversation(conv.conv_id)}
         className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors pr-16"
       >
         <div className="flex items-start gap-2">
@@ -468,7 +311,7 @@ export function ChatPage({ convId, onNavigate }: ChatPageProps) {
             <p className="text-[10px] text-gray-400 truncate mt-0.5">{conv.last_message}</p>
             <div className="flex gap-1 mt-1">
               {conv.kb_ids.slice(0, 2).map(kid => {
-                const kb = mockKBs.find(k => k.kb_id === kid);
+                const kb = kbSource.find(k => k.kb_id === kid);
                 return kb ? <span key={kid} className="text-[9px] px-1 py-0.5 bg-gray-100 dark:bg-gray-800 rounded">{kb.icon}</span> : null;
               })}
             </div>
@@ -476,10 +319,10 @@ export function ChatPage({ convId, onNavigate }: ChatPageProps) {
         </div>
       </button>
       <div className="absolute right-1 top-2 opacity-0 group-hover:opacity-100 flex gap-0.5">
-        <button type="button" onClick={() => togglePin(conv.conv_id)} className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400">
+        <button type="button" onClick={() => handleTogglePin(conv.conv_id)} className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400">
           {pinned.has(conv.conv_id) ? <PinOff size={11} /> : <Pin size={11} />}
         </button>
-        <button type="button" onClick={() => deleteConversation(conv.conv_id)} className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500">
+        <button type="button" onClick={() => handleDeleteConversation(conv.conv_id)} className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500">
           <Trash2 size={11} />
         </button>
       </div>
@@ -525,6 +368,7 @@ export function ChatPage({ convId, onNavigate }: ChatPageProps) {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <div className="px-4 py-2.5 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 flex items-center gap-2 flex-wrap">
           <span className="text-xs text-gray-500 flex-shrink-0 truncate max-w-[120px]">{chatSettings.convTitle}</span>
+          {isApiMode && <span className="text-[10px] text-violet-600 px-1.5 py-0.5 bg-violet-50 rounded">RAG3 API</span>}
           <span className="text-gray-300">·</span>
           <div className="relative">
             <button type="button" onClick={() => setShowKBPicker(p => !p)} className="flex items-center gap-1 px-2 py-1 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg text-xs text-blue-700 dark:text-blue-300">
@@ -532,7 +376,7 @@ export function ChatPage({ convId, onNavigate }: ChatPageProps) {
             </button>
             {showKBPicker && (
               <div className="absolute top-8 left-0 w-56 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-xl shadow-xl z-30 max-h-64 overflow-y-auto">
-                {mockKBs.map(kb => (
+                {kbSource.map(kb => (
                   <button key={kb.kb_id} type="button" onClick={() => setChatSettings(s => ({ ...s, kbIds: s.kbIds.includes(kb.kb_id) ? s.kbIds.filter(id => id !== kb.kb_id) : [...s.kbIds, kb.kb_id] }))} className="w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 text-left">
                     <div className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center ${chatSettings.kbIds.includes(kb.kb_id) ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`}>
                       {chatSettings.kbIds.includes(kb.kb_id) && <Check size={10} className="text-white" />}
@@ -545,7 +389,7 @@ export function ChatPage({ convId, onNavigate }: ChatPageProps) {
             )}
           </div>
           <div className="flex-1" />
-          <button type="button" onClick={() => setShowCompare(p => !p)} className={`flex items-center gap-1 px-2 py-1 text-xs rounded-lg border ${showCompare ? 'border-violet-300 bg-violet-50 text-violet-700' : 'border-gray-200 text-gray-500 hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-800'}`}>
+          <button type="button" onClick={() => { setShowCompare(p => !p); const lastUser = [...messages].reverse().find(m => m.role === 'user'); if (lastUser) void runCompare(lastUser.content); }} className={`flex items-center gap-1 px-2 py-1 text-xs rounded-lg border ${showCompare ? 'border-violet-300 bg-violet-50 text-violet-700' : 'border-gray-200 text-gray-500 hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-800'}`}>
             <GitCompare size={12} /> 答案对比
           </button>
           <button type="button" onClick={() => { setShowSettings(p => !p); setShowPanel(false); }} className={`p-1.5 rounded-lg ${showSettings ? 'bg-blue-50 text-blue-600' : 'hover:bg-gray-100 text-gray-500 dark:hover:bg-gray-800'}`}>
@@ -616,7 +460,14 @@ export function ChatPage({ convId, onNavigate }: ChatPageProps) {
                         </div>
                       </div>
                     )}
-                    <MarkdownContent text={msg.content} citations={msg.citations || []} onCiteClick={() => onNavigate('kb-documents', { selectedKBId: 'kb-001' })} />
+                    <MarkdownContent
+                      text={msg.content}
+                      citations={msg.citations || []}
+                      onCiteClick={(c) => onNavigate('kb-documents', {
+                        selectedKBId: chatSettings.kbIds[0] || 'kb-001',
+                        selectedDocId: c.doc_id,
+                      })}
+                    />
                     {msg.is_streaming && <span className="inline-block w-1 h-4 bg-blue-600 animate-pulse ml-0.5 align-middle rounded-sm" />}
                     {chatSettings.showCitations && !msg.is_streaming && msg.citations && msg.citations.length > 0 && (
                       <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
@@ -640,7 +491,11 @@ export function ChatPage({ convId, onNavigate }: ChatPageProps) {
                         <button type="button" onClick={() => setExpandedTrace(prev => { const n = new Set(prev); n.has(msg.id) ? n.delete(msg.id) : n.add(msg.id); return n; })} className="mt-2 text-[10px] text-gray-500 hover:text-blue-600 flex items-center gap-1">
                           <ChevronDown size={12} className={`transition-transform ${expandedTrace.has(msg.id) ? 'rotate-180' : ''}`} /> 查询链路 Trace
                         </button>
-                        <QueryTraceTimeline expanded={expandedTrace.has(msg.id)} onViewFull={() => onNavigate('sys-traces')} />
+                        <QueryTraceTimeline
+                          expanded={expandedTrace.has(msg.id)}
+                          steps={traceFromMetadata(msg.trace)}
+                          onViewFull={() => onNavigate('sys-traces', { conversationId: currentConv, messageId: msg.id })}
+                        />
                       </>
                     )}
                     {!msg.is_streaming && (
@@ -655,7 +510,7 @@ export function ChatPage({ convId, onNavigate }: ChatPageProps) {
                           {msg.latency_ms && <span className="text-[10px] text-gray-400 flex items-center gap-0.5"><Clock size={9} />{(msg.latency_ms / 1000).toFixed(1)}s</span>}
                         </div>
                         <div className="flex items-center gap-0.5">
-                          <button type="button" onClick={() => { setFeedbackMsg(msg.id); setFeedbackType('up'); showToast('感谢反馈'); }} className="p-1.5 rounded hover:bg-green-50 text-gray-400 hover:text-green-600"><ThumbsUp size={12} /></button>
+                          <button type="button" onClick={() => { void submitFeedback(msg.id, 'thumbs_up'); showToast('感谢反馈'); }} className="p-1.5 rounded hover:bg-green-50 text-gray-400 hover:text-green-600"><ThumbsUp size={12} /></button>
                           <button type="button" onClick={() => { setFeedbackMsg(msg.id); setFeedbackType('down'); }} className="p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-600"><ThumbsDown size={12} /></button>
                           <button type="button" onClick={() => setFeedbackMsg(msg.id)} className="p-1.5 rounded hover:bg-gray-100 text-gray-400" title="纠错"><Edit3 size={12} /></button>
                           <button type="button" onClick={() => copyMessage(msg.content)} className="p-1.5 rounded hover:bg-gray-100 text-gray-400"><Copy size={12} /></button>
@@ -721,9 +576,14 @@ export function ChatPage({ convId, onNavigate }: ChatPageProps) {
             <div>
               <h4 className="font-semibold text-gray-700 dark:text-gray-300 mb-2">查询重写</h4>
               <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3 space-y-1 text-gray-600 dark:text-gray-400">
-                <div><span className="text-gray-400">原始：</span>"违约金怎么赔"</div>
-                <div className="text-green-700 dark:text-green-400">→ 精确：供应商合同违约金计算规则</div>
-                <div className="text-blue-700 dark:text-blue-400">→ 泛化：违约责任有哪些类型</div>
+                {rewriteInfo ? (
+                  <>
+                    <div><span className="text-gray-400">原始：</span>{rewriteInfo.original}</div>
+                    <div className="text-green-700 dark:text-green-400">→ 改写：{rewriteInfo.rewritten}</div>
+                  </>
+                ) : (
+                  <div className="text-gray-400 italic">发送消息后显示 classify 改写结果</div>
+                )}
               </div>
             </div>
             <div>
@@ -748,7 +608,7 @@ export function ChatPage({ convId, onNavigate }: ChatPageProps) {
         settings={chatSettings}
         onChange={setChatSettings}
         onClose={() => setShowSettings(false)}
-        onSave={() => showToast('对话设置已保存')}
+        onSave={() => { void saveSettings().then(() => showToast('对话设置已保存')).catch(() => showToast('保存失败')); }}
       />
 
       {/* 纠错/差评 */}
@@ -760,7 +620,7 @@ export function ChatPage({ convId, onNavigate }: ChatPageProps) {
             <textarea value={correctionText} onChange={e => setCorrectionText(e.target.value)} rows={4} placeholder="例如：违约金应为千分之三而非千分之五…" className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-gray-100 resize-none" />
             <div className="flex justify-end gap-2 mt-4">
               <button type="button" onClick={() => { setFeedbackMsg(null); setFeedbackType(null); setCorrectionText(''); }} className="px-3 py-1.5 text-sm border rounded-lg">取消</button>
-              <button type="button" onClick={() => { showToast('纠错已提交'); setFeedbackMsg(null); setFeedbackType(null); setCorrectionText(''); }} className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg">提交</button>
+              <button type="button" onClick={() => { void submitFeedback(feedbackMsg, 'correction', correctionText).then(() => showToast('纠错已提交')); setFeedbackMsg(null); setFeedbackType(null); setCorrectionText(''); }} className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg">提交</button>
             </div>
           </div>
         </div>

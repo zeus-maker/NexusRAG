@@ -2,11 +2,10 @@
 # RAG 3.0 API extension — 自动注册为 /v1/rag3/*
 #
 import logging
-import time
 
-from quart import request
+from quart import Response, request
 
-from api.apps import login_required
+from api.apps import current_user, login_required
 from api.utils.api_utils import (
     add_tenant_id_to_kwargs,
     get_error_data_result,
@@ -28,8 +27,7 @@ from rag3.index_service import (
 )
 from rag3.pageindex_hub_service import get_pageindex_settings, save_pageindex_settings
 from rag3.wiki_hub_service import get_wiki_settings, save_wiki_settings
-from fusion import reciprocal_rank_fusion, rerank
-from pipelines import run_pipelines
+from rag3.chat_service import execute_chat_turn, execute_chat_turn_stream, format_sse
 from router import RouterEngine
 
 logger = logging.getLogger(__name__)
@@ -77,86 +75,150 @@ async def rag3_classify():
 
 
 @manager.route("/query", methods=["POST"])  # noqa: F821
+@login_required
 @validate_request("query")
 async def rag3_query():
-    """分类 → 多通道检索 → RRF 融合 → 精排（核心查询路径）"""
+    """RAG3 核心查询：路由 → 多通道检索 → 融合 → LLM 生成"""
     try:
         body = await request.json
         query = body.get("query", "")
-        kb_id = body.get("kb_id", "kb-001")
-        roles = body.get("user_roles") or []
-        use_rerank = body.get("use_rerank", True)
-        top_k = int(body.get("top_k", 10))
+        kb_id = body.get("kb_id", "")
+        if not kb_id:
+            return get_error_data_result(message="kb_id is required", code=4001)
 
-        t0 = time.time()
-        plan = _engine.plan(query, roles, kb_id)
-        override_pipelines = body.get("pipeline_ids")
-        if isinstance(override_pipelines, list) and override_pipelines:
-            plan.pipeline_ids = [str(p) for p in override_pipelines]
+        settings = {
+            "top_k": int(body.get("top_k", 10)),
+            "use_rerank": body.get("use_rerank", True),
+            "llm_model": body.get("llm_model") or body.get("model") or "",
+            "temperature": body.get("temperature", 0.3),
+            "max_tokens": body.get("max_tokens", 2048),
+            "system_prompt": body.get("system_prompt") or "",
+            "similarity_threshold": body.get("similarity_threshold", 0.2),
+            "vector_weight": body.get("vector_weight", 0.7),
+        }
+        if body.get("pipeline_ids"):
+            settings["pipeline_ids"] = body.get("pipeline_ids")
 
-        if plan.decision.skip_retrieval:
-            return get_json_result(data={
-                "query": query,
-                "answer_mode": "direct",
-                "plan": plan.decision.reason,
-                "latency_ms": int((time.time() - t0) * 1000),
-            })
+        result = await execute_chat_turn(
+            query,
+            kb_id,
+            tenant_id=current_user.id,
+            user_roles=body.get("user_roles") or [],
+            messages=body.get("messages"),
+            settings=settings,
+            pipeline_ids=body.get("pipeline_ids"),
+            use_llm=body.get("use_llm", True),
+        )
+        if result.get("error"):
+            return get_error_data_result(message=result["error"], code=result.get("code", 500))
 
-        channel_results = run_pipelines(plan.pipeline_ids, query, kb_id, top_k=top_k)
-        fused = reciprocal_rank_fusion(channel_results)
-        if use_rerank:
-            fused = rerank(query, fused, top_n=min(5, top_k))
-
-        citations = []
-        answer_parts = [f"根据知识库检索，与「{query}」相关的内容如下：", ""]
-        for i, h in enumerate(fused[:5], start=1):
-            page_raw = (h.metadata or {}).get("page", "")
-            page_num = 0
-            if isinstance(page_raw, (int, float)):
-                page_num = int(page_raw)
-            elif isinstance(page_raw, str):
-                digits = "".join(ch for ch in page_raw if ch.isdigit())
-                page_num = int(digits) if digits else 0
-            answer_parts.append(f"**{i}. {h.doc_name}**")
-            answer_parts.append(h.snippet)
-            answer_parts.append("")
-            citations.append({
-                "index": i,
-                "doc_id": h.doc_id,
-                "doc_name": h.doc_name,
-                "page_number": page_num,
-                "section": (h.snippet or "")[:48],
-                "snippet": (h.snippet or "")[:200],
-                "relevance_score": h.wrrf_score,
-            })
-        answer = "\n".join(answer_parts).strip() if fused else "未在知识库中找到与问题相关的内容。"
+        latency = result.get("latency_ms")
+        if isinstance(latency, dict):
+            latency = latency.get("total", 0)
 
         return get_json_result(data={
-            "query": query,
-            "kb_id": kb_id,
-            "answer": answer,
-            "citations": citations,
-            "pipelines": [r.channel for r in channel_results],
-            "channels": [r.channel for r in channel_results],
-            "fusion": [
-                {
-                    "rank": h.rank,
-                    "chunk_id": h.chunk_id,
-                    "doc_id": h.doc_id,
-                    "doc_name": h.doc_name,
-                    "wrrf_score": h.wrrf_score,
-                    "snippet": h.snippet,
-                    "sources": h.sources,
-                    "metadata": h.metadata or {},
-                }
-                for h in fused
-            ],
-            "classification": plan.classification.query_tier,
-            "routing_reason": plan.decision.reason,
-            "latency_ms": int((time.time() - t0) * 1000),
+            **result,
+            "answer": result.get("content") or result.get("answer"),
+            "latency_ms": latency,
         })
     except Exception as e:
         logger.exception("rag3_query failed")
+        return server_error_response(e)
+
+
+@manager.route("/query/stream", methods=["POST"])  # noqa: F821
+@login_required
+@validate_request("query")
+async def rag3_query_stream():
+    try:
+        body = await request.json
+        query = body.get("query", "")
+        kb_id = body.get("kb_id", "")
+        if not kb_id:
+            return get_error_data_result(message="kb_id is required", code=4001)
+
+        settings = {
+            "top_k": int(body.get("top_k", 10)),
+            "use_rerank": body.get("use_rerank", True),
+            "llm_model": body.get("llm_model") or "",
+            "temperature": body.get("temperature", 0.3),
+            "max_tokens": body.get("max_tokens", 2048),
+        }
+        if body.get("pipeline_ids"):
+            settings["pipeline_ids"] = body.get("pipeline_ids")
+
+        async def event_stream():
+            try:
+                async for evt in execute_chat_turn_stream(
+                    query,
+                    kb_id,
+                    tenant_id=current_user.id,
+                    messages=body.get("messages"),
+                    settings=settings,
+                    pipeline_ids=body.get("pipeline_ids"),
+                ):
+                    yield format_sse(evt)
+            except Exception as ex:
+                logger.exception("rag3_query_stream failed")
+                yield format_sse({"event": "error", "data": {"message": str(ex)}})
+
+        resp = Response(event_stream(), mimetype="text/event-stream")
+        resp.headers.add_header("Cache-Control", "no-cache")
+        resp.headers.add_header("Connection", "keep-alive")
+        resp.headers.add_header("X-Accel-Buffering", "no")
+        return resp
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route("/query/rewrite", methods=["POST"])  # noqa: F821
+@login_required
+@validate_request("query")
+async def rag3_query_rewrite():
+    try:
+        body = await request.json
+        query = body.get("query", "")
+        plan = _engine.plan(query, body.get("user_roles") or [], body.get("kb_id"))
+        rewritten = query
+        if plan.classification.query_tier in ("tier_3", "tier_4", "Tier 3", "Tier 4"):
+            rewritten = f"{query}（{plan.classification.doc_type}相关）"
+        return get_json_result(data={
+            "original": query,
+            "rewritten": rewritten,
+            "classification": {
+                "query_tier": plan.classification.query_tier,
+                "doc_type": plan.classification.doc_type,
+                "user_intent": plan.classification.user_intent,
+            },
+            "pipeline_ids": plan.pipeline_ids,
+        })
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route("/query/compare", methods=["POST"])  # noqa: F821
+@login_required
+@validate_request("query", "kb_id")
+async def rag3_query_compare():
+    try:
+        body = await request.json
+        query = body.get("query", "")
+        kb_id = body.get("kb_id", "")
+        import asyncio
+        settings_a = {"strategy": body.get("strategy_a") or "precise"}
+        settings_b = {"strategy": body.get("strategy_b") or "comprehensive"}
+        a, b = await asyncio.gather(
+            execute_chat_turn(query, kb_id, tenant_id=current_user.id, settings=settings_a),
+            execute_chat_turn(query, kb_id, tenant_id=current_user.id, settings=settings_b),
+        )
+        return get_json_result(data={
+            "query": query,
+            "answer_a": a.get("content"),
+            "answer_b": b.get("content"),
+            "citations_a": a.get("citations"),
+            "citations_b": b.get("citations"),
+        })
+    except Exception as e:
         return server_error_response(e)
 
 
