@@ -3,7 +3,7 @@
 #
 from __future__ import annotations
 
-from typing import Any, TypedDict
+from typing import Any, TypedDict  # noqa: F401 — metadata_filters uses Any
 
 
 class ConversationSettings(TypedDict, total=False):
@@ -24,6 +24,7 @@ class ConversationSettings(TypedDict, total=False):
     show_trace: bool
     streaming: bool
     strategy: str
+    metadata_filters: dict[str, Any]
 
 
 DEFAULT_CONVERSATION_SETTINGS: ConversationSettings = {

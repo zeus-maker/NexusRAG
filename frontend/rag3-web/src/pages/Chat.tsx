@@ -7,9 +7,12 @@ import {
 import { mockKBs } from '../mockData';
 import type { ChatMessage, Citation, Conversation } from '../types';
 import { ChatSettingsPanel, DEFAULT_CHAT_SETTINGS } from '../components/ChatSettingsPanel';
+import { ChatQuerySyntax } from '../components/ChatQuerySyntax';
 import { QUERY_TRACE_STEPS } from '../data/chatMock';
 import { consumePageIndexChatPrefill, type PageIndexChatPrefill } from '../utils/pageIndexChatPrefill';
 import { useChatData, traceFromMetadata, type TraceStep } from '../hooks/useChatData';
+import { kbApi } from '../services/kbApi';
+import type { QueryParseResult } from '../services/chatService';
 
 const SAMPLE_RESPONSES = [
   {
@@ -187,8 +190,12 @@ export function ChatPage({ convId, onNavigate }: ChatPageProps) {
   const [feedbackType, setFeedbackType] = useState<'up' | 'down' | null>(null);
   const [correctionText, setCorrectionText] = useState('');
   const [toast, setToast] = useState<string | null>(null);
+  const [parsedQuery, setParsedQuery] = useState<QueryParseResult | null>(null);
+  const [attachments, setAttachments] = useState<Array<{ name: string; docId?: string }>>([]);
+  const [uploading, setUploading] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const prefillRef = useRef<PageIndexChatPrefill | null>(null);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2200); };
@@ -231,13 +238,44 @@ export function ChatPage({ convId, onNavigate }: ChatPageProps) {
 
   const sendMessage = (text: string = input) => {
     if (!text.trim() || isStreaming) return;
+    const attachmentNote = attachments.length
+      ? `[附件: ${attachments.map(a => a.name).join(', ')}]`
+      : undefined;
     setInput('');
+    setAttachments([]);
     void sendChatMessage(text, {
       pipelineIds: prefillRef.current?.pipelineIds,
       kbId: prefillRef.current?.kbId,
+      metadataFilters: parsedQuery?.metadata_filters?.conditions?.length
+        ? parsedQuery.metadata_filters
+        : undefined,
+      attachmentNote,
     }).catch(err => showToast(err instanceof Error ? err.message : '发送失败'));
     if (showPanel) void fetchRewrite(text);
     if (showCompare) void runCompare(text);
+  };
+
+  const handleAttachmentPick = async (files: FileList | null) => {
+    if (!files?.length) return;
+    const kbId = chatSettings.kbIds[0];
+    if (!kbId) {
+      showToast('请先在设置中选择知识库');
+      return;
+    }
+    setUploading(true);
+    try {
+      const uploaded = await kbApi.uploadDocuments(kbId, Array.from(files));
+      setAttachments(prev => [
+        ...prev,
+        ...uploaded.map(d => ({ name: d.name, docId: d.doc_id })),
+      ]);
+      showToast(`已上传 ${uploaded.length} 个附件到知识库`);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : '附件上传失败');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
   };
 
   const regenerateLast = () => {
@@ -543,14 +581,40 @@ export function ChatPage({ convId, onNavigate }: ChatPageProps) {
         )}
 
         <div className="p-4 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700">
+          {attachments.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-2">
+              {attachments.map((a, i) => (
+                <span key={`${a.name}-${i}`} className="inline-flex items-center gap-1 px-2 py-1 text-[10px] bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+                  <Paperclip size={10} /> {a.name}
+                  <button type="button" onClick={() => setAttachments(prev => prev.filter((_, j) => j !== i))} className="text-gray-400 hover:text-red-500"><X size={10} /></button>
+                </span>
+              ))}
+            </div>
+          )}
           <div className="flex items-end gap-2">
-            <button type="button" className="p-2 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg flex-shrink-0" title="附件（原型）"><Paperclip size={18} /></button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={e => { void handleAttachmentPick(e.target.files); }}
+            />
+            <button
+              type="button"
+              disabled={uploading}
+              onClick={() => fileInputRef.current?.click()}
+              className="p-2 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg flex-shrink-0 disabled:opacity-40"
+              title="上传附件到知识库"
+            >
+              <Paperclip size={18} />
+            </button>
+            <ChatQuerySyntax query={input} onParsed={setParsedQuery} />
             <div className="flex-1 flex items-end gap-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-2xl px-4 py-2.5 focus-within:ring-2 focus-within:ring-blue-500">
               <textarea
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-                placeholder="输入您的问题... (Enter 发送，Shift+Enter 换行)"
+                placeholder="输入问题，支持 department:法务 type:合同 等高级语法..."
                 rows={1}
                 className="flex-1 bg-transparent text-sm text-gray-800 dark:text-gray-100 placeholder-gray-400 resize-none focus:outline-none max-h-32"
               />

@@ -32,7 +32,22 @@ export interface ConversationMessage {
   is_streaming?: boolean;
 }
 
-export function mapSettingsToApi(settings: ChatSettings) {
+export interface QueryParseResult {
+  original: string;
+  free_text: string;
+  metadata_filters: {
+    conditions: Array<{ name: string; comparison_operator: string; value: string }>;
+    logical_operator: string;
+  };
+  page_range?: { start: number; end: number } | null;
+  phrases?: string[];
+  autocomplete_hints?: Array<{ field: string; value: string }>;
+}
+
+export function mapSettingsToApi(
+  settings: ChatSettings,
+  extra?: { metadataFilters?: QueryParseResult['metadata_filters']; userRoles?: string[] },
+) {
   const pipeline_ids: string[] = ['vector'];
   if (settings.channelPageIndex) pipeline_ids.push('pageindex');
   if (settings.channelWiki) pipeline_ids.push('wiki');
@@ -55,6 +70,8 @@ export function mapSettingsToApi(settings: ChatSettings) {
     show_trace: settings.showTrace,
     streaming: settings.streaming,
     pipeline_ids,
+    metadata_filters: extra?.metadataFilters,
+    user_roles: extra?.userRoles,
   };
 }
 
@@ -107,14 +124,23 @@ export const chatService = {
     return data;
   },
 
-  async sendMessageSync(convId: string, message: string, settings: ChatSettings, pipelineIds?: string[]) {
+  async sendMessageSync(
+    convId: string,
+    message: string,
+    settings: ChatSettings,
+    options?: { pipelineIds?: string[]; metadataFilters?: QueryParseResult['metadata_filters']; userRoles?: string[] },
+  ) {
     const { data } = await apiRequest<ConversationMessage>(`/conversations/${convId}/messages`, {
       method: 'POST',
       body: JSON.stringify({
         message,
         stream: false,
-        settings: mapSettingsToApi(settings),
-        pipeline_ids: pipelineIds,
+        settings: mapSettingsToApi(settings, {
+          metadataFilters: options?.metadataFilters,
+          userRoles: options?.userRoles,
+        }),
+        pipeline_ids: options?.pipelineIds,
+        user_roles: options?.userRoles,
       }),
     });
     return data;
@@ -128,6 +154,8 @@ export const chatService = {
       onEvent: (evt: SseEvent) => void;
       signal?: AbortSignal;
       pipelineIds?: string[];
+      metadataFilters?: QueryParseResult['metadata_filters'];
+      userRoles?: string[];
     },
   ) {
     await postSseStream({
@@ -135,8 +163,12 @@ export const chatService = {
       body: {
         message,
         stream: true,
-        settings: mapSettingsToApi(settings),
+        settings: mapSettingsToApi(settings, {
+          metadataFilters: handlers.metadataFilters,
+          userRoles: handlers.userRoles,
+        }),
         pipeline_ids: handlers.pipelineIds,
+        user_roles: handlers.userRoles,
       },
       signal: handlers.signal,
       onEvent: handlers.onEvent,
@@ -163,6 +195,14 @@ export const chatService = {
     }>(`/conversations/${convId}/compare`, {
       method: 'POST',
       body: JSON.stringify({ message, strategy_a: strategyA, strategy_b: strategyB }),
+    });
+    return data;
+  },
+
+  async parseQuery(query: string) {
+    const { data } = await apiRequest<QueryParseResult>('/rag3/query/parse', {
+      method: 'POST',
+      body: JSON.stringify({ query }),
     });
     return data;
   },

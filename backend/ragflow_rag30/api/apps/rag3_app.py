@@ -28,6 +28,7 @@ from rag3.index_service import (
 from rag3.pageindex_hub_service import get_pageindex_settings, save_pageindex_settings
 from rag3.wiki_hub_service import get_wiki_settings, save_wiki_settings
 from rag3.chat_service import execute_chat_turn, execute_chat_turn_stream, format_sse
+from rag3.query_parser import parse_advanced_query
 from router import RouterEngine
 
 logger = logging.getLogger(__name__)
@@ -98,6 +99,8 @@ async def rag3_query():
         }
         if body.get("pipeline_ids"):
             settings["pipeline_ids"] = body.get("pipeline_ids")
+        if body.get("metadata_filters"):
+            settings["metadata_filters"] = body.get("metadata_filters")
 
         result = await execute_chat_turn(
             query,
@@ -168,6 +171,21 @@ async def rag3_query_stream():
         resp.headers.add_header("X-Accel-Buffering", "no")
         return resp
     except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route("/query/parse", methods=["POST"])  # noqa: F821
+@login_required
+@validate_request("query")
+async def rag3_query_parse():
+    """PRD §4.6 高级检索语法解析"""
+    try:
+        body = await request.json
+        query = body.get("query", "")
+        parsed = parse_advanced_query(query)
+        return get_json_result(data=parsed)
+    except Exception as e:
+        logger.exception("rag3_query_parse failed")
         return server_error_response(e)
 
 

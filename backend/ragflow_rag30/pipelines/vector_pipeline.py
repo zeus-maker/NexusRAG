@@ -76,6 +76,10 @@ class VectorPipeline(BasePipeline):
                     metadata={
                         "page": c.get("page_num_int") or c.get("page_number") or 0,
                         "positions": c.get("positions"),
+                        "acl_level": c.get("acl_level") or c.get("security_level") or "internal",
+                        "department": c.get("department_kwd") or c.get("department") or "",
+                        "type": c.get("type_kwd") or c.get("type") or "",
+                        "author": c.get("author_kwd") or c.get("author") or "",
                     },
                 )
             )

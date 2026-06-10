@@ -177,6 +177,7 @@ async def send_message(conv_id):
         user_msg = append_message(conv_id, {"role": "user", "content": message_text})
 
         pipeline_ids = req.get("pipeline_ids")
+        user_roles = req.get("user_roles") or []
         if stream:
             async def event_stream():
                 content_parts: list[str] = []
@@ -187,6 +188,7 @@ async def send_message(conv_id):
                         message_text,
                         kb_id,
                         tenant_id=current_user.id,
+                        user_roles=user_roles,
                         messages=history,
                         settings=settings,
                         pipeline_ids=pipeline_ids,
@@ -223,6 +225,7 @@ async def send_message(conv_id):
             message_text,
             kb_id,
             tenant_id=current_user.id,
+            user_roles=user_roles,
             messages=history,
             settings=settings,
             pipeline_ids=pipeline_ids,
@@ -300,9 +303,10 @@ async def compare_answers(conv_id):
     settings_a = {**settings, "strategy": strategy_a}
     settings_b = {**settings, "strategy": strategy_b}
     import asyncio
+    user_roles = req.get("user_roles") or []
     a, b = await asyncio.gather(
-        execute_chat_turn(query, kb_id, tenant_id=current_user.id, settings=settings_a),
-        execute_chat_turn(query, kb_id, tenant_id=current_user.id, settings=settings_b),
+        execute_chat_turn(query, kb_id, tenant_id=current_user.id, user_roles=user_roles, settings=settings_a),
+        execute_chat_turn(query, kb_id, tenant_id=current_user.id, user_roles=user_roles, settings=settings_b),
     )
     return get_json_result(data={
         "query": query,

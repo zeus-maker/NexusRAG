@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { mockConversations } from '../mockData';
 import { CONV_MESSAGES, CONV_PINNED, QUERY_TRACE_STEPS } from '../data/chatMock';
 import { DEFAULT_CHAT_SETTINGS, type ChatSettings } from '../components/ChatSettingsPanel';
-import { chatService, type ConversationRecord } from '../services/chatService';
+import { chatService, type ConversationRecord, type QueryParseResult } from '../services/chatService';
 import { useRealApi } from '../services/http';
 import { useKnowledgeBaseList } from './useKbData';
 import type { ChatMessage, Citation, Conversation } from '../types';
@@ -199,15 +199,24 @@ export function useChatData(initialConvId: string | null) {
 
   const sendMessage = useCallback(async (
     text: string,
-    options?: { pipelineIds?: string[]; kbId?: string },
+    options?: {
+      pipelineIds?: string[];
+      kbId?: string;
+      metadataFilters?: QueryParseResult['metadata_filters'];
+      userRoles?: string[];
+      attachmentNote?: string;
+    },
   ) => {
     const trimmed = text.trim();
     if (!trimmed || isStreaming) return;
+    const displayText = options?.attachmentNote
+      ? `${trimmed}\n\n${options.attachmentNote}`
+      : trimmed;
 
     const userMsg: ChatMessage = {
       id: Date.now().toString(),
       role: 'user',
-      content: trimmed,
+      content: displayText,
       created_at: new Date().toISOString(),
     };
     setMessages(prev => [...prev, userMsg]);
@@ -230,6 +239,8 @@ export function useChatData(initialConvId: string | null) {
 
           await chatService.sendMessageStream(convId, trimmed, chatSettings, {
             pipelineIds: options?.pipelineIds,
+            metadataFilters: options?.metadataFilters,
+            userRoles: options?.userRoles,
             signal: abortRef.current.signal,
             onEvent: (evt: SseEvent) => {
               if (evt.event === 'token') {
@@ -267,7 +278,11 @@ export function useChatData(initialConvId: string | null) {
           return;
         }
 
-        const res = await chatService.sendMessageSync(convId, trimmed, chatSettings, options?.pipelineIds);
+        const res = await chatService.sendMessageSync(convId, trimmed, chatSettings, {
+          pipelineIds: options?.pipelineIds,
+          metadataFilters: options?.metadataFilters,
+          userRoles: options?.userRoles,
+        });
         setMessages(prev => [...prev, mapApiMessage(res)]);
         void refreshConversations();
         return;

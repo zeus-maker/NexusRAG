@@ -30,3 +30,37 @@
 - `backend/ragflow_rag30/fusion/reranker.py`、`pipelines/vector_pipeline.py`
 - `frontend/rag3-web/src/services/chatService.ts`、`sseClient.ts`
 - `frontend/rag3-web/src/hooks/useChatData.ts`、`pages/Chat.tsx`、`components/ChatSettingsPanel.tsx`
+
+---
+
+## 2. 智能对话 P2：高级语法 / 附件 / Graph 检索 / ACL
+
+### 背景与目标
+
+P0/P1 智能对话已接通会话与 SSE，但计划 Phase 5 四项 P2 仍空缺：§4.6 高级检索语法、Chat 附件上传、Graph 通道 mock、融合后 chunk ACL 透传。目标在不改 PRD 契约前提下补齐后端解析与过滤链路，并在 `Chat.tsx` 暴露语法浮层与 Paperclip 真实上传。
+
+### 改动摘要
+
+- **高级语法**：新增 `rag3/query_parser.py`（`field:value`、引号短语、`page:N-M`、AND/OR/NOT AST）；`POST /rag3/query/parse`；`execute_chat_turn` 解析后分离 `free_text` 与 `metadata_filters`，经 `filter_utils.apply_metadata_filters` 过滤融合结果；前端 `ChatQuerySyntax` 防抖调 parse API 展示过滤标签与自动补全。
+- **Graph 通道**：`graph_pipeline` 接 RAGFlow `settings.kg_retriever.retrieval`（实体/关系/社区报告 CSV），失败回退 mock。
+- **ACL**：`security/chunk_acl.py` 实现角色密级矩阵；向量命中携带 `acl_level` 元数据；融合精排后 `filter_fused_hits_by_acl`；Trace 记录 `acl_filtered_count`。
+- **附件**：`Chat.tsx` Paperclip 触发隐藏 file input → `kbApi.uploadDocuments` 写入当前 KB → 发送时附 `[附件: …]` 标注；`useChatData` 支持 `attachmentNote`/`metadataFilters` 透传 settings。
+
+### 验证与风险
+
+- 验证：`python3 -m py_compile` 新模块通过；`npm run build` 通过。
+- 手动：输入 `department:法务 type:合同 违约金` 应出现语法浮层与解析标签；开启 Graph 通道后 Trace 含 graph 通道；无 confidential 角色时含 `acl_level:confidential` 的块被剔除（若元数据存在）。
+- 风险：元数据过滤在无 chunk 字段时回退 snippet 子串匹配，可能误杀/漏杀；附件仅入库未触发自动解析队列；ACL 规则未接 KB 权限 API，角色矩阵为内置默认值。
+
+### 反思与沉淀
+
+- 查询解析与 ACL 均挂在 `execute_chat_turn` 单入口，检索测试台与 conversations 自动受益。
+- P2 附件采用「先入库再提问」最小路径，避免在会话层复制 ingest 状态机。
+
+### 涉及文件
+
+- `backend/ragflow_rag30/rag3/query_parser.py`、`filter_utils.py`、`chat_service.py`
+- `backend/ragflow_rag30/pipelines/graph_pipeline.py`、`vector_pipeline.py`
+- `backend/ragflow_rag30/security/chunk_acl.py`、`api/apps/rag3_app.py`
+- `frontend/rag3-web/src/components/ChatQuerySyntax.tsx`、`pages/Chat.tsx`
+- `frontend/rag3-web/src/services/chatService.ts`、`hooks/useChatData.ts`
