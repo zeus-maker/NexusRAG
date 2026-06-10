@@ -1,6 +1,7 @@
 #
 # RAG3 智能对话 API — /api/v1/conversations/*
 #
+import asyncio
 import json
 import logging
 
@@ -180,9 +181,21 @@ async def send_message(conv_id):
         user_roles = req.get("user_roles") or []
         if stream:
             async def event_stream():
-                content_parts: list[str] = []
+                full_content = ""
                 citations: list = []
                 meta: dict = {}
+
+                def _merge_token_piece(piece: str) -> None:
+                    nonlocal full_content
+                    if not piece:
+                        return
+                    if len(piece) >= len(full_content) and (
+                        not full_content or piece.startswith(full_content)
+                    ):
+                        full_content = piece
+                    else:
+                        full_content += piece
+
                 try:
                     async for evt in execute_chat_turn_stream(
                         message_text,
@@ -194,13 +207,13 @@ async def send_message(conv_id):
                         pipeline_ids=pipeline_ids,
                     ):
                         if evt["event"] == "token":
-                            content_parts.append(evt["data"].get("content") or "")
+                            _merge_token_piece(evt["data"].get("content") or "")
                         elif evt["event"] == "citation":
                             citations.append(evt["data"])
                         elif evt["event"] == "done":
                             meta = evt["data"]
                         yield format_sse(evt)
-                    full_content = "".join(content_parts)
+                        await asyncio.sleep(0)
                     assistant = append_message(conv_id, {
                         "role": "assistant",
                         "content": full_content,
@@ -219,6 +232,7 @@ async def send_message(conv_id):
             resp.headers.add_header("Cache-Control", "no-cache")
             resp.headers.add_header("Connection", "keep-alive")
             resp.headers.add_header("X-Accel-Buffering", "no")
+            resp.headers.add_header("Content-Type", "text/event-stream; charset=utf-8")
             return resp
 
         result = await execute_chat_turn(

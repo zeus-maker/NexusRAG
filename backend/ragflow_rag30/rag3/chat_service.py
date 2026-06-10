@@ -11,6 +11,7 @@ import time
 from typing import Any, AsyncIterator
 
 from api.db.services.knowledgebase_service import KnowledgebaseService
+from common.misc_utils import thread_pool_exec
 from fusion import reciprocal_rank_fusion, rerank
 from pipelines import run_pipelines
 from router import RouterEngine
@@ -51,7 +52,7 @@ def _resolve_tenant_kb(kb_id: str, tenant_id: str | None = None) -> tuple[str | 
     ok, kb = KnowledgebaseService.get_by_id(kb_id)
     if not ok or not kb:
         return None, None
-    tid = tenant_id or kb.tenant_id
+    tid = kb.tenant_id or tenant_id
     return tid, kb_id
 
 
@@ -251,6 +252,7 @@ async def execute_chat_turn_stream(
             "parsed_query": parsed,
         },
     }
+    await asyncio.sleep(0)
 
     if plan.decision.skip_retrieval:
         yield {"event": "token", "data": {"content": "您好，我是知识库助手。请提出与知识库相关的问题。", "index": 0}}
@@ -267,7 +269,14 @@ async def execute_chat_turn_stream(
         "metadata_filters": metadata_filters,
     }
 
-    channel_results = run_pipelines(plan.pipeline_ids, search_query, kb_id, top_k=top_k, **ctx)
+    def _retrieve_and_rank():
+        results = run_pipelines(plan.pipeline_ids, search_query, kb_id, top_k=top_k, **ctx)
+        fused_hits = reciprocal_rank_fusion(results)
+        fused_hits = apply_metadata_filters(fused_hits, metadata_filters)
+        ranked = rerank(search_query, fused_hits, top_n=min(5, top_k), tenant_id=tid, use_rerank=use_rerank)
+        return results, fused_hits, ranked
+
+    channel_results, fused, reranked = await thread_pool_exec(_retrieve_and_rank)
     for r in channel_results:
         yield {
             "event": "searching",
@@ -278,10 +287,8 @@ async def execute_chat_turn_stream(
                 "latency_ms": r.latency_ms,
             },
         }
+        await asyncio.sleep(0)
 
-    fused = reciprocal_rank_fusion(channel_results)
-    fused = apply_metadata_filters(fused, metadata_filters)
-    reranked = rerank(search_query, fused, top_n=min(5, top_k), tenant_id=tid, use_rerank=use_rerank)
     acl_before = len(reranked)
     reranked = filter_fused_hits_by_acl(reranked, user_roles)
     trace = _build_trace(plan, channel_results, fused, reranked, {
@@ -309,6 +316,7 @@ async def execute_chat_turn_stream(
                 elif kind == "token":
                     yield {"event": "token", "data": {"content": payload, "index": token_idx}}
                     token_idx += 1
+                    await asyncio.sleep(0)
                 elif kind == "usage":
                     total_tokens = payload.get("total_tokens") or 0
         except Exception as ex:

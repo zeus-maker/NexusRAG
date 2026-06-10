@@ -16,6 +16,15 @@ export default defineConfig({
       '/api': {
         target: process.env.VITE_PROXY_TARGET ?? 'http://localhost:9380',
         changeOrigin: true,
+        configure: (proxy) => {
+          proxy.on('proxyRes', (proxyRes) => {
+            const ct = proxyRes.headers['content-type'] ?? '';
+            if (String(ct).includes('text/event-stream')) {
+              proxyRes.headers['cache-control'] = 'no-cache, no-transform';
+              proxyRes.headers['x-accel-buffering'] = 'no';
+            }
+          });
+        },
       },
       // LLM 厂商 / API KEY 配置走 /v1/llm/*（与上游 web 一致）
       '/v1': {

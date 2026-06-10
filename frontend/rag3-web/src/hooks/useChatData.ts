@@ -67,6 +67,13 @@ export interface TraceStep {
   detail: string;
 }
 
+/** 兼容后端 delta 与历史 cumulative token */
+function mergeStreamToken(current: string, piece: string): string {
+  if (!piece) return current;
+  if (piece.length >= current.length && (!current || piece.startsWith(current))) return piece;
+  return current + piece;
+}
+
 export function traceFromMetadata(trace?: Record<string, unknown>): TraceStep[] {
   if (!trace) return QUERY_TRACE_STEPS;
   const channels = (trace.channels as Array<{ channel: string; latency_ms: number; hit_count: number }> | undefined) ?? [];
@@ -272,8 +279,11 @@ export function useChatData(initialConvId: string | null) {
             signal: abortRef.current.signal,
             onEvent: (evt: SseEvent) => {
               if (evt.event === 'token') {
-                content += String(evt.data.content ?? '');
-                setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content } : m));
+                content = mergeStreamToken(content, String(evt.data.content ?? ''));
+                setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content, ...meta } : m));
+              } else if (evt.event === 'error') {
+                content = String(evt.data.message ?? '生成失败');
+                setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content, is_streaming: true } : m));
               } else if (evt.event === 'citation') {
                 const c = evt.data;
                 citations.push({
@@ -291,6 +301,7 @@ export function useChatData(initialConvId: string | null) {
               } else if (evt.event === 'routing') {
                 meta.routing_tier = String(evt.data.tier ?? '');
                 meta.channels = (evt.data.channels as string[]) ?? [];
+                setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, ...meta } : m));
               } else if (evt.event === 'done') {
                 meta.latency_ms = Number(evt.data.latency_ms) || 0;
                 meta.trace = evt.data.trace as Record<string, unknown>;

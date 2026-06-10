@@ -177,7 +177,7 @@ export function ChatPage({ convId, onNavigate }: ChatPageProps) {
     currentConv, setCurrentConv, isStreaming, lastCompareB, rewriteInfo, kbOptions, isApiMode,
     loadConversation, sendMessage: sendChatMessage, stopStream, saveSettings,
     deleteConversation, togglePin, runCompare, submitFeedback, fetchRewrite,
-    kbLoading, kbError, convError,
+    loading, kbLoading, kbError, convError,
   } = chat;
 
   const [input, setInput] = useState('');
@@ -489,7 +489,7 @@ export function ChatPage({ convId, onNavigate }: ChatPageProps) {
                   <div className="bg-blue-600 text-white rounded-2xl rounded-tr-sm px-4 py-2.5 text-sm inline-block max-w-lg">{msg.content}</div>
                 ) : (
                   <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm">
-                    {msg.routing_tier && !msg.is_streaming && (
+                    {msg.routing_tier && (
                       <div className="flex items-center gap-2 mb-2 pb-2 border-b border-gray-100 dark:border-gray-800 flex-wrap">
                         <span className="px-1.5 py-0.5 bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-[10px] rounded font-medium">{msg.routing_tier}</span>
                         {msg.channels?.map(c => <span key={c} className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-[10px] rounded">{c}</span>)}

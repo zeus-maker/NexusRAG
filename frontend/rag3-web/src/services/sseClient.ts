@@ -17,15 +17,18 @@ export interface SseStreamOptions {
 
 function parseSseChunk(buffer: string): { events: SseEvent[]; rest: string } {
   const events: SseEvent[] = [];
-  const parts = buffer.split('\n\n');
+  const normalized = buffer.replace(/\r\n/g, '\n');
+  const parts = normalized.split('\n\n');
   const rest = parts.pop() ?? '';
   for (const block of parts) {
+    if (!block.trim()) continue;
     let event = 'message';
-    let dataStr = '';
+    const dataLines: string[] = [];
     for (const line of block.split('\n')) {
       if (line.startsWith('event:')) event = line.slice(6).trim();
-      if (line.startsWith('data:')) dataStr += line.slice(5).trim();
+      else if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart());
     }
+    const dataStr = dataLines.join('\n');
     if (!dataStr) continue;
     try {
       events.push({ event, data: JSON.parse(dataStr) as Record<string, unknown> });

@@ -145,12 +145,17 @@ async def generate_answer_stream(
     chat_mdl = _resolve_chat_bundle(tenant_id, llm_model)
     gen_conf = {"temperature": temperature, "max_tokens": max_tokens}
     total_tokens = 0
-    async for chunk in chat_mdl.async_chat_streamly(system, history, gen_conf):
+    token_emitted = False
+    async for chunk in chat_mdl.async_chat_streamly_delta(system, history, gen_conf):
         if isinstance(chunk, int):
             total_tokens = chunk
             continue
         if chunk:
+            token_emitted = True
             yield ("token", chunk)
+    if not token_emitted:
+        fallback = template_answer(query, hits)
+        yield ("token", fallback["content"])
     yield ("usage", {"total_tokens": total_tokens})
 
 
