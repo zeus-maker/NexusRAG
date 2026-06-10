@@ -180,3 +180,26 @@ P0/P1 智能对话已接通会话与 SSE，但计划 Phase 5 四项 P2 仍空缺
 - `backend/ragflow_rag30/rag3/generation_service.py`、`chat_service.py`
 - `backend/ragflow_rag30/api/apps/restful_apis/conversations_api.py`
 - `frontend/rag3-web/src/hooks/useChatData.ts`、`services/sseClient.ts`、`vite.config.ts`、`pages/Chat.tsx`
+
+---
+
+## 7. 修复 SSE 流式 Not within a request context
+
+### 背景与目标
+
+对话流式请求返回 200 但日志 `stream failed: RuntimeError: Not within a request context`，因 `event_stream()` 异步生成器在响应写出阶段才执行，此时 Quart 请求上下文已结束，内部访问 `current_user.id` 触发 `LocalProxy` 解包失败。
+
+### 改动摘要
+
+- `conversations_api.send_message`：在定义 `event_stream` 前捕获 `tenant_id = current_user.id`，生成器内使用该局部变量；同步分支共用同一 `tenant_id`。
+- `rag3_app.rag3_query_stream`：同样预捕获 `tenant_id`，避免同类错误。
+
+### 验证与风险
+
+- `python3 -m py_compile` 通过。
+- 手动：重启后端后发流式消息，日志不应再出现 `Not within a request context`；应正常收到 token 事件。
+
+### 涉及文件
+
+- `backend/ragflow_rag30/api/apps/restful_apis/conversations_api.py`
+- `backend/ragflow_rag30/api/apps/rag3_app.py`

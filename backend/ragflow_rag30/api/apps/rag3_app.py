@@ -150,12 +150,14 @@ async def rag3_query_stream():
         if body.get("pipeline_ids"):
             settings["pipeline_ids"] = body.get("pipeline_ids")
 
+        tenant_id = current_user.id
+
         async def event_stream():
             try:
                 async for evt in execute_chat_turn_stream(
                     query,
                     kb_id,
-                    tenant_id=current_user.id,
+                    tenant_id=tenant_id,
                     messages=body.get("messages"),
                     settings=settings,
                     pipeline_ids=body.get("pipeline_ids"),

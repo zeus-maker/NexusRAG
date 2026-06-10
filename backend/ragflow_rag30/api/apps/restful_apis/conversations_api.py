@@ -179,6 +179,8 @@ async def send_message(conv_id):
 
         pipeline_ids = req.get("pipeline_ids")
         user_roles = req.get("user_roles") or []
+        # SSE 生成器在响应阶段执行，须在进入生成器前捕获请求上下文变量
+        tenant_id = current_user.id
         if stream:
             async def event_stream():
                 full_content = ""
@@ -200,7 +202,7 @@ async def send_message(conv_id):
                     async for evt in execute_chat_turn_stream(
                         message_text,
                         kb_id,
-                        tenant_id=current_user.id,
+                        tenant_id=tenant_id,
                         user_roles=user_roles,
                         messages=history,
                         settings=settings,
@@ -238,7 +240,7 @@ async def send_message(conv_id):
         result = await execute_chat_turn(
             message_text,
             kb_id,
-            tenant_id=current_user.id,
+            tenant_id=tenant_id,
             user_roles=user_roles,
             messages=history,
             settings=settings,
