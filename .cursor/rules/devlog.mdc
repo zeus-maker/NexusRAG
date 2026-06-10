@@ -14,7 +14,7 @@ alwaysApply: true
 
 ## 流程
 
-1. `docs/devlog/YYYY-MM-DD-修改点.md`（同日追加、跨日新建；`## N.` 递增）。
+1. 写前先 `date +%Y-%m-%d`；`docs/devlog/当日-修改点.md`（**跨日必新建**，禁止往旧日文件追加；编号仅在当日文件内递增）。
 2. `git add`（含 devlog）+ `git commit`（中文 subject + 分条 body）。
 
 用户明确禁止写 devlog 或禁止提交时，遵从用户指令。
