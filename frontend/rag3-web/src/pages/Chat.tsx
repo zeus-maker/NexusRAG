@@ -177,6 +177,7 @@ export function ChatPage({ convId, onNavigate }: ChatPageProps) {
     currentConv, setCurrentConv, isStreaming, lastCompareB, rewriteInfo, kbOptions, isApiMode,
     loadConversation, sendMessage: sendChatMessage, stopStream, saveSettings,
     deleteConversation, togglePin, runCompare, submitFeedback, fetchRewrite,
+    kbLoading, kbError,
   } = chat;
 
   const [input, setInput] = useState('');
@@ -325,7 +326,9 @@ export function ChatPage({ convId, onNavigate }: ChatPageProps) {
     return { pinned: pinnedList, today: rest.slice(0, 2), yesterday: rest.slice(2, 4), earlier: rest.slice(4) };
   }, [filteredConvs, pinned]);
 
-  const kbSource = isApiMode && kbOptions.length ? kbOptions : mockKBs.map(k => ({ kb_id: k.kb_id, name: k.name, icon: k.icon }));
+  const kbSource = isApiMode
+    ? kbOptions
+    : mockKBs.map(k => ({ kb_id: k.kb_id, name: k.name, icon: k.icon }));
   const selectedKBNames = chatSettings.kbIds.map(id => kbSource.find(k => k.kb_id === id)?.name).filter(Boolean);
 
   const suggestions = [
@@ -407,6 +410,8 @@ export function ChatPage({ convId, onNavigate }: ChatPageProps) {
         <div className="px-4 py-2.5 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 flex items-center gap-2 flex-wrap">
           <span className="text-xs text-gray-500 flex-shrink-0 truncate max-w-[120px]">{chatSettings.convTitle}</span>
           {isApiMode && <span className="text-[10px] text-violet-600 px-1.5 py-0.5 bg-violet-50 rounded">RAG3 API</span>}
+          {isApiMode && kbLoading && <span className="text-[10px] text-gray-400">知识库加载中…</span>}
+          {isApiMode && kbError && <span className="text-[10px] text-red-500" title={kbError}>知识库加载失败</span>}
           <span className="text-gray-300">·</span>
           <div className="relative">
             <button type="button" onClick={() => setShowKBPicker(p => !p)} className="flex items-center gap-1 px-2 py-1 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg text-xs text-blue-700 dark:text-blue-300">
@@ -414,6 +419,9 @@ export function ChatPage({ convId, onNavigate }: ChatPageProps) {
             </button>
             {showKBPicker && (
               <div className="absolute top-8 left-0 w-56 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-xl shadow-xl z-30 max-h-64 overflow-y-auto">
+                {kbSource.length === 0 && (
+                  <p className="px-3 py-4 text-xs text-gray-500">{kbLoading ? '加载知识库…' : '暂无知识库，请先在知识库管理中创建'}</p>
+                )}
                 {kbSource.map(kb => (
                   <button key={kb.kb_id} type="button" onClick={() => setChatSettings(s => ({ ...s, kbIds: s.kbIds.includes(kb.kb_id) ? s.kbIds.filter(id => id !== kb.kb_id) : [...s.kbIds, kb.kb_id] }))} className="w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 text-left">
                     <div className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center ${chatSettings.kbIds.includes(kb.kb_id) ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`}>

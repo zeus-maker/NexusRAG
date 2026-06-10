@@ -7,7 +7,7 @@ import {
 import { registerDocEnhancements } from '../data/documentEnhancementStore';
 import { mockKBs, mockDocuments, mockChunks } from '../mockData';
 import { kbApi } from '../services/kbApi';
-import { useRealApi } from '../services/http';
+import { getRealApiMode, useApiMode } from '../services/http';
 import type { Chunk, Document, KnowledgeBase } from '../types';
 import type { KBCreateForm } from '../components/KBCreateDialog';
 
@@ -20,20 +20,22 @@ interface AsyncState<T> {
 
 function useAsyncData<T>(
   fetcher: () => Promise<T>,
-  fallback: T,
+  mockFallback: T,
+  apiEmptyFallback: T,
   deps: unknown[],
+  apiMode: boolean,
   options?: { clearOnRefetch?: boolean },
 ): AsyncState<T> {
-  const [data, setData] = useState<T>(fallback);
-  const [loading, setLoading] = useState(useRealApi);
+  const [data, setData] = useState<T>(apiMode ? apiEmptyFallback : mockFallback);
+  const [loading, setLoading] = useState(apiMode);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
 
   const refresh = useCallback(() => setTick(t => t + 1), []);
 
   useEffect(() => {
-    if (!useRealApi) {
-      setData(fallback);
+    if (!apiMode) {
+      setData(mockFallback);
       setLoading(false);
       setError(null);
       return;
@@ -42,7 +44,7 @@ function useAsyncData<T>(
     let cancelled = false;
     setLoading(true);
     setError(null);
-    if (options?.clearOnRefetch) setData(fallback);
+    if (options?.clearOnRefetch) setData(apiEmptyFallback);
 
     fetcher()
       .then(result => {
@@ -54,16 +56,19 @@ function useAsyncData<T>(
       .catch((e: Error) => {
         if (!cancelled) {
           setError(e.message || '加载失败');
+          setData(apiEmptyFallback);
           setLoading(false);
         }
       });
 
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tick, useRealApi, ...deps]);
+  }, [tick, apiMode, ...deps]);
 
   return { data, loading, error, refresh };
 }
+
+const EMPTY_KB_LIST = { items: [] as KnowledgeBase[], total: 0 };
 
 export function useKnowledgeBaseList(
   sortBy: string,
@@ -73,6 +78,7 @@ export function useKnowledgeBaseList(
   pageSize: number,
   statusFilter: string,
 ) {
+  const apiMode = useApiMode();
   const mockFiltered = mockKBs.filter(kb => {
     const q = search.trim().toLowerCase();
     const matchSearch = !q || kb.name.toLowerCase().includes(q) || kb.description.toLowerCase().includes(q);
@@ -90,29 +96,34 @@ export function useKnowledgeBaseList(
       return { items: filtered, total: res.total };
     },
     { items: mockFiltered, total: mockFiltered.length },
+    EMPTY_KB_LIST,
     [sortBy, sortDesc, search, page, pageSize, statusFilter],
+    apiMode,
   );
 
-  return { ...result, isApiMode: useRealApi };
+  return { ...result, isApiMode: apiMode };
 }
 
 export function useKnowledgeBase(kbId: string) {
+  const apiMode = useApiMode();
   const fallback = mockKBs.find(k => k.kb_id === kbId) || mockKBs[0];
+  const apiPlaceholder = { ...fallback, kb_id: kbId, name: '' };
   return useAsyncData(
     () => kbApi.get(kbId),
     fallback,
+    apiPlaceholder,
     [kbId],
+    apiMode,
   );
 }
 
 const EMPTY_CHUNKS = { items: [] as Chunk[], total: 0 };
 
 export function useDocuments(kbId: string, search = '') {
-  const fallback = useRealApi
-    ? []
-    : mockDocuments.filter(
-        d => d.kb_id === kbId && d.original_name.toLowerCase().includes(search.toLowerCase()),
-      );
+  const apiMode = useApiMode();
+  const mockFallback = mockDocuments.filter(
+    d => d.kb_id === kbId && d.original_name.toLowerCase().includes(search.toLowerCase()),
+  );
 
   return useAsyncData(
     async () => {
@@ -125,13 +136,16 @@ export function useDocuments(kbId: string, search = '') {
       });
       return res.items;
     },
-    fallback,
+    mockFallback,
+    [] as Document[],
     [kbId, search],
+    apiMode,
   );
 }
 
 export function useDocumentListResult(kbId: string, search = '') {
-  const fallback = mockDocuments.filter(
+  const apiMode = useApiMode();
+  const mockFallback = mockDocuments.filter(
     d => d.kb_id === kbId && d.original_name.toLowerCase().includes(search.toLowerCase()),
   );
 
@@ -143,8 +157,10 @@ export function useDocumentListResult(kbId: string, search = '') {
       orderby: 'create_time',
       desc: true,
     }),
-    { items: fallback, total: fallback.length },
+    { items: mockFallback, total: mockFallback.length },
+    { items: [] as Document[], total: 0 },
     [kbId, search],
+    apiMode,
   );
 }
 
@@ -155,9 +171,8 @@ export function useChunks(
 ) {
   const page = opts?.page ?? 1;
   const pageSize = opts?.page_size ?? 100;
-  const fallback = useRealApi
-    ? EMPTY_CHUNKS
-    : { items: mockChunks, total: mockChunks.length };
+  const apiMode = useApiMode();
+  const mockFallback = { items: mockChunks, total: mockChunks.length };
 
   return useAsyncData(
     async () => {
@@ -168,30 +183,39 @@ export function useChunks(
         keywords: opts?.keywords,
       });
     },
-    fallback,
+    mockFallback,
+    EMPTY_CHUNKS,
     [kbId, docId, page, pageSize, opts?.keywords],
+    apiMode,
     { clearOnRefetch: true },
   );
 }
 
 export function useIngestionLogs(kbId: string) {
+  const apiMode = useApiMode();
+  const empty = { items: [], total: 0 };
   return useAsyncData(
     async () => kbApi.getIngestions(kbId, { page: 1, page_size: 50, log_type: 'file' }),
-    { items: [], total: 0 },
+    empty,
+    empty,
     [kbId],
+    apiMode,
   );
 }
 
 export function useIndexTrace(kbId: string, type: 'graph' | 'raptor' | 'mindmap') {
+  const apiMode = useApiMode();
   return useAsyncData(
     async () => kbApi.traceIndex(kbId, type),
     {},
+    {},
     [kbId, type],
+    apiMode,
   );
 }
 
 export async function createKnowledgeBase(form: KBCreateForm): Promise<KnowledgeBase> {
-  if (!useRealApi) throw new Error('mock 模式下请使用本地逻辑');
+  if (!getRealApiMode()) throw new Error('mock 模式下请使用本地逻辑');
   return kbApi.create(form);
 }
 
@@ -199,12 +223,12 @@ export async function updateKnowledgeBase(
   kbId: string,
   patch: Parameters<typeof kbApi.update>[1],
 ): Promise<KnowledgeBase> {
-  if (!useRealApi) throw new Error('mock 模式下不支持保存');
+  if (!getRealApiMode()) throw new Error('mock 模式下不支持保存');
   return kbApi.update(kbId, patch);
 }
 
 export async function deleteKnowledgeBase(ids: string[]): Promise<void> {
-  if (!useRealApi) return;
+  if (!getRealApiMode()) return;
   await kbApi.delete(ids);
 }
 
@@ -213,12 +237,12 @@ export async function uploadKbDocuments(
   files: File[],
   options?: { chunkMethod?: string; parserConfig?: Record<string, unknown> },
 ): Promise<Document[]> {
-  if (!useRealApi) throw new Error('mock 模式下不支持上传');
+  if (!getRealApiMode()) throw new Error('mock 模式下不支持上传');
   return kbApi.uploadDocuments(kbId, files, options);
 }
 
 export async function fetchKbParserDefaults(kbId: string) {
-  if (!useRealApi) return null;
+  if (!getRealApiMode()) return null;
   const raw = await kbApi.getDatasetRaw(kbId);
   return {
     chunkMethod: raw.chunk_method || raw.parser_id,
@@ -231,7 +255,7 @@ export async function applyKbDocumentUploadConfig(
   documentIds: string[],
   config: DocumentUploadConfig,
 ) {
-  if (!useRealApi) throw new Error('mock 模式下不支持');
+  if (!getRealApiMode()) throw new Error('mock 模式下不支持');
   const body = buildDocumentUploadRequest(config);
   for (const docId of documentIds) {
     await kbApi.updateDocument(kbId, docId, body);
@@ -242,7 +266,7 @@ export async function syncKbParserConfigFromUpload(
   kbId: string,
   config: DocumentUploadConfig,
 ): Promise<void> {
-  if (!useRealApi) return;
+  if (!getRealApiMode()) return;
   const payload = buildParserConfigPayload(config);
   await kbApi.updateParserConfig(kbId, payload);
 }
@@ -252,7 +276,7 @@ export async function triggerKbEnhancementIndexes(
   config: DocumentUploadConfig,
   docIds?: string[],
 ): Promise<void> {
-  if (!useRealApi) return;
+  if (!getRealApiMode()) return;
   const tasks: Promise<unknown>[] = [];
   if (config.enableGraphRag) {
     tasks.push(kbApi.runIndex(kbId, 'graph').catch(() => undefined));
@@ -274,7 +298,7 @@ export async function uploadKbDocumentsWithConfig(
   files: File[],
   config: DocumentUploadConfig,
 ): Promise<Document[]> {
-  if (!useRealApi) throw new Error('mock 模式下不支持上传');
+  if (!getRealApiMode()) throw new Error('mock 模式下不支持上传');
   const req = buildDocumentUploadRequest(config);
   const uploaded = await kbApi.uploadDocuments(kbId, files, {
     chunkMethod: req.chunk_method as string,
@@ -300,22 +324,22 @@ export async function uploadKbDocumentsWithConfig(
 }
 
 export async function uploadKbFromUrl(kbId: string, name: string, url: string): Promise<Document> {
-  if (!useRealApi) throw new Error('mock 模式下不支持 URL 导入');
+  if (!getRealApiMode()) throw new Error('mock 模式下不支持 URL 导入');
   return kbApi.uploadFromUrl(kbId, name, url);
 }
 
 export async function deleteKbDocuments(kbId: string, ids: string[]): Promise<number> {
-  if (!useRealApi) throw new Error('mock 模式下不支持删除');
+  if (!getRealApiMode()) throw new Error('mock 模式下不支持删除');
   return kbApi.deleteDocuments(kbId, ids);
 }
 
 export async function parseKbDocuments(kbId: string, ids: string[]) {
-  if (!useRealApi) throw new Error('mock 模式下不支持解析');
+  if (!getRealApiMode()) throw new Error('mock 模式下不支持解析');
   return kbApi.parseDocuments(kbId, ids);
 }
 
 export async function stopKbDocuments(kbId: string, ids: string[]) {
-  if (!useRealApi) throw new Error('mock 模式下不支持停止解析');
+  if (!getRealApiMode()) throw new Error('mock 模式下不支持停止解析');
   return kbApi.stopDocuments(kbId, ids);
 }
 
@@ -324,7 +348,7 @@ export async function searchKb(
   question: string,
   options?: Parameters<typeof kbApi.searchDataset>[1],
 ) {
-  if (!useRealApi) throw new Error('mock 模式下请使用检索 mock');
+  if (!getRealApiMode()) throw new Error('mock 模式下请使用检索 mock');
   return kbApi.searchDataset(kbId, { question, ...options });
 }
 
@@ -336,7 +360,7 @@ export async function splitKbChunk(
   chunkId: string,
   splitAt: number,
 ) {
-  if (!useRealApi) throw new Error('mock 模式下不支持拆分');
+  if (!getRealApiMode()) throw new Error('mock 模式下不支持拆分');
   const chunk = await kbApi.getChunk(kbId, docId, chunkId);
   const content = chunk.content_preview;
   if (splitAt <= 0 || splitAt >= content.length) throw new Error('拆分位置无效');
@@ -355,7 +379,7 @@ export async function mergeKbChunks(
   firstId: string,
   secondId: string,
 ) {
-  if (!useRealApi) throw new Error('mock 模式下不支持合并');
+  if (!getRealApiMode()) throw new Error('mock 模式下不支持合并');
   const [a, b] = await Promise.all([
     kbApi.getChunk(kbId, docId, firstId),
     kbApi.getChunk(kbId, docId, secondId),
@@ -371,6 +395,6 @@ export async function setKbChunkAvailability(
   chunkIds: string[],
   available: boolean,
 ) {
-  if (!useRealApi) throw new Error('mock 模式下不支持切换可用性');
+  if (!getRealApiMode()) throw new Error('mock 模式下不支持切换可用性');
   await kbApi.switchChunkAvailability(kbId, docId, chunkIds, available);
 }

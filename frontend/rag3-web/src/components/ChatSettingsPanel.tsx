@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { X, Save, RotateCcw } from 'lucide-react';
 import { mockKBs } from '../mockData';
-import { useRealApi } from '../services/http';
+import { useApiMode } from '../services/http';
 import { useKnowledgeBaseList } from '../hooks/useKbData';
 import { PROMPT_TEMPLATES } from '../data/chatMock';
 
@@ -57,9 +57,10 @@ interface ChatSettingsPanelProps {
 
 export function ChatSettingsPanel({ open, settings, onChange, onClose, onSave }: ChatSettingsPanelProps) {
   const [saved, setSaved] = useState(false);
-  const { data: kbList } = useKnowledgeBaseList('name', false, '', 1, 100, 'all');
-  const kbOptions = useRealApi && kbList?.items?.length
-    ? kbList.items.map(kb => ({ kb_id: kb.kb_id, name: kb.name, icon: kb.icon || '📚' }))
+  const apiMode = useApiMode();
+  const { data: kbList, loading: kbLoading } = useKnowledgeBaseList('name', false, '', 1, 100, 'all');
+  const kbOptions = apiMode
+    ? (kbList?.items ?? []).map(kb => ({ kb_id: kb.kb_id, name: kb.name, icon: kb.icon || '📚' }))
     : mockKBs.map(kb => ({ kb_id: kb.kb_id, name: kb.name, icon: kb.icon }));
   if (!open) return null;
 
@@ -89,6 +90,10 @@ export function ChatSettingsPanel({ open, settings, onChange, onClose, onSave }:
             <div>
               <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">关联知识库</label>
               <div className="space-y-1 max-h-28 overflow-y-auto border border-gray-100 dark:border-gray-700 rounded-lg p-2">
+                {apiMode && kbLoading && <p className="text-[10px] text-gray-400 px-1">加载知识库列表…</p>}
+                {apiMode && !kbLoading && kbOptions.length === 0 && (
+                  <p className="text-[10px] text-gray-400 px-1">暂无知识库，请先在「知识库管理」创建</p>
+                )}
                 {kbOptions.map(kb => (
                   <label key={kb.kb_id} className="flex items-center gap-2 text-xs cursor-pointer py-0.5">
                     <input

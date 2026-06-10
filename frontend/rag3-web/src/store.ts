@@ -9,7 +9,7 @@ import {
   type NavPage,
 } from './navigationUrl';
 import { logout as clearAuth } from './services/auth';
-import { getStoredAuth, getStoredUser, useRealApi } from './services/http';
+import { getRealApiMode, getStoredAuth, getStoredUser } from './services/http';
 
 export type Page = NavPage;
 export type { KBSettingsTab };
@@ -43,7 +43,7 @@ function buildInitialState(): AppState {
     theme,
     currentUser: null,
   };
-  if (useRealApi && getStoredAuth()) {
+  if (getRealApiMode() && getStoredAuth()) {
     const saved = getStoredUser();
     if (saved) {
       const loggedIn: AppState = { ...base, page: 'home', currentUser: saved };

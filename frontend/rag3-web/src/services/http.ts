@@ -3,16 +3,35 @@
  * 开发代理: vite.config.ts 将 /api/* 原样转发至 http://localhost:9380/api/*
  */
 
+import { useEffect, useState } from 'react';
+
 const API_BASE = import.meta.env.VITE_API_BASE ?? '/api';
 const API_VERSION = 'v1';
 
 export const AUTH_STORAGE_KEY = 'rag3-authorization';
 export const USER_STORAGE_KEY = 'rag3-user';
 
-/** 是否对接真实 RAGFlow API */
-export const useRealApi =
-  import.meta.env.VITE_USE_REAL_API === 'true' ||
-  !!import.meta.env.VITE_RAGFLOW_AUTH_TOKEN;
+/** 登录/登出后派发，供 useApiMode 刷新 */
+export const AUTH_CHANGED_EVENT = 'rag3-auth-changed';
+
+/** 运行时判断是否对接真实 API（含已登录 token） */
+export function getRealApiMode(): boolean {
+  if (import.meta.env.VITE_USE_REAL_API === 'true') return true;
+  if (import.meta.env.VITE_RAGFLOW_AUTH_TOKEN) return true;
+  return !!getStoredAuth();
+}
+
+export function notifyAuthChanged() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(AUTH_CHANGED_EVENT));
+  }
+}
+
+/**
+ * 模块加载时的 API 模式快照（非响应式）。
+ * 组件内请用 useApiMode()，会在登录后自动切换。
+ */
+export const useRealApi = getRealApiMode();
 
 export class ApiError extends Error {
   constructor(
@@ -43,6 +62,7 @@ export function getStoredAuth(): string {
 
 export function setStoredAuth(token: string) {
   localStorage.setItem(AUTH_STORAGE_KEY, token);
+  notifyAuthChanged();
 }
 
 export function setStoredUser(user: { name: string; email: string; role: string }) {
@@ -61,6 +81,23 @@ export function getStoredUser(): { name: string; email: string; role: string } |
 export function clearAuthStorage() {
   localStorage.removeItem(AUTH_STORAGE_KEY);
   localStorage.removeItem(USER_STORAGE_KEY);
+  notifyAuthChanged();
+}
+
+/** 响应式 API 模式：登录后自动从 mock 切到真实接口 */
+export function useApiMode(): boolean {
+  const [apiMode, setApiMode] = useState(getRealApiMode);
+  useEffect(() => {
+    const sync = () => setApiMode(getRealApiMode());
+    sync();
+    window.addEventListener(AUTH_CHANGED_EVENT, sync);
+    window.addEventListener('storage', sync);
+    return () => {
+      window.removeEventListener(AUTH_CHANGED_EVENT, sync);
+      window.removeEventListener('storage', sync);
+    };
+  }, []);
+  return apiMode;
 }
 
 function buildUrl(path: string) {

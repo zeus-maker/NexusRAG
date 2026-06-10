@@ -90,3 +90,31 @@ P0/P1 智能对话已接通会话与 SSE，但计划 Phase 5 四项 P2 仍空缺
 - `backend/ragflow_rag30/rag3/conversation_store.py`
 - `frontend/rag3-web/src/hooks/useChatData.ts`
 - `frontend/rag3-web/src/components/ChatSettingsPanel.tsx`
+
+---
+
+## 4. 修复 API 模式仍展示 mock 知识库 ID
+
+### 背景与目标
+
+用户登录后对话/设置仍显示 `kb-001` 等 mock 知识库，且 `GET /datasets` 虽 200 但 UI 不回填真实列表。根因：`useRealApi` 为模块加载时常量（登录后不刷新）；`useAsyncData` 在 API 请求前用 mock 作初始 state 且失败时不清理；`Chat.tsx` 在 `kbOptions` 为空时回退 `mockKBs`。
+
+### 改动摘要
+
+- **http.ts**：`getRealApiMode()` 含 `localStorage` token；新增 `useApiMode()` 响应式 hook + `AUTH_CHANGED_EVENT`；登录/登出触发刷新。
+- **useKbData**：API 模式初始/失败用空列表，不再预填 mock；各 hook 改用 `useApiMode()`。
+- **useChatData / Chat / ChatSettingsPanel**：剔除无效 mock id、仅展示真实 `kbOptions`；加载中与空态提示。
+- **`.env.development`**：默认 `VITE_USE_REAL_API=true`。
+
+### 验证与风险
+
+- `npm run build` 通过。
+- 手动：登录后打开智能对话 → 知识库选择器应显示 `/datasets` 返回的真实名称与 UUID id；不应出现 `kb-001`。
+- 风险：未登录且未设 env 时仍为 mock 演示模式；KB 列表 API 失败时显示空态+错误提示。
+
+### 涉及文件
+
+- `frontend/rag3-web/src/services/http.ts`、`auth.ts`
+- `frontend/rag3-web/src/hooks/useKbData.ts`、`useChatData.ts`
+- `frontend/rag3-web/src/pages/Chat.tsx`、`components/ChatSettingsPanel.tsx`
+- `frontend/rag3-web/.env.development`

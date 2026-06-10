@@ -3,7 +3,7 @@ import { mockConversations } from '../mockData';
 import { CONV_MESSAGES, CONV_PINNED, QUERY_TRACE_STEPS } from '../data/chatMock';
 import { DEFAULT_CHAT_SETTINGS, type ChatSettings } from '../components/ChatSettingsPanel';
 import { chatService, type ConversationRecord, type QueryParseResult } from '../services/chatService';
-import { useRealApi } from '../services/http';
+import { useApiMode } from '../services/http';
 import { useKnowledgeBaseList } from './useKbData';
 import type { ChatMessage, Citation, Conversation } from '../types';
 import type { SseEvent } from '../services/sseClient';
@@ -82,10 +82,11 @@ export function traceFromMetadata(trace?: Record<string, unknown>): TraceStep[] 
 }
 
 export function useChatData(initialConvId: string | null) {
-  const { data: kbList } = useKnowledgeBaseList('name', false, '', 1, 100, 'all');
+  const apiMode = useApiMode();
+  const { data: kbList, loading: kbLoading, error: kbError } = useKnowledgeBaseList('name', false, '', 1, 100, 'all');
   const kbs = kbList?.items ?? [];
 
-  const [conversations, setConversations] = useState<Conversation[]>(useRealApi ? [] : mockConversations);
+  const [conversations, setConversations] = useState<Conversation[]>(apiMode ? [] : mockConversations);
   const [pinned, setPinned] = useState<Set<string>>(new Set(CONV_PINNED));
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [chatSettings, setChatSettings] = useState<ChatSettings>(DEFAULT_CHAT_SETTINGS);
@@ -93,13 +94,13 @@ export function useChatData(initialConvId: string | null) {
   const [isStreaming, setIsStreaming] = useState(false);
   const [lastCompareB, setLastCompareB] = useState('');
   const [rewriteInfo, setRewriteInfo] = useState<{ original: string; rewritten: string } | null>(null);
-  const [loading, setLoading] = useState(useRealApi);
+  const [loading, setLoading] = useState(apiMode);
 
   const abortRef = useRef<AbortController | null>(null);
   const streamRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const refreshConversations = useCallback(async (search = '') => {
-    if (!useRealApi) {
+    if (!apiMode) {
       setConversations(mockConversations);
       return;
     }
@@ -113,30 +114,35 @@ export function useChatData(initialConvId: string | null) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [apiMode]);
 
   useEffect(() => { void refreshConversations(); }, [refreshConversations]);
 
-  // API 模式：将默认 mock kb-001 替换为真实数据集 ID
+  // API 模式：剔除 mock id，同步为真实 dataset id
   useEffect(() => {
-    if (!useRealApi || !kbs.length) return;
+    if (!apiMode || !kbs.length) return;
+    const validSet = new Set(kbs.map(k => k.kb_id));
     setChatSettings(s => {
-      const onlyMock = s.kbIds.every(id => id.startsWith('kb-'));
-      if (!onlyMock && s.kbIds.length) return s;
-      return { ...s, kbIds: [kbs[0].kb_id] };
+      const valid = s.kbIds.filter(id => validSet.has(id));
+      const next = valid.length ? valid : [kbs[0].kb_id];
+      if (next.join(',') === s.kbIds.join(',')) return s;
+      return { ...s, kbIds: next };
     });
-  }, [kbs]);
+  }, [apiMode, kbs]);
 
   const resolveKbIds = useCallback((): string[] => {
-    const selected = chatSettings.kbIds.filter(Boolean);
+    const validSet = new Set(kbs.map(k => k.kb_id));
+    const selected = apiMode
+      ? chatSettings.kbIds.filter(id => validSet.has(id))
+      : chatSettings.kbIds.filter(Boolean);
     if (selected.length) return selected;
-    if (useRealApi && kbs[0]?.kb_id) return [kbs[0].kb_id];
+    if (apiMode && kbs[0]?.kb_id) return [kbs[0].kb_id];
     return [];
-  }, [chatSettings.kbIds, kbs]);
+  }, [chatSettings.kbIds, kbs, apiMode]);
 
   const ensureConversation = useCallback(async (): Promise<string | null> => {
     if (currentConv) return currentConv;
-    if (!useRealApi) return null;
+    if (!apiMode) return null;
     const kbIds = resolveKbIds();
     if (!kbIds.length) throw new Error('请先选择知识库');
     const conv = await chatService.createConversation(kbIds, chatSettings.convTitle);
@@ -155,7 +161,7 @@ export function useChatData(initialConvId: string | null) {
         kbIds: [...conv.kb_ids],
       }));
     }
-    if (!useRealApi) {
+    if (!apiMode) {
       setMessages(CONV_MESSAGES[id] ? [...CONV_MESSAGES[id]] : []);
       return;
     }
@@ -238,7 +244,7 @@ export function useChatData(initialConvId: string | null) {
     };
     setMessages(prev => [...prev, userMsg]);
 
-    if (useRealApi && resolveKbIds().length) {
+    if (apiMode && resolveKbIds().length) {
       try {
         const convId = await ensureConversation();
         if (!convId) return;
@@ -331,12 +337,12 @@ export function useChatData(initialConvId: string | null) {
   }, [isStreaming, chatSettings, ensureConversation, mockStream, refreshConversations, resolveKbIds]);
 
   const saveSettings = useCallback(async () => {
-    if (!useRealApi || !currentConv) return;
+    if (!apiMode || !currentConv) return;
     await chatService.saveSettings(currentConv, chatSettings);
   }, [currentConv, chatSettings]);
 
   const deleteConversation = useCallback(async (id: string) => {
-    if (useRealApi) await chatService.deleteConversation(id);
+    if (apiMode) await chatService.deleteConversation(id);
     setConversations(prev => prev.filter(c => c.conv_id !== id));
     if (currentConv === id) {
       setCurrentConv(null);
@@ -351,26 +357,26 @@ export function useChatData(initialConvId: string | null) {
       if (nextPinned) next.add(id); else next.delete(id);
       return next;
     });
-    if (useRealApi) await chatService.patchConversation(id, { pinned: nextPinned } as Partial<ConversationRecord>);
+    if (apiMode) await chatService.patchConversation(id, { pinned: nextPinned } as Partial<ConversationRecord>);
   }, [pinned]);
 
   const runCompare = useCallback(async (query: string) => {
-    if (!useRealApi || !currentConv) {
+    if (!apiMode || !currentConv) {
       setLastCompareB('（Mock）对比策略 B 的备选答案片段…');
       return;
     }
     const res = await chatService.compare(currentConv, query);
     setLastCompareB(res.answer_b || '');
-  }, [currentConv]);
+  }, [apiMode, currentConv]);
 
   const submitFeedback = useCallback(async (msgId: string, type: 'thumbs_up' | 'thumbs_down' | 'correction', correction?: string) => {
-    if (!useRealApi || !currentConv) return;
+    if (!apiMode || !currentConv) return;
     await chatService.submitFeedback(currentConv, msgId, type, correction);
     setMessages(prev => prev.map(m => m.id === msgId ? { ...m, feedback_status: type } as ChatMessage : m));
   }, [currentConv]);
 
   const fetchRewrite = useCallback(async (query: string) => {
-    if (!useRealApi) {
+    if (!apiMode) {
       setRewriteInfo({ original: query, rewritten: query });
       return;
     }
@@ -399,7 +405,9 @@ export function useChatData(initialConvId: string | null) {
     lastCompareB,
     rewriteInfo,
     kbOptions,
-    isApiMode: useRealApi,
+    isApiMode: apiMode,
+    kbLoading,
+    kbError,
     refreshConversations,
     loadConversation,
     sendMessage,
