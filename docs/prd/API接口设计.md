@@ -2250,9 +2250,67 @@ curl -X DELETE "https://api.rag3.example.com/api/v1/api-keys/apikey_8a3f2b1c4d5e
 
 ## 6. 评测API
 
+### 6.0 实现状态（ragflow_rag30，2026-06-11）
+
+> **实现文件**：`api/apps/restful_apis/evaluation_api.py` · **执行器**：`rag3/evaluation_runner.py` · **RAGAS**：`eval/ragas_evaluator.py`  
+> **前端消费**：`frontend/rag3-web/src/services/evalService.ts`（前缀 `/api/v1/eval/*`）
+
+#### 路径前缀约定
+
+| 设计文档路径 | 实际实现路径 | 说明 |
+|-------------|-------------|------|
+| `/api/v1/evaluations/*` | `/api/v1/eval/*` | **以实现为准**；部分端点可经 `backward_compat` 别名 |
+| 同上 | 同上 | 下文 §6.1–6.7 示例 URL 中的 `evaluations` 请替换为 `eval` |
+
+#### 已落地端点一览
+
+| 方法 | 路径 | 状态 | 备注 |
+|------|------|------|------|
+| GET | `/eval/dashboard` | ✅ | 仪表盘聚合 |
+| GET/POST/PUT/DELETE | `/eval/datasets` … | ✅ | 含 `metadata` 标签、`/import` JSON、`/samples` CRUD |
+| POST | `/eval/datasets/sample-from-chat` | ✅ | 失败案例加入数据集 |
+| GET/POST | `/eval/runs` | ✅ | 后台异步执行，轮询 `progress` |
+| GET | `/eval/runs/{id}` | ✅ | 含 `metrics_summary`、`diagnosis`、`kb_name` |
+| GET | `/eval/runs/{id}/scores` | ✅ | 分页 `{items,total,total_cases}`；`citations` 为结构化对象 |
+| POST | `/eval/runs/{id}/stop` | ✅ | |
+| GET | `/eval/runs/{id}/export` | ✅ | CSV（非 PDF） |
+| GET/POST | `/eval/ab-tests` … | ✅ | 报告含 mock 显著性 |
+| GET | `/eval/satisfaction/*` | ✅ | 依赖 `query_log` |
+| GET/PUT | `/eval/cost/*` | ✅ | Token 估算 |
+| GET/POST | `/eval/replay/tasks` … | ✅ | |
+| GET/POST | `/eval/route-learning/*` | ✅ | 训练/发布/回滚 |
+
+#### `GET /eval/runs/{id}/scores` — citations 对象（2026-06-11）
+
+与对话 `Citation` 对齐，用于前端 Markdown 引用角标与新窗口分块跳转：
+
+```json
+{
+  "index": 1,
+  "doc_id": "doc_xxx",
+  "chunk_id": "chunk_yyy",
+  "doc_name": "采购合同.pdf",
+  "page_number": 3,
+  "section": "第五章 违约责任",
+  "snippet": "违约金不超过合同金额20%……",
+  "relevance_score": 0.82
+}
+```
+
+来源字段：`retrieved_chunks`（RAG3 fusion 命中）的 `doc_id`、`chunk_id`、`doc_name`、`snippet`、`wrrf_score`、`metadata.page_number`。
+
+#### 未实现 / 与设计差异
+
+- 定时评测 `schedule.cron`、邮件/站内告警
+- PDF 综合报告、雷达图专用端点
+- DeepEval `toxicity`/`bias` 指标
+- `POST /evaluations/compare` 独立路径（当前走 `/eval/ab-tests`）
+
+---
+
 ### 6.1 创建评测任务
 
-**POST** `/api/v1/evaluations/runs`
+**POST** `/api/v1/evaluations/runs`（实现：`POST /api/v1/eval/runs`）
 
 #### 请求参数
 

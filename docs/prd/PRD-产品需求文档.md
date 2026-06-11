@@ -1989,7 +1989,7 @@ LLM输出后对每个事实点评估置信度，综合以下因素：
 
 ## 附录 D：前端原型实现状态（rag3-bolt-v1.5）
 
-> **更新日期**：2026-06-07 · **工程路径**：`rag3-bolt-v1.5/` · **明细文档**：[`前端原型实现进度.md`](./前端原型实现进度.md)
+> **更新日期**：2026-06-11 · **工程路径**：`rag3-bolt-v1.5/` · **明细文档**：[`前端原型实现进度.md`](./前端原型实现进度.md)
 
 可运行 React 原型（mock 数据）已覆盖以下 Epic 主要界面，供产品走查与开发对齐：
 
@@ -2006,6 +2006,34 @@ LLM输出后对每个事实点评估置信度，综合以下因素：
 **已验证 User Story（原型交互）**：US-1.7 导出、US-1.8 回收站、US-1.9 排行榜、US-2.12 答案对比、US-4.8 成本、US-4.9 满意度、US-4.10 评测数据集、US-4.12 回放评测。
 
 **变更追溯**：`docs/devlog/2026-06-06-rag3-frontend.md` §1–§9 · `docs/devlog/2026-06-07-rag3-frontend.md` §1–§23。
+
+---
+
+## 附录 E：生产前端与后端实现状态（rag3-web + ragflow_rag30）
+
+> **更新日期**：2026-06-11 · **前端**：`frontend/rag3-web/` · **后端**：`backend/ragflow_rag30/`  
+> **明细**：[`前端原型实现进度.md`](./前端原型实现进度.md) §1.3 · [`API接口设计.md`](./API接口设计.md) §6.0 · Devlog `2026-06-11-rag3-*`
+
+### Epic 4：评测与监控（首版全栈已落地）
+
+| User Story | 后端 API | 前端页面 | 状态 | 说明 |
+|------------|----------|---------|------|------|
+| US-4.1 检索质量评测 | `POST/GET /eval/runs` + RAG3 runner | 评测任务 | 🟢 | recall@10/MRR 代理指标；精排可配置 |
+| US-4.2 生成质量评测 | RAGAS `faithfulness/answer_relevancy/context_precision` | 任务详情 + 失败抽屉 | 🟢 | 绕过 `ragas.evaluate()` 死锁；单样本 ~15–20s |
+| US-4.3 端到端评测 | `evaluation_type=end_to_end` | 创建任务对话框 | 🟡 | 指标计算有；定时 cron / 邮件告警未做 |
+| US-4.4 评测报告 PDF | — | — | ⚪ | 仅 CSV 导出 `GET /eval/runs/{id}/export` |
+| US-4.10 评测数据集 | datasets/samples/import CRUD | `EvalDataset.tsx` | 🟢 | metadata 标签、JSON 导入、样本 PUT |
+| US-4.11 A/B 对比 | `/eval/ab-tests` | A/B 测试 Tab | 🟡 | 创建/停止/报告有；显著性检验为 mock |
+| US-4.12 回放评测 | `/eval/replay/tasks` + query_log | 回放 Tab | 🟢 | 对话写入 `query_log_service` |
+| US-4.8 成本监控 | `/eval/cost/*` | 成本 Tab | 🟡 | Token 估算，非财务账单 |
+| US-4.9 满意度 | `/eval/satisfaction/*` | 满意度 Tab | 🟢 | 反馈同步 query_log |
+
+**评测任务详情增强**（2026-06-11）：
+
+- `EvalRunDetailModal`：概览指标分布、检索诊断、`zero_retrieval_cases`、全量/低分样本列表。
+- `EvalFailureCaseDrawer`：答案 Markdown 渲染；`scores.citations` 结构化；引用新窗口打开 `#/kb-chunks?kb&doc&chunk`。
+
+**已知限制**：DeepEval 毒性/偏见未集成；PDF 报告与定时评测待排期；分块深链跨分页定位待增强。
 
 ---
 

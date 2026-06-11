@@ -1,12 +1,13 @@
 # RAGFlow 前端 vs RAG 3.0 PRD 逐项对照表
 
-> **版本**：v1.6-prototype · 2026-06-07  
+> **版本**：v1.7-prototype · 2026-06-11  
 > **用途**：指导 RAG 3.0 前端开发时复用 RAGFlow 源码（`ragflow_rag30/web`），识别缺口与映射关系。  
-> **关联**：`前端界面实现方案.md`（v1.6）§1.3 / §10–§19、`前端原型实现进度.md`（rag3-bolt-v1.5）  
-> **变更追溯**：`docs/devlog/2026-06-07-rag3-frontend.md`（§1–§23）
+> **关联**：`前端界面实现方案.md`（v1.6）§1.3 / §10–§19、`前端原型实现进度.md`（bolt + **rag3-web**）  
+> **变更追溯**：`docs/devlog/2026-06-07-rag3-frontend.md`（§1–§23）· `docs/devlog/2026-06-11-rag3-frontend.md`（§9–§10）
 
 **图例（设计）**：✅ 已设计 · 🟡 部分设计 · ❌ 未设计 · 🔵 RAG 3.0 新增  
-**图例（原型）**：🟢 已落地 · 🟡 基础页 · ⚪ 未开始 · 🔗 占位
+**图例（原型）**：🟢 已落地 · 🟡 基础页 · ⚪ 未开始 · 🔗 占位  
+**图例（生产）**：🔌 API 已对接（`frontend/rag3-web` + `useApiMode`）
 
 ---
 
@@ -22,7 +23,7 @@
 | 6 | Memory 记忆 | `/memories` | 🟡 可选 P3 | ⚪ | 按需 | P3 |
 | 7 | 文件管理 | `/files` | 🟡 可并入 KB | 🟡 `DocumentPage` | P3 |
 | 8 | Skills | `/files/skills` | 🟡 P3 | ⚪ | 按需 | P3 |
-| 9 | 评测中心 | — | ✅ §5 + §11.5 | 🟢 EvalSubNav 8 Tab | RAG 3.0 新增 | P0 |
+| 9 | 评测中心 | — | ✅ §5 + §11.5 | 🟢 EvalSubNav 8 Tab · 🔌 rag3-web 全 Tab API | RAG 3.0 新增 | P0 |
 | 10 | 系统管理 | `/admin`, `/user-setting` | ✅ §6 + §10.8 | 🟢 流水线/查询路由/监控/链路追踪/融合策略 | 合并 `/system/*` | P0 |
 
 ---
@@ -92,10 +93,13 @@
 | US-1.16 ACL 保真 | §3.15 / §3.10 | ✅ | ⚪ |
 | US-2.10 高级语法 | §4.6 | ✅ | ⚪ |
 | US-2.12 答案对比 | §4.5 | ✅ | 🟢 |
-| US-4.8 成本 | §11.5.1 | ✅ | 🟢 |
-| US-4.9 满意度 | §5.5 | ✅ | 🟢 |
-| US-4.10 评测数据集 | §5.4 | ✅ | 🟢 |
-| US-4.12 回放评测 | §11.5.2 | ✅ | 🟢 |
+| US-4.1 检索评测 | §5.2 | ✅ | 🔌 rag3-web |
+| US-4.2 生成评测 | §5.2 | ✅ | 🔌 RAGAS + 失败抽屉 Markdown |
+| US-4.8 成本 | §11.5.1 | ✅ | 🔌 Token 估算 |
+| US-4.9 满意度 | §5.5 | ✅ | 🔌 query_log |
+| US-4.10 评测数据集 | §5.4 | ✅ | 🔌 CRUD + JSON 导入 |
+| US-4.11 A/B 对比 | §5.3 | ✅ | 🔌 显著性 mock |
+| US-4.12 回放评测 | §11.5.2 | ✅ | 🔌 |
 | US-5.3–5.8 系统管理 | §6.5–6.8 | ✅ | ⚪（流水线/监控/路由已 🟢，Prompt/灰度等待） |
 
 ---
@@ -165,7 +169,23 @@
 | 多通道检索测试台 | §10.5 | `RetrievalTestPage.tsx` | 🟢 |
 | 链路追踪 | §11.5.3 | `TracesPage.tsx` + `tracesMock.ts` | 🟢 |
 
-**下一批 P1/P2**：§6.5–6.8 系统子页 · `KBDetailPage` 统一框架 · Agent React Flow · API 对接。
+**下一批 P1/P2**：Agent React Flow · 对话/KB/搜索全量 API · Langfuse/Phoenix Trace API。
+
+---
+
+## 9. rag3-web 生产前端已对接（2026-06-11）
+
+> 工程：`frontend/rag3-web/` · 服务层：`evalService.ts` / `useEvalData.ts` · 明细：`前端原型实现进度.md` §1.3
+
+| 组件 / 页面 | PRD | 路径 | 状态 |
+|------------|-----|------|------|
+| 评测 8 Tab | §5 | `pages/Evaluation.tsx` 等 | 🔌 API |
+| `EvalRunDetailModal` | §5.2 | `components/EvalRunDetailModal.tsx` | 🔌 scores 分页 + 诊断 |
+| `EvalFailureCaseDrawer` | §5.2 | `components/EvalFailureCaseDrawer.tsx` | 🔌 Markdown + 引用跳转 |
+| `EvalDataset` CRUD | §5.4 | `pages/EvalDataset.tsx` | 🔌 |
+| `citationNavigation` | §3.5 / §4.1 | `utils/citationNavigation.ts` | 🔌 chunk 深链 |
+
+**冒烟路径**：登录 → 评测任务 → 已完成 run「详情」→ 低分样本 → 侧栏 Markdown → 引用外链图标 → 新标签分块页。
 
 ---
 
