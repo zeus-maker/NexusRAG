@@ -5,20 +5,30 @@ import {
   SATISFACTION_SUMMARY, SATISFACTION_TREND, NEGATIVE_REASONS, NEGATIVE_CASES, type NegativeCase,
 } from '../data/evalMock';
 import { mockKBs } from '../mockData';
+import { useSatisfaction } from '../hooks/useEvalData';
+import { useKnowledgeBaseList } from '../hooks/useKbData';
+import { useApiMode } from '../services/http';
 
 interface EvalSatisfactionPageProps {
   onNavigate: (page: string, extra?: Record<string, unknown>) => void;
 }
 
 export function EvalSatisfactionPage({ onNavigate }: EvalSatisfactionPageProps) {
+  const apiMode = useApiMode();
   const [period, setPeriod] = useState('30d');
   const [kbFilter, setKbFilter] = useState('');
   const [detailCase, setDetailCase] = useState<NegativeCase | null>(null);
-  const s = SATISFACTION_SUMMARY;
+  const { data: satData } = useSatisfaction(period);
+  const { data: kbList } = useKnowledgeBaseList('name', false, '', 1, 100, 'all');
+  const kbs = apiMode ? (kbList?.items ?? []) : mockKBs;
+  const s = satData.summary;
+  const negatives = satData.negatives;
   const periodLabel = period === '7d' ? '近 7 天' : period === '90d' ? '近 90 天' : '近 30 天';
   const trendScale = period === '7d' ? 0.5 : period === '90d' ? 1.2 : 1;
-  const scaledTrend = SATISFACTION_TREND.map(v => Math.min(100, v * trendScale));
-  const maxTrend = Math.max(...scaledTrend);
+  const scaledTrend = (apiMode && satData.trend.length
+    ? satData.trend.map((p: { positive_rate?: number }) => (p.positive_rate ?? 0) * 100)
+    : SATISFACTION_TREND.map(v => Math.min(100, v * trendScale)));
+  const maxTrend = Math.max(...scaledTrend, 1);
 
   return (
     <div className="p-6 flex flex-col gap-5 h-full overflow-y-auto bg-gray-50 dark:bg-gray-950">
@@ -40,7 +50,7 @@ export function EvalSatisfactionPage({ onNavigate }: EvalSatisfactionPageProps) 
           </div>
           <select value={kbFilter} onChange={e => setKbFilter(e.target.value)} className="text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-900">
             <option value="">全部知识库</option>
-            {mockKBs.slice(0, 4).map(kb => <option key={kb.kb_id} value={kb.kb_id}>{kb.name}</option>)}
+            {kbs.slice(0, 20).map(kb => <option key={kb.kb_id} value={kb.kb_id}>{kb.name}</option>)}
           </select>
         </div>
       </div>
@@ -96,7 +106,7 @@ export function EvalSatisfactionPage({ onNavigate }: EvalSatisfactionPageProps) 
         <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
           <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-4">低满意度对话 Top 10</h3>
           <div className="space-y-2">
-            {NEGATIVE_CASES.map((c, i) => (
+            {negatives.map((c, i) => (
               <div key={c.convId} className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800">
                 <button type="button" onClick={() => setDetailCase(c)} className="min-w-0 text-left flex-1">
                   <span className="text-[10px] text-gray-400 mr-2">#{i + 1}</span>

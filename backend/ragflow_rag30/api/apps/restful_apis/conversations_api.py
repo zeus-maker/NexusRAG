@@ -24,6 +24,7 @@ from rag3.conversation_store import (
     save_settings,
     update_conversation,
 )
+from rag3.query_log_service import append_log, update_feedback as update_query_feedback
 
 logger = logging.getLogger(__name__)
 
@@ -230,7 +231,22 @@ async def send_message(conv_id):
                         "retrieval_channels": meta.get("retrieval_channels"),
                         "trace": meta.get("trace"),
                         "latency_ms": meta.get("latency_ms"),
+                        "token_usage": meta.get("token_usage"),
                     })
+                    append_log(
+                        tenant_id=tenant_id,
+                        user_id=conv.get("user_id") or tenant_id,
+                        kb_id=kb_id,
+                        conversation_id=conv_id,
+                        message_id=assistant["message_id"],
+                        query_text=message_text,
+                        response_text=full_content,
+                        retrieval_channels=meta.get("retrieval_channels"),
+                        token_usage=meta.get("token_usage"),
+                        total_latency_ms=int((meta.get("latency_ms") or {}).get("total", 0) if isinstance(meta.get("latency_ms"), dict) else meta.get("latency_ms") or 0),
+                        complexity_tier=meta.get("routing_tier"),
+                        llm_model_used=settings.get("llm_model"),
+                    )
                     yield format_sse({"event": "message_saved", "data": {"message_id": assistant["message_id"]}})
                 except Exception as ex:
                     logger.exception("stream failed")
@@ -266,6 +282,21 @@ async def send_message(conv_id):
             "latency_ms": result.get("latency_ms"),
             "trace": result.get("trace"),
         })
+        lat = result.get("latency_ms") or {}
+        append_log(
+            tenant_id=tenant_id,
+            user_id=conv.get("user_id") or tenant_id,
+            kb_id=kb_id,
+            conversation_id=conv_id,
+            message_id=assistant["message_id"],
+            query_text=message_text,
+            response_text=assistant.get("content"),
+            retrieval_channels=result.get("retrieval_channels"),
+            token_usage=result.get("token_usage"),
+            total_latency_ms=int(lat.get("total", 0) if isinstance(lat, dict) else lat or 0),
+            complexity_tier=result.get("routing_tier"),
+            llm_model_used=settings.get("llm_model"),
+        )
 
         return get_json_result(data={
             "message_id": assistant["message_id"],
@@ -300,6 +331,12 @@ async def message_feedback(conv_id, msg_id):
     updated = save_feedback(conv_id, msg_id, fb_type, correction_text=req.get("correction_text") or "")
     if not updated:
         return get_data_error_result(message="消息不存在")
+    update_query_feedback(
+        tenant_id=current_user.id,
+        conversation_id=conv_id,
+        message_id=msg_id,
+        feedback_type=fb_type,
+    )
     return get_json_result(data={
         "message_id": msg_id,
         "feedback_type": fb_type,

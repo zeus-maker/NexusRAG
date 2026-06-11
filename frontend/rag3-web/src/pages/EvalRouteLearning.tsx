@@ -2,21 +2,65 @@ import { useState } from 'react';
 import { Brain, Upload, Play, RotateCcw, CheckCircle, AlertCircle } from 'lucide-react';
 import { EvalSubNav } from '../components/EvalSubNav';
 import { ROUTE_LEARNING } from '../data/evalMock';
+import { useRouteLearning } from '../hooks/useEvalData';
+import { evalService } from '../services/evalService';
+import { useApiMode } from '../services/http';
 
 interface EvalRouteLearningPageProps {
   onNavigate: (page: string) => void;
 }
 
 export function EvalRouteLearningPage({ onNavigate }: EvalRouteLearningPageProps) {
+  const apiMode = useApiMode();
   const [training, setTraining] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  const rl = ROUTE_LEARNING;
+  const { data: rl, refresh } = useRouteLearning();
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
 
-  const handleTrain = () => {
+  const handleTrain = async () => {
     setTraining(true);
+    if (apiMode) {
+      try {
+        const res = await evalService.trainRouteLearning();
+        showToast(`训练完成，准确率 ${(res.data.accuracy * 100).toFixed(1)}%`);
+        refresh();
+      } catch (e) {
+        showToast((e as Error).message || '训练失败');
+      } finally {
+        setTraining(false);
+      }
+      return;
+    }
     setTimeout(() => { setTraining(false); showToast('路由模型训练完成，准确率 94.2%'); }, 2000);
+  };
+
+  const handlePublish = async () => {
+    if (apiMode) {
+      try {
+        await evalService.publishRouteLearning();
+        showToast('已发布到生产');
+        refresh();
+      } catch (e) {
+        showToast((e as Error).message || '发布失败');
+      }
+      return;
+    }
+    showToast('已发布（演示）');
+  };
+
+  const handleRollback = async () => {
+    if (apiMode) {
+      try {
+        await evalService.rollbackRouteLearning();
+        showToast('已回滚上一版本');
+        refresh();
+      } catch (e) {
+        showToast((e as Error).message || '回滚失败');
+      }
+      return;
+    }
+    showToast('已回滚（演示）');
   };
 
   return (
@@ -94,9 +138,9 @@ export function EvalRouteLearningPage({ onNavigate }: EvalRouteLearningPageProps
                 <p className="font-medium text-gray-800 dark:text-gray-200">v2.0 · 可回滚</p>
                 <p className="text-xs text-gray-500">准确率 92.8%</p>
               </div>
-              <button type="button" onClick={() => showToast('已回滚至 v2.0')} className="text-xs text-blue-600 hover:underline">回滚</button>
+              <button type="button" onClick={() => void handleRollback()} className="text-xs text-blue-600 hover:underline">回滚</button>
             </div>
-            <button type="button" onClick={() => showToast('已发布到生产')} className="w-full py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700">
+            <button type="button" onClick={() => void handlePublish()} className="w-full py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700">
               发布当前模型
             </button>
             <p className="text-[10px] text-gray-400">API: POST /api/v1/eval/route-learning/train · publish · rollback</p>

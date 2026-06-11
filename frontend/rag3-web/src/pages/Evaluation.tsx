@@ -4,12 +4,44 @@ import {
   AlertCircle, Loader, FlaskConical, Clock, ChevronDown, X, Eye, Filter,
   Download, LayoutGrid, List, ThumbsUp, Play, Database
 } from 'lucide-react';
-import { mockEvalRuns, mockABTests, mockKBs, evalTrends } from '../mockData';
+import { mockKBs, evalTrends } from '../mockData';
 import { EvalSubNav } from '../components/EvalSubNav';
 import {
-  FAILURE_CASES, AB_TEST_VARIABLES, LAYERED_EVAL, TREND_METRICS, SATISFACTION_SUMMARY,
+  AB_TEST_VARIABLES, LAYERED_EVAL, TREND_METRICS, SATISFACTION_SUMMARY,
   type FailureCase,
 } from '../data/evalMock';
+import { useEvalDashboard, useEvalRuns, useAbTests, useEvalDatasets } from '../hooks/useEvalData';
+import { EvalRunDetailModal } from '../components/EvalRunDetailModal';
+import { EvalFailureCaseDrawer } from '../components/EvalFailureCaseDrawer';
+import { useKnowledgeBaseList } from '../hooks/useKbData';
+import { evalService } from '../services/evalService';
+import { getStoredAuth, useApiMode } from '../services/http';
+import type { EvalRun } from '../types';
+
+function formatEta(seconds?: number | null): string {
+  if (seconds == null || seconds <= 0) return '估算中…';
+  if (seconds < 60) return `约 ${seconds} 秒`;
+  const min = Math.ceil(seconds / 60);
+  return min < 60 ? `约 ${min} 分钟` : `约 ${Math.floor(min / 60)} 小时 ${min % 60} 分`;
+}
+
+function EvalRunProgressBar({ run }: { run: EvalRun }) {
+  if (run.status !== 'running' && run.status !== 'pending') return null;
+  const pct = Math.min(100, Math.max(0, run.progress ?? 0));
+  const total = run.test_set_size || 0;
+  const done = run.completed_cases ?? (total ? Math.round((pct / 100) * total) : 0);
+  return (
+    <div className="mt-2">
+      <div className="flex justify-between text-[10px] text-gray-500 dark:text-gray-400 mb-1">
+        <span>进度 {pct}% · 已完成 {done}/{total || '—'} 条</span>
+        <span>预计剩余 {formatEta(run.eta_seconds)}</span>
+      </div>
+      <div className="h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+        <div className="h-full bg-blue-500 transition-all duration-500" style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
 
 interface EvalDashboardPageProps {
   onNavigate: (page: string) => void;
@@ -20,14 +52,19 @@ export function EvalDashboardPage({ onNavigate }: EvalDashboardPageProps) {
   const [kbFilter, setKbFilter] = useState('');
   const [trendGranularity, setTrendGranularity] = useState<'日' | '周' | '月'>('月');
   const [activeTrendMetrics, setActiveTrendMetrics] = useState(['faithfulness', 'answer_relevancy']);
+  const apiMode = useApiMode();
+  const { data: kbList } = useKnowledgeBaseList('name', false, '', 1, 100, 'all');
+  const kbs = apiMode ? (kbList?.items ?? []) : mockKBs;
+  const { data: dash, loading: dashLoading } = useEvalDashboard(period, kbFilter);
 
   const filteredRuns = useMemo(() =>
-    mockEvalRuns.filter(r => !kbFilter || r.kb_id === kbFilter),
-  [kbFilter]);
+    dash.runs.filter(r => !kbFilter || r.kb_id === kbFilter),
+  [dash.runs, kbFilter]);
 
-  const runningTask = filteredRuns.find(r => r.status === 'running');
-  const latest = filteredRuns.find(r => r.status === 'completed');
-  const qualityScore = LAYERED_EVAL.find(l => l.level === '端到端')?.score ?? 0.86;
+  const runningTask = dash.running[0] ?? filteredRuns.find(r => r.status === 'running');
+  const latest = dash.latest ?? filteredRuns.find(r => r.status === 'completed');
+  const qualityScore = dash.qualityScore || (LAYERED_EVAL.find(l => l.level === '端到端')?.score ?? 0.86);
+  const satisfactionSummary = dash.satisfaction;
 
   const metrics = latest ? [
     { key: 'faithfulness', label: 'Faithfulness', value: latest.scores.faithfulness, baseline: latest.baseline_scores.faithfulness, icon: '🎯', desc: '答案忠实度' },
@@ -56,18 +93,25 @@ export function EvalDashboardPage({ onNavigate }: EvalDashboardPageProps) {
           </div>
           <select value={kbFilter} onChange={e => setKbFilter(e.target.value)} className="text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-900">
             <option value="">全部知识库</option>
-            {mockKBs.map(kb => <option key={kb.kb_id} value={kb.kb_id}>{kb.name}</option>)}
+            {kbs.map(kb => <option key={kb.kb_id} value={kb.kb_id}>{kb.name}</option>)}
           </select>
         </div>
       </div>
 
       {runningTask && (
-        <div className="flex items-center justify-between gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl">
-          <div className="flex items-center gap-2 text-sm text-blue-800 dark:text-blue-300">
-            <Loader size={16} className="animate-spin" />
-            <span><strong>{runningTask.name}</strong> 运行中 · {runningTask.test_set_size} 条样本</span>
+        <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-sm text-blue-800 dark:text-blue-300 min-w-0">
+              <Loader size={16} className="animate-spin flex-shrink-0" />
+              <span className="truncate">
+                <strong>{runningTask.name}</strong>
+                {runningTask.dataset_name ? ` · ${runningTask.dataset_name}` : ''}
+                {' · '}{runningTask.test_set_size} 条样本
+              </span>
+            </div>
+            <button type="button" onClick={() => onNavigate('eval-tasks')} className="text-xs text-blue-600 hover:underline flex-shrink-0">查看任务</button>
           </div>
-          <button type="button" onClick={() => onNavigate('eval-tasks')} className="text-xs text-blue-600 hover:underline">查看任务</button>
+          <EvalRunProgressBar run={runningTask} />
         </div>
       )}
 
@@ -192,8 +236,8 @@ export function EvalDashboardPage({ onNavigate }: EvalDashboardPageProps) {
           <ThumbsUp size={16} className="text-green-500" />
           <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">用户满意度</h3>
         </div>
-        <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{SATISFACTION_SUMMARY.positiveRate}%</p>
-        <p className="text-xs text-gray-500 mt-1">好评率 · NPS +{SATISFACTION_SUMMARY.nps}</p>
+        <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{satisfactionSummary.positiveRate}%</p>
+        <p className="text-xs text-gray-500 mt-1">好评率 · NPS +{satisfactionSummary.nps}{dashLoading ? ' · 加载中…' : ''}</p>
         <p className="text-[10px] text-blue-600 mt-3">查看详情 →</p>
       </button>
       </div>
@@ -208,7 +252,7 @@ export function EvalDashboardPage({ onNavigate }: EvalDashboardPageProps) {
           <div key={run.run_id} className="px-4 py-3 flex items-center gap-3 border-b border-gray-50 last:border-0 hover:bg-gray-50/70">
             <div className="flex-1 min-w-0">
               <div className="text-sm font-medium text-gray-800">{run.name}</div>
-              <div className="text-xs text-gray-500 mt-0.5">{mockKBs.find(k => k.kb_id === run.kb_id)?.name} · {run.test_set_size} 条样本 · {run.started_at.slice(0, 10)}</div>
+              <div className="text-xs text-gray-500 mt-0.5">{kbs.find(k => k.kb_id === run.kb_id)?.name} · {run.test_set_size} 条样本 · {String(run.started_at).slice(0, 10)}</div>
             </div>
             {run.status === 'running' ? (
               <span className="flex items-center gap-1 text-xs text-blue-600">
@@ -240,22 +284,86 @@ interface EvalTasksPageProps {
 }
 
 export function EvalTasksPage({ onNavigate }: EvalTasksPageProps) {
-  const [runs, setRuns] = useState(mockEvalRuns);
+  const apiMode = useApiMode();
   const [showCreate, setShowCreate] = useState(false);
   const [detailRunId, setDetailRunId] = useState<string | null>(null);
   const [failureCase, setFailureCase] = useState<FailureCase | null>(null);
+  const [showAddToDataset, setShowAddToDataset] = useState(false);
+  const [addToDatasetId, setAddToDatasetId] = useState('');
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
   const [taskName, setTaskName] = useState('');
+  const [createKbId, setCreateKbId] = useState('');
+  const [createDatasetId, setCreateDatasetId] = useState('');
   const [selectedMetrics, setSelectedMetrics] = useState(['faithfulness', 'context_precision', 'answer_relevancy']);
   const [statusFilter, setStatusFilter] = useState('');
   const [toast, setToast] = useState<string | null>(null);
+  const { data: kbList } = useKnowledgeBaseList('name', false, '', 1, 100, 'all');
+  const kbs = apiMode ? (kbList?.items ?? []) : mockKBs;
+  const { data: runs, refresh: refreshRuns } = useEvalRuns('', statusFilter);
+  const { data: datasets } = useEvalDatasets('', '');
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
   const detailRun = runs.find(r => r.run_id === detailRunId);
 
-  const stopRun = (runId: string) => {
-    setRuns(prev => prev.map(r => r.run_id === runId ? { ...r, status: 'failed' as const } : r));
+  const exportRunCsv = async (runId: string) => {
+    if (!apiMode) { showToast('演示模式：已模拟导出'); return; }
+    try {
+      const auth = getStoredAuth();
+      const res = await fetch(evalService.exportRunUrl(runId), {
+        headers: auth ? { Authorization: auth } : {},
+      });
+      if (!res.ok) throw new Error('导出失败');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `eval_${runId}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('评测报告已导出');
+    } catch (e) {
+      showToast((e as Error).message || '导出失败');
+    }
+  };
+
+  const stopRun = async (runId: string) => {
+    if (apiMode) {
+      try {
+        await evalService.stopRun(runId);
+        refreshRuns();
+      } catch (e) {
+        showToast((e as Error).message || '停止失败');
+        return;
+      }
+    }
     showToast('评测任务已停止');
+  };
+
+  const createTask = async () => {
+    if (!taskName.trim()) return;
+    const kbId = createKbId || kbs[0]?.kb_id;
+    const datasetId = createDatasetId || datasets[0]?.id;
+    if (apiMode) {
+      if (!kbId || !datasetId) {
+        showToast('请选择知识库和评测集');
+        return;
+      }
+      try {
+        await evalService.createRun({
+          name: taskName.trim(),
+          dataset_id: datasetId,
+          kb_id: kbId,
+          evaluation_type: 'end_to_end',
+          metrics: selectedMetrics,
+        });
+        refreshRuns();
+      } catch (e) {
+        showToast((e as Error).message || '创建失败');
+        return;
+      }
+    }
+    setShowCreate(false);
+    showToast('评测任务已创建，正在排队…');
   };
 
   const allMetrics = [
@@ -298,13 +406,29 @@ export function EvalTasksPage({ onNavigate }: EvalTasksPageProps) {
             <option value="running">运行中</option>
             <option value="failed">失败</option>
           </select>
-          <button type="button" onClick={() => showToast('评测报告已导出 CSV')} className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-white dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300">
+          <button
+            type="button"
+            onClick={() => {
+              const rid = detailRunId || runs.find(r => r.status === 'completed')?.run_id;
+              if (rid) void exportRunCsv(rid);
+              else showToast('请先选择已完成的评测任务');
+            }}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-white dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300"
+          >
             <Download size={14} /> 导出
           </button>
           <button type="button" onClick={() => onNavigate('eval-datasets')} className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-white dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300">
             <Filter size={14} /> 评测集
           </button>
-          <button type="button" onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
+          <button
+            type="button"
+            onClick={() => {
+              setCreateKbId(kbs[0]?.kb_id || '');
+              setCreateDatasetId(datasets[0]?.id || '');
+              setShowCreate(true);
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
+          >
             <Plus size={16} /> 创建评测任务
           </button>
         </div>
@@ -328,7 +452,11 @@ export function EvalTasksPage({ onNavigate }: EvalTasksPageProps) {
                 <tr key={run.run_id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50">
                   <td className="px-4 py-2.5">
                     <p className="font-medium text-gray-900 dark:text-gray-100 text-xs">{run.name}</p>
-                    <p className="text-[10px] text-gray-400">{run.test_set_size} 条 · {run.started_at.slice(0, 10)}</p>
+                    <p className="text-[10px] text-gray-400">
+                      {run.dataset_name || datasets.find(d => d.id === run.dataset_id)?.name || '评测集'}
+                      {' · '}{run.test_set_size} 条 · {run.started_at.slice(0, 10)}
+                    </p>
+                    {run.status === 'running' && <EvalRunProgressBar run={run} />}
                   </td>
                   <td className="px-4 py-2.5">{statusIcons[run.status]}</td>
                   <td className="px-4 py-2.5 text-xs">{run.status === 'completed' ? run.scores.faithfulness.toFixed(2) : '—'}</td>
@@ -336,7 +464,7 @@ export function EvalTasksPage({ onNavigate }: EvalTasksPageProps) {
                   <td className="px-4 py-2.5 text-xs">{run.status === 'completed' ? run.scores.answer_relevancy.toFixed(2) : '—'}</td>
                   <td className="px-4 py-2.5">
                     <div className="flex gap-1">
-                      {run.status === 'completed' && <button type="button" onClick={() => setDetailRunId(run.run_id)} className="text-[10px] text-blue-600">详情</button>}
+                      {(run.status === 'completed' || run.status === 'running') && <button type="button" onClick={() => setDetailRunId(run.run_id)} className="text-[10px] text-blue-600">详情</button>}
                       {run.status === 'running' && <button type="button" onClick={() => stopRun(run.run_id)} className="text-[10px] text-red-600">停止</button>}
                     </div>
                   </td>
@@ -356,10 +484,16 @@ export function EvalTasksPage({ onNavigate }: EvalTasksPageProps) {
                   <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">{run.name}</h3>
                 </div>
                 <p className="text-xs text-gray-500">
-                  {mockKBs.find(k => k.kb_id === run.kb_id)?.name} · {run.test_set_size} 条测试样本
-                  {run.duration_min && ` · 耗时 ${run.duration_min} 分钟`}
-                  · {run.started_at.slice(0, 10)}
+                  {run.kb_name || kbs.find(k => k.kb_id === run.kb_id)?.name}
+                  {' · '}{run.dataset_name || datasets.find(d => d.id === run.dataset_id)?.name || '评测集'}
+                  {' · '}{run.test_set_size} 条样本
+                  {run.duration_min != null && ` · 耗时 ${run.duration_min} 分钟`}
+                  {' · '}{run.started_at.slice(0, 10)}
                 </p>
+                {run.status === 'running' && <EvalRunProgressBar run={run} />}
+                {(run.status === 'failed' || (run.status === 'completed' && run.scores.faithfulness === 0)) && run.error_message && (
+                  <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-1">{run.error_message}</p>
+                )}
               </div>
               <div className="flex gap-2 flex-shrink-0 items-center">
                 {run.status === 'running' && (
@@ -367,7 +501,7 @@ export function EvalTasksPage({ onNavigate }: EvalTasksPageProps) {
                     <StopCircle size={11} /> 停止
                   </button>
                 )}
-                {run.status === 'completed' && (
+                {(run.status === 'completed' || run.status === 'running') && (
                   <button type="button" onClick={() => setDetailRunId(run.run_id)} className="text-xs px-2 py-1 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 flex items-center gap-1 text-gray-600 dark:text-gray-400">
                     <Eye size={11} /> 详情
                   </button>
@@ -393,21 +527,14 @@ export function EvalTasksPage({ onNavigate }: EvalTasksPageProps) {
             </div>
 
             {run.status === 'completed' && (
-              <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
-                <h4 className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2">失败案例 (Top 3)</h4>
-                <div className="space-y-1.5">
-                  {FAILURE_CASES.slice(0, 3).map(c => (
-                    <button key={c.rank} type="button" onClick={() => setFailureCase(c)} className="w-full flex items-start gap-2 p-2 bg-red-50/50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30 rounded-lg text-xs text-left hover:border-red-300">
-                      <span className="text-red-400 flex-shrink-0 font-bold">#{c.rank}</span>
-                      <div className="flex-1 min-w-0">
-                        <span className="text-gray-700 dark:text-gray-300 font-medium">{c.query}</span>
-                        <span className="text-gray-500 mx-1">→</span>
-                        <span className="text-red-600 dark:text-red-400">{c.actual}</span>
-                      </div>
-                      <span className="text-red-500 font-medium flex-shrink-0">{c.score}</span>
-                    </button>
-                  ))}
-                </div>
+              <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setDetailRunId(run.run_id)}
+                  className="text-[10px] text-blue-600 hover:underline"
+                >
+                  查看本任务失败案例与指标详情 →
+                </button>
               </div>
             )}
           </div>
@@ -430,24 +557,22 @@ export function EvalTasksPage({ onNavigate }: EvalTasksPageProps) {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">目标知识库 <span className="text-red-500">*</span></label>
-                <select className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none">
-                  {mockKBs.map(kb => <option key={kb.kb_id}>{kb.name}</option>)}
+                <select value={createKbId} onChange={e => setCreateKbId(e.target.value)} className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none">
+                  {kbs.map(kb => <option key={kb.kb_id} value={kb.kb_id}>{kb.name}</option>)}
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">评测集</label>
-                <div className="space-y-2">
-                  {[
-                    { v: 'default', l: '使用默认评测集（500条）' },
-                    { v: 'upload', l: '上传自定义评测集 (CSV/JSON)' },
-                    { v: 'generate', l: '从历史查询生成（近30天）' },
-                  ].map(opt => (
-                    <label key={opt.v} className="flex items-center gap-2 cursor-pointer">
-                      <input type="radio" name="testset" defaultChecked={opt.v === 'default'} className="text-blue-600" />
-                      <span className="text-sm text-gray-700">{opt.l}</span>
-                    </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">评测数据集 <span className="text-red-500">*</span></label>
+                <select
+                  value={createDatasetId || datasets[0]?.id || ''}
+                  onChange={e => setCreateDatasetId(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none"
+                >
+                  {datasets.length === 0 ? <option value="">请先在「评测数据集」页创建并导入样本</option> : datasets.map(ds => (
+                    <option key={ds.id} value={ds.id}>{ds.name} ({ds.sampleCount} 条)</option>
                   ))}
-                </div>
+                </select>
+                <p className="text-[10px] text-gray-400 mt-1">失败案例与指标均基于所选数据集中的问答样本</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">评测指标</label>
@@ -465,14 +590,10 @@ export function EvalTasksPage({ onNavigate }: EvalTasksPageProps) {
                   ))}
                 </div>
               </div>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" defaultChecked className="rounded text-blue-600" />
-                <span className="text-sm text-gray-700">与上次评测结果对比</span>
-              </label>
             </div>
             <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3">
               <button onClick={() => setShowCreate(false)} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700">取消</button>
-              <button onClick={() => { if (!taskName.trim()) return; setShowCreate(false); showToast('评测任务已创建，正在排队…'); }} disabled={!taskName} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-40">
+              <button onClick={() => void createTask()} disabled={!taskName} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-40">
                 创建评测
               </button>
             </div>
@@ -481,73 +602,69 @@ export function EvalTasksPage({ onNavigate }: EvalTasksPageProps) {
       )}
 
       {detailRun && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-y-auto">
-            <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex justify-between sticky top-0 bg-white dark:bg-gray-900">
-              <div>
-                <h2 className="text-base font-bold text-gray-900 dark:text-gray-100">评测结果: {detailRun.name}</h2>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  {detailRun.status === 'completed' ? '✅ 完成' : detailRun.status} · {detailRun.duration_min}min · {detailRun.test_set_size} 条 · {detailRun.started_at.slice(0, 10)}
-                </p>
-              </div>
-              <button type="button" onClick={() => setDetailRunId(null)} className="text-gray-400"><X size={16} /></button>
-            </div>
-            <div className="p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                {Object.entries(detailRun.scores).map(([k, v]) => {
-                  const baseline = detailRun.baseline_scores[k];
-                  const diff = v - baseline;
-                  const lowerBetter = k === 'hallucination_rate';
-                  const improved = lowerBetter ? diff < 0 : diff > 0;
-                  return (
-                    <div key={k} className={`p-3 rounded-xl border ${improved ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'}`}>
-                      <p className="text-[10px] text-gray-500 capitalize">{k.replace(/_/g, ' ')}</p>
-                      <p className="text-lg font-bold text-gray-900 dark:text-gray-100">{v.toFixed(2)} <span className="text-xs font-normal">{improved ? '↑' : '↓'}{Math.abs(diff).toFixed(2)}</span></p>
-                    </div>
-                  );
-                })}
-              </div>
-              <div>
-                <h4 className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2">失败案例 Top 10</h4>
-                <div className="space-y-2">
-                  {FAILURE_CASES.map(c => (
-                    <button key={c.rank} type="button" onClick={() => setFailureCase(c)} className="w-full p-3 border border-gray-200 dark:border-gray-700 rounded-lg text-xs text-left hover:border-blue-300">
-                      <p className="font-medium text-gray-800 dark:text-gray-200">#{c.rank} {c.query}</p>
-                      <p className="text-gray-500 mt-1">期望: {c.expected}</p>
-                      <p className="text-red-600 dark:text-red-400">实际: {c.actual}</p>
-                      <p className="text-gray-400 mt-1">{c.metric}: {c.score}</p>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <EvalRunDetailModal
+          run={detailRun}
+          kbName={detailRun.kb_name || kbs.find(k => k.kb_id === detailRun.kb_id)?.name}
+          datasets={datasets}
+          onClose={() => setDetailRunId(null)}
+          onExport={rid => void exportRunCsv(rid)}
+          onSelectCase={setFailureCase}
+        />
       )}
 
       {failureCase && (
-        <div className="fixed inset-0 z-50 flex">
-          <div className="flex-1 bg-black/40" onClick={() => setFailureCase(null)} />
-          <div className="w-full max-w-md bg-white dark:bg-gray-900 shadow-2xl p-6 overflow-y-auto">
-            <div className="flex justify-between mb-4">
-              <h3 className="text-base font-bold text-gray-900 dark:text-gray-100">失败案例 #{failureCase.rank}</h3>
-              <button type="button" onClick={() => setFailureCase(null)}><X size={16} className="text-gray-400" /></button>
-            </div>
-            <div className="space-y-3 text-sm">
-              <div><p className="text-xs text-gray-500">查询</p><p className="text-gray-800 dark:text-gray-200">{failureCase.query}</p></div>
-              <div><p className="text-xs text-gray-500">期望答案</p><p className="text-green-700 dark:text-green-400">{failureCase.expected}</p></div>
-              <div><p className="text-xs text-gray-500">实际答案</p><p className="text-red-600 dark:text-red-400">{failureCase.actual}</p></div>
-              {failureCase.citations && (
-                <div>
-                  <p className="text-xs text-gray-500 mb-1">引用片段</p>
-                  {failureCase.citations.map(c => <p key={c} className="text-xs text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 p-2 rounded mb-1">{c}</p>)}
-                </div>
-              )}
-              <p className="text-xs text-gray-400">{failureCase.metric}: {failureCase.score}</p>
-            </div>
-            <div className="flex gap-2 mt-6">
-              <button type="button" onClick={() => { setFailureCase(null); onNavigate('eval-datasets'); showToast('已加入评测数据集'); }} className="flex-1 py-2 bg-blue-600 text-white text-sm rounded-lg">加入数据集</button>
-              <button type="button" onClick={() => setFailureCase(null)} className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-sm rounded-lg">关闭</button>
+        <EvalFailureCaseDrawer
+          caseItem={failureCase}
+          kbId={detailRun?.kb_id}
+          onClose={() => setFailureCase(null)}
+          onAddToDataset={() => {
+            setAddToDatasetId(detailRun?.dataset_id || datasets[0]?.id || '');
+            setShowAddToDataset(true);
+          }}
+        />
+      )}
+
+      {showAddToDataset && failureCase && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl w-full max-w-sm p-5">
+            <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-3">加入评测数据集</h3>
+            <p className="text-xs text-gray-500 mb-2 truncate">Q: {failureCase.query}</p>
+            <label className="text-xs text-gray-600 dark:text-gray-400 block mb-1">目标数据集</label>
+            <select
+              value={addToDatasetId}
+              onChange={e => setAddToDatasetId(e.target.value)}
+              className="w-full text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 bg-white dark:bg-gray-800 mb-4"
+            >
+              {datasets.length === 0 ? <option value="">暂无数据集</option> : datasets.map(ds => (
+                <option key={ds.id} value={ds.id}>{ds.name}</option>
+              ))}
+            </select>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setShowAddToDataset(false)} className="flex-1 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg">取消</button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!addToDatasetId) { showToast('请选择数据集'); return; }
+                  if (apiMode) {
+                    try {
+                      await evalService.sampleFromChat({
+                        dataset_id: addToDatasetId,
+                        question: failureCase.query,
+                        answer: failureCase.expected,
+                      });
+                    } catch (e) {
+                      showToast((e as Error).message || '加入失败');
+                      return;
+                    }
+                  }
+                  setShowAddToDataset(false);
+                  setFailureCase(null);
+                  showToast('已加入评测数据集');
+                }}
+                className="flex-1 py-2 text-sm bg-blue-600 text-white rounded-lg"
+              >
+                确认
+              </button>
             </div>
           </div>
         </div>
@@ -561,12 +678,16 @@ interface ABTestPageProps {
 }
 
 export function ABTestPage({ onNavigate }: ABTestPageProps) {
+  const apiMode = useApiMode();
   const [showCreate, setShowCreate] = useState(false);
-  const [tests, setTests] = useState(mockABTests);
   const [reportTestId, setReportTestId] = useState<string | null>(null);
   const [trafficSplit, setTrafficSplit] = useState(50);
   const [varGroup, setVarGroup] = useState(AB_TEST_VARIABLES[0].group);
   const [toast, setToast] = useState<string | null>(null);
+  const { data: tests, refresh: refreshAb } = useAbTests();
+  const { data: datasets } = useEvalDatasets('', '');
+  const { data: kbList } = useKnowledgeBaseList('name', false, '', 1, 100, 'all');
+  const kbs = apiMode ? (kbList?.items ?? []) : mockKBs;
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
   const varOptions = AB_TEST_VARIABLES.find(g => g.group === varGroup)?.options ?? [];
@@ -574,12 +695,20 @@ export function ABTestPage({ onNavigate }: ABTestPageProps) {
   const historyTests = tests.filter(t => t.status === 'completed');
   const reportTest = tests.find(t => t.test_id === reportTestId);
 
-  const stopTest = (testId: string) => {
-    setTests(prev => prev.map(t => t.test_id === testId ? { ...t, status: 'completed' as const, winner: 'a' } : t));
+  const stopTest = async (testId: string) => {
+    if (apiMode) {
+      try {
+        await evalService.stopAbTest(testId);
+        refreshAb();
+      } catch (e) {
+        showToast((e as Error).message || '停止失败');
+        return;
+      }
+    }
     showToast('测试已停止');
   };
 
-  const renderTestCard = (test: typeof mockABTests[0]) => (
+  const renderTestCard = (test: (typeof tests)[0]) => (
     <div key={test.test_id} className={`bg-white dark:bg-gray-900 rounded-xl border-2 p-5 ${test.status === 'running' ? 'border-blue-200 dark:border-blue-800' : 'border-gray-200 dark:border-gray-700'}`}>
       <div className="flex items-center justify-between mb-3">
         <div>

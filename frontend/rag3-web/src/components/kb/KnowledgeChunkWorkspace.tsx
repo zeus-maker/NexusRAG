@@ -23,6 +23,7 @@ interface Props {
   onNavigate?: (page: string, extra?: Record<string, unknown>) => void;
   pageSize?: number;
   keywords?: string;
+  initialChunkId?: string;
   showChunkActions?: boolean;
   actions?: ChunkWorkspaceActions;
   layout?: 'split' | 'stack';
@@ -34,6 +35,7 @@ export function KnowledgeChunkWorkspace({
   onNavigate,
   pageSize = 200,
   keywords,
+  initialChunkId,
   showChunkActions = false,
   actions,
   layout = 'split',
@@ -71,10 +73,17 @@ export function KnowledgeChunkWorkspace({
 
   useEffect(() => {
     if (loading) return;
+    if (initialChunkId) {
+      const hit = chunkResult.items.find(c => c.chunk_id === initialChunkId);
+      if (hit) {
+        setSelectedChunkId(hit.chunk_id);
+        return;
+      }
+    }
     if (!selectedChunkId && chunkResult.items.length > 0) {
       setSelectedChunkId(chunkResult.items[0].chunk_id);
     }
-  }, [chunkResult.items, selectedChunkId, loading, doc.doc_id]);
+  }, [chunkResult.items, selectedChunkId, loading, doc.doc_id, initialChunkId]);
 
   useEffect(() => {
     let cancelled = false;

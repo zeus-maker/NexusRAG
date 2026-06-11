@@ -1,3 +1,5 @@
+import type { Citation } from '../types';
+
 export interface EvalDataset {
   id: string;
   name: string;
@@ -6,6 +8,7 @@ export interface EvalDataset {
   kbName: string;
   tags: string[];
   updatedAt: string;
+  description?: string;
 }
 
 export interface EvalSample {
@@ -17,12 +20,14 @@ export interface EvalSample {
 
 export interface FailureCase {
   rank: number;
+  caseId?: string;
   query: string;
   expected: string;
   actual: string;
   score: number;
   metric: string;
-  citations?: string[];
+  metrics?: Record<string, number>;
+  citations?: Citation[];
 }
 
 export interface SatisfactionSummary {
@@ -63,9 +68,13 @@ export const EVAL_SAMPLES: Record<string, EvalSample[]> = {
   ],
 };
 
+function mockCite(index: number, docName: string, snippet = docName): Citation {
+  return { index, doc_name: docName, page_number: 0, section: '', snippet, relevance_score: 0.8 };
+}
+
 export const FAILURE_CASES: FailureCase[] = [
-  { rank: 1, query: '供应商保密义务范围', expected: '保密条款第 8.1–8.5 条', actual: '引用了过期的 V4 版本条款', score: 0.45, metric: 'faithfulness', citations: ['合同模板V4.pdf §8.2', '合同模板V5.pdf §8.1'] },
-  { rank: 2, query: '延迟交货违约金上限', expected: '合同金额 20%', actual: '回答"不超过 30%"', score: 0.52, metric: 'faithfulness', citations: ['采购合同标准条款.pdf §5.3'] },
+  { rank: 1, query: '供应商保密义务范围', expected: '保密条款第 8.1–8.5 条', actual: '引用了过期的 V4 版本条款', score: 0.45, metric: 'faithfulness', citations: [mockCite(1, '合同模板V4.pdf §8.2'), mockCite(2, '合同模板V5.pdf §8.1')] },
+  { rank: 2, query: '延迟交货违约金上限', expected: '合同金额 20%', actual: '回答"不超过 30%"', score: 0.52, metric: 'faithfulness', citations: [mockCite(1, '采购合同标准条款.pdf §5.3')] },
   { rank: 3, query: '合同解除条件', expected: '第 6.2 条规定', actual: '未准确引用条款编号', score: 0.61, metric: 'faithfulness' },
   { rank: 4, query: '不可抗力通知时限', expected: '48 小时内书面通知', actual: '回答"合理期限内"', score: 0.58, metric: 'answer_relevancy' },
   { rank: 5, query: '验收不合格处理方式', expected: '拒收或要求更换', actual: '仅提到拒收', score: 0.64, metric: 'context_precision' },

@@ -85,3 +85,188 @@
 
 - `backend/ragflow_rag30/rag3/generation_service.py`
 - `frontend/rag3-web/src/utils/thinkContent.ts`
+
+---
+
+## 4. 评测中心对接真实 API（8 Tab）
+
+### 背景与目标
+
+评测中心 UI 已完整但数据来自 `evalMock.ts` / `mockData.ts`，创建/停止等操作为本地 toast。需新建 `evalService` + hooks，在 `useApiMode()` 下接 `/api/v1/eval/*`。
+
+### 改动摘要
+
+- 新建 `evalService.ts`、`evalMappers.ts`、`types/eval.ts`、`useEvalData.ts`（dashboard/runs/datasets/satisfaction/cost/replay/ab/route-learning）。
+- `Evaluation.tsx` 三页：仪表盘/任务/A-B 接 API，任务创建传 `dataset_id+kb_id`，running 5s 轮询，失败案例拉 scores。
+- `EvalDataset.tsx`：CRUD、multipart 导入、样本增删。
+- `EvalSatisfaction.tsx`、`EvalExtra.tsx`（成本+回放）、`EvalRouteLearning.tsx` 接对应端点；mock 模式保留演示。
+
+### 验证与风险
+
+- `npm run build` 通过；需后端重启 + 登录后 `VITE_USE_REAL_API` 冒烟 8 Tab。
+- 无数据集时创建任务会提示选择评测集。
+
+### 涉及文件
+
+- `src/services/evalService.ts`、`evalMappers.ts`、`hooks/useEvalData.ts`、`types/eval.ts`
+- `src/pages/Evaluation.tsx`、`EvalDataset.tsx`、`EvalSatisfaction.tsx`、`EvalExtra.tsx`、`EvalRouteLearning.tsx`
+
+---
+
+## 5. 修复评测 Tab 切换：mock 数据集 ID 与 scores 缺省
+
+### 背景与目标
+
+后端列表 API 修复后，数据集页仍请求 `/eval/datasets/ds-001/samples`（mock 默认 ID），触发「数据集不存在」；任务页在 `scores` 字段缺失时可能对 `undefined` 调用 `.toFixed()` 崩溃。
+
+### 改动摘要
+
+- `EvalDataset.tsx`：API 模式下 `selectedId` 初始为空，列表加载后自动选中首项或校验已有选中项；样本请求与增删改导入统一走 `activeDatasetId`，不再硬编码 `ds-001`。
+- `evalMappers.ts`：`normalizeScores()` 为 faithfulness / recall@10 等六项补 0 默认值；A/B 测试 `p_value` 缺省为 1，避免报告弹窗 `.toFixed` 报错。
+
+### 验证与风险
+
+- `npm run build` 通过；重启后端 + 登录后逐 Tab 切换，数据集页空库应显示空态而非 404 日志。
+- Auth 警告 `token=your-token` 来自环境占位符，与本次无关；需配置真实 `VITE_RAGFLOW_AUTH_TOKEN` 或登录态。
+
+### 涉及文件
+
+- `src/pages/EvalDataset.tsx` — 选中数据集与 API 请求对齐
+- `src/services/evalMappers.ts` — scores / p_value 归一化
+
+---
+
+## 6. 评测数据集页 CRUD 与导入闭环
+
+### 背景与目标
+
+`EvalDataset.tsx` 此前编辑/删除数据集、编辑样本、知识库选择、JSON 导入、从对话采样均为占位；失败案例「加入数据集」仅 toast。需接满 `evalService` 已有端点。
+
+### 改动摘要
+
+- 新建/编辑数据集：知识库下拉、描述、逗号分隔标签；删除确认；列表展示 KB 名称（从 `useKnowledgeBaseList` 解析）。
+- 样本：添加/编辑/删除接 API；`evalService.updateSample` + JSON 导入走 `{samples}` body、CSV 走 multipart。
+- 从对话采样弹窗接 `sampleFromChat`；导入须先选中数据集。
+- `EvalTasksPage` 失败案例「加入数据集」弹窗选择目标集并调用 `sampleFromChat`。
+- `useEvalDatasets` 增加 `tag` 参数传后端筛选。
+
+### 验证与风险
+
+- `npm run build` 通过；冒烟：新建集 → 选 KB → 导入 `docs/example/eval/*.csv` → 编辑样本 → 创建任务。
+- 演示模式（`VITE_USE_REAL_API=false`）仍用本地 state，行为与 API 模式分支独立。
+
+### 涉及文件
+
+- `src/pages/EvalDataset.tsx` — 完整 CRUD UI
+- `src/pages/Evaluation.tsx` — 失败案例入集
+- `src/services/evalService.ts` — updateSample、JSON 导入
+- `src/hooks/useEvalData.ts` — tag 筛选
+
+---
+
+## 7. 评测集导入支持拖拽上传
+
+### 背景与目标
+
+导入样本弹窗仅支持点击「选择文件」，与知识库文档上传区体验不一致；用户希望将 `docs/example/eval/*.csv` 拖入即可导入。
+
+### 改动摘要
+
+- `EvalDataset.tsx` 导入区增加 `onDragEnter/Over/Leave/Drop`，拖入高亮、松手即调 `handleImport`；点击区域同样打开文件选择器。
+- 导入中显示 `Loader2` 并禁用关闭/重复上传；校验扩展名 `.csv/.json`。
+
+### 验证与风险
+
+- `npm run build` 通过；打开导入弹窗拖入 CSV 应触发与点击选择相同的 API 请求。
+
+### 涉及文件
+
+- `src/pages/EvalDataset.tsx`
+
+---
+
+## 8. 评测任务进度条、ETA 与失败案例对齐所选数据集
+
+### 背景与目标
+
+任务页卡片对所有已完成任务展示全局 mock 失败案例；运行任务无进度；创建弹窗含无效「默认 500 条」单选项。
+
+### 改动摘要
+
+- `EvalRunProgressBar`：展示 progress%、已完成条数、预计剩余时间；仪表盘与任务列表/详情共用。
+- API 模式下失败案例仅来自 `useRunScores(detailRunId)`（faithfulness&lt;0.7），移除卡片内 mock Top3。
+- 任务展示 `dataset_name`；创建任务默认选中首个 KB/数据集；导出接真实 CSV 下载。
+- `mapEvalRun` 映射 progress、completed_cases、eta_seconds、dataset_id/name。
+
+### 验证与风险
+
+- `npm run build` 通过；创建任务选 `docs/example/eval` 对应数据集后，详情失败案例 query 应与 CSV 一致。
+- 运行中任务依赖 `useEvalRuns` 5s 轮询刷新 progress。
+
+### 涉及文件
+
+- `src/pages/Evaluation.tsx`
+- `src/services/evalMappers.ts`、`evalService.ts`
+- `src/hooks/useEvalData.ts`
+- `src/types/index.ts`、`types/eval.ts`
+
+---
+
+## 9. 评测任务详情面板增强
+
+### 背景与目标
+
+评测详情弹窗仅展示汇总分数与 Top10 低分案例，缺少检索诊断、全量样本浏览与单条多指标视图；运行中任务无法查看实时进度详情。
+
+### 改动摘要
+
+- 新增 `EvalRunDetailModal`：三 Tab（概览 / 全部样本 / 低分案例）、指标卡片含中文说明与进度条、Faithfulness 分布图、诊断与 `zero_retrieval_cases` 提示、运行中任务可打开并轮询进度。
+- 样本行展示 F/AR/CP/R@10 指标芯片与检索片段数；侧栏失败案例抽屉展示完整 `metrics` 对象。
+- `useRunScores` 支持 `failuresOnly`、排序、分页参数，返回 `{ items, total, totalCases }`；对接后端 scores 新响应结构。
+- 任务卡片/表格支持运行中「详情」；展示 `kb_name`、诊断文案。
+
+### 后端配合
+
+- `GET /eval/runs/{id}/scores` 返回 `{ items, total, total_cases, ... }` 分页元数据。
+- `_run_to_api` 补充 `kb_name`。
+
+### 验证与风险
+
+- `npm run build` 通过；`py_compile evaluation_api.py` 通过。
+- 打开已完成任务详情 → 概览见分布图 → 全部样本可点单条 → 低分案例 Tab 仅 faithfulness&lt;0.7。
+- 旧客户端若仍解析 scores 为数组需同步升级前端。
+
+### 涉及文件
+
+- `src/components/EvalRunDetailModal.tsx`（新建）
+- `src/pages/Evaluation.tsx`
+- `src/hooks/useEvalData.ts`
+- `src/services/evalMappers.ts`、`evalService.ts`
+- `src/types/index.ts`、`types/eval.ts`、`data/evalMock.ts`
+- `api/apps/restful_apis/evaluation_api.py`
+
+## 10. 失败案例详情：Markdown 渲染与引用新窗口跳转
+
+失败案例侧栏将 `actual`/`expected` 以纯文本展示，Markdown 符号（如 `**标题**`）原样输出；引用片段仅为 `doc · snippet` 字符串，无法跳转知识库分块页。
+
+### 改动摘要
+
+- 后端 `_format_citations` 改为返回结构化对象（`index/doc_id/chunk_id/doc_name/page_number/section/snippet/relevance_score`），与对话 `Citation` 类型对齐，最多 10 条。
+- 新增 `EvalFailureCaseDrawer`：`ChatMarkdownContent` 渲染期望/实际答案，答案内 `[n]` 引用可点击；引用列表每条带「新窗口」按钮。
+- `citationNavigation.ts` 生成 `#/kb-chunks?kb=&doc=&chunk=` URL，`window.open` 打开分块预览；`navigationUrl`/`store` 增加 `chunk` 参数，`KnowledgeChunkWorkspace` 支持 `initialChunkId` 自动选中分块。
+- `mapFailureCase` 映射结构化 citations；mock 数据同步为 `Citation[]`。
+
+### 验证与风险
+
+- `npm run build` 通过；`py_compile evaluation_api.py` 通过。
+- 评测任务 → 详情 → 点击低分样本：答案以 Markdown 渲染；引用卡片点击外链图标在新标签打开分块页。
+- 分块若不在当前分页，新窗口仍打开文档分块页但不会自动翻页定位（需后续按 chunk_id 反查页码）。
+
+### 涉及文件
+
+- `api/apps/restful_apis/evaluation_api.py`
+- `src/components/EvalFailureCaseDrawer.tsx`（新建）
+- `src/utils/citationNavigation.ts`（新建）
+- `src/pages/Evaluation.tsx`、`navigationUrl.ts`、`store.ts`、`App.tsx`
+- `src/pages/KnowledgeBase.tsx`、`components/kb/KnowledgeChunkWorkspace.tsx`
+- `src/services/evalMappers.ts`、`data/evalMock.ts`

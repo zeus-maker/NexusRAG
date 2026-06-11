@@ -7,6 +7,9 @@ import {
 } from 'lucide-react';
 import { EvalSubNav } from '../components/EvalSubNav';
 import { COST_BREAKDOWN, BUDGET_CONFIG, REPLAY_TASKS } from '../data/evalMock';
+import { useEvalCost, useReplayTasks } from '../hooks/useEvalData';
+import { evalService } from '../services/evalService';
+import { useApiMode } from '../services/http';
 
 // ─── Cost Center ───────────────────────────────────────────────────────────────
 
@@ -42,11 +45,30 @@ interface EvalExtraPageProps {
 }
 
 export function CostCenterPage({ onNavigate }: EvalExtraPageProps) {
+  const apiMode = useApiMode();
   const [tab, setTab] = useState<'kb' | 'user' | 'model' | 'trend'>('kb');
+  const [period] = useState('30d');
+  const { data: costData } = useEvalCost(period);
 
-  const totalTokens = COST_BY_KB.reduce((s, k) => s + k.tokens, 0);
-  const totalCost = COST_BY_KB.reduce((s, k) => s + k.cost, 0);
-  const maxTokens = Math.max(...COST_BY_KB.map(k => k.tokens));
+  const kbRows = apiMode && costData.byKb.length
+    ? costData.byKb.map((r, i) => ({ name: r.name || r.id, tokens: r.tokens, cost: r.cost_cny, queries: 0, color: ['bg-blue-500', 'bg-purple-500', 'bg-green-500'][i % 3] }))
+    : COST_BY_KB;
+  const userRows = apiMode && costData.byUser.length
+    ? costData.byUser.map(r => ({ name: r.name || r.id, dept: '—', tokens: r.tokens, cost: r.cost_cny, queries: 0 }))
+    : COST_BY_USER;
+  const modelRows = apiMode && costData.byModel.length
+    ? costData.byModel.map(r => ({ name: r.name || r.id, type: 'LLM', tokens: r.tokens, cost: r.cost_cny, share: 0 }))
+    : COST_BY_MODEL;
+  const dailyCost = apiMode && costData.trend.length
+    ? costData.trend.map(t => t.cost_cny)
+    : DAILY_COST;
+
+  const totalTokens = apiMode && costData.summary ? costData.summary.total_tokens : kbRows.reduce((s, k) => s + k.tokens, 0);
+  const totalCost = apiMode && costData.summary ? costData.summary.total_cost_cny : kbRows.reduce((s, k) => s + k.cost, 0);
+  const maxTokens = Math.max(...kbRows.map(k => k.tokens), 1);
+  const budgetCfg = apiMode && costData.budget
+    ? { used: (costData.summary?.total_cost_cny ?? 0), total: costData.budget.monthly_budget, currency: '¥' }
+    : BUDGET_CONFIG;
 
   const TABS = [
     { id: 'kb', label: '按知识库' },
@@ -78,11 +100,11 @@ export function CostCenterPage({ onNavigate }: EvalExtraPageProps) {
         </div>
       </div>
 
-      {BUDGET_CONFIG.used / BUDGET_CONFIG.total >= 0.65 && (
-        <div className={`p-3 rounded-xl border flex items-center justify-between ${BUDGET_CONFIG.used / BUDGET_CONFIG.total >= 0.85 ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800' : 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800'}`}>
+      {budgetCfg.used / budgetCfg.total >= 0.65 && (
+        <div className={`p-3 rounded-xl border flex items-center justify-between ${budgetCfg.used / budgetCfg.total >= 0.85 ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800' : 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800'}`}>
           <div className="flex items-center gap-2 text-sm">
-            <AlertCircle size={16} className={BUDGET_CONFIG.used / BUDGET_CONFIG.total >= 0.85 ? 'text-red-600' : 'text-amber-600'} />
-            <span className="text-gray-800 dark:text-gray-200">月度预算已用 <strong>{((BUDGET_CONFIG.used / BUDGET_CONFIG.total) * 100).toFixed(0)}%</strong>（{BUDGET_CONFIG.currency}{BUDGET_CONFIG.used}/{BUDGET_CONFIG.total}）</span>
+            <AlertCircle size={16} className={budgetCfg.used / budgetCfg.total >= 0.85 ? 'text-red-600' : 'text-amber-600'} />
+            <span className="text-gray-800 dark:text-gray-200">月度预算已用 <strong>{((budgetCfg.used / budgetCfg.total) * 100).toFixed(0)}%</strong>（{budgetCfg.currency}{budgetCfg.used}/{budgetCfg.total}）<span className="text-gray-400 ml-1">估算</span></span>
           </div>
           <button type="button" className="text-xs text-blue-600 hover:underline">调整预算</button>
         </div>
@@ -92,7 +114,7 @@ export function CostCenterPage({ onNavigate }: EvalExtraPageProps) {
         {COST_BREAKDOWN.map(c => (
           <div key={c.label} className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
             <span className="text-lg">{c.icon}</span>
-            <div className="text-xl font-bold text-gray-900 dark:text-gray-100 mt-1">{BUDGET_CONFIG.currency}{c.amount}</div>
+            <div className="text-xl font-bold text-gray-900 dark:text-gray-100 mt-1">{budgetCfg.currency}{c.amount}</div>
             <div className="text-xs text-gray-600 dark:text-gray-400">{c.label}</div>
           </div>
         ))}
@@ -102,8 +124,8 @@ export function CostCenterPage({ onNavigate }: EvalExtraPageProps) {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
           { label: '总 Token 消耗', value: (totalTokens / 1_000_000).toFixed(1) + 'M', icon: <Database size={15} className="text-blue-500" />, bg: 'bg-blue-50 dark:bg-blue-900/20', sub: '本月累计' },
-          { label: '预估总费用', value: BUDGET_CONFIG.currency + BUDGET_CONFIG.used, icon: <DollarSign size={15} className="text-green-500" />, bg: 'bg-green-50 dark:bg-green-900/20', sub: '含模型API费用' },
-          { label: '总查询数', value: COST_BY_KB.reduce((s, k) => s + k.queries, 0).toLocaleString(), icon: <MessageSquare size={15} className="text-purple-500" />, bg: 'bg-purple-50 dark:bg-purple-900/20', sub: '本月' },
+          { label: '预估总费用', value: budgetCfg.currency + totalCost.toFixed(2), icon: <DollarSign size={15} className="text-green-500" />, bg: 'bg-green-50 dark:bg-green-900/20', sub: '含模型API费用' },
+          { label: '总 Token', value: totalTokens.toLocaleString(), icon: <MessageSquare size={15} className="text-purple-500" />, bg: 'bg-purple-50 dark:bg-purple-900/20', sub: '本月' },
           { label: '平均每查询成本', value: '¥0.008', icon: <TrendingUp size={15} className="text-orange-500" />, bg: 'bg-orange-50 dark:bg-orange-900/20', sub: '较上月 -8%' },
         ].map((s, i) => (
           <div key={i} className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
@@ -133,7 +155,7 @@ export function CostCenterPage({ onNavigate }: EvalExtraPageProps) {
       {/* By KB */}
       {tab === 'kb' && (
         <div className="bg-white rounded-xl border border-gray-200 p-5 flex flex-col gap-3">
-          {COST_BY_KB.map((kb, i) => (
+          {kbRows.map((kb, i) => (
             <div key={i} className="flex items-center gap-4">
               <div className="text-xs font-medium text-gray-700 w-28 flex-shrink-0">{kb.name}</div>
               <div className="flex-1 h-6 bg-gray-100 rounded-full overflow-hidden">
@@ -151,7 +173,7 @@ export function CostCenterPage({ onNavigate }: EvalExtraPageProps) {
             <span>合计</span>
             <span>{(totalTokens / 1_000_000).toFixed(1)}M tokens</span>
             <span>${totalCost.toFixed(2)}</span>
-            <span>{COST_BY_KB.reduce((s, k) => s + k.queries, 0).toLocaleString()} Q</span>
+            <span>{totalTokens.toLocaleString()} tokens</span>
           </div>
         </div>
       )}
@@ -168,8 +190,8 @@ export function CostCenterPage({ onNavigate }: EvalExtraPageProps) {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {COST_BY_USER.map((u, i) => {
-                const share = (u.tokens / COST_BY_USER.reduce((s, x) => s + x.tokens, 0)) * 100;
+              {userRows.map((u, i) => {
+                const share = (u.tokens / userRows.reduce((s, x) => s + x.tokens, 0)) * 100;
                 return (
                   <tr key={i} className="hover:bg-gray-50">
                     <td className="py-3 px-4 font-medium text-gray-800">{u.name}</td>
@@ -205,7 +227,7 @@ export function CostCenterPage({ onNavigate }: EvalExtraPageProps) {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {COST_BY_MODEL.map((m, i) => (
+              {modelRows.map((m, i) => (
                 <tr key={i} className="hover:bg-gray-50">
                   <td className="py-3 px-4 font-medium text-gray-800">{m.name}</td>
                   <td className="py-3 px-4">
@@ -235,8 +257,8 @@ export function CostCenterPage({ onNavigate }: EvalExtraPageProps) {
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <h3 className="text-sm font-semibold text-gray-800 mb-4">每日费用趋势</h3>
           <div className="flex items-end gap-1 h-36">
-            {DAILY_COST.map((v, i) => {
-              const maxV = Math.max(...DAILY_COST);
+            {dailyCost.map((v, i) => {
+              const maxV = Math.max(...dailyCost, 1);
               return (
                 <div key={i} className="flex flex-col items-center gap-1 flex-1">
                   <div
@@ -252,7 +274,7 @@ export function CostCenterPage({ onNavigate }: EvalExtraPageProps) {
           <div className="flex items-center justify-between mt-3 text-xs text-gray-500">
             <span>6月1日</span>
             <span>峰值 $9.10 (6月14日)</span>
-            <span>6月{DAILY_COST.length}日</span>
+            <span>{dailyCost.length} 日趋势</span>
           </div>
         </div>
       )}
@@ -279,9 +301,12 @@ const REPLAY_RESULTS = [
 ];
 
 export function ReplayPage({ onNavigate }: EvalExtraPageProps) {
+  const apiMode = useApiMode();
+  const { data: replayTasks, refresh: refreshReplay } = useReplayTasks();
   const [step, setStep] = useState<'sample' | 'config' | 'running' | 'result'>('sample');
   const [selected, setSelected] = useState(new Set(PROD_QUERIES.filter(q => q.selected).map(q => q.id)));
   const [progress, setProgress] = useState(0);
+  const tasks = replayTasks.length ? replayTasks : REPLAY_TASKS;
 
   const toggleQuery = (id: string) => {
     const next = new Set(selected);
@@ -289,7 +314,17 @@ export function ReplayPage({ onNavigate }: EvalExtraPageProps) {
     setSelected(next);
   };
 
-  const startReplay = () => {
+  const startReplay = async () => {
+    if (apiMode) {
+      try {
+        await evalService.createReplayTask({ name: '回放任务', sample_count: selected.size || 100 });
+        refreshReplay();
+        setStep('running');
+        return;
+      } catch {
+        /* fall through to mock animation */
+      }
+    }
     setStep('running');
     setProgress(0);
     let p = 0;
@@ -341,7 +376,7 @@ export function ReplayPage({ onNavigate }: EvalExtraPageProps) {
             </tr>
           </thead>
           <tbody>
-            {REPLAY_TASKS.map(t => (
+            {tasks.map(t => (
               <tr key={t.id} className="border-b border-gray-50 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50">
                 <td className="px-4 py-2.5">
                   <p className="text-xs font-medium text-gray-900 dark:text-gray-100">{t.name}</p>

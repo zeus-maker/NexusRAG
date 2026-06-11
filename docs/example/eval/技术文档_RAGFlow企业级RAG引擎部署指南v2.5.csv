@@ -1,0 +1,13 @@
+question,expected_answer
+RAGFlow 部署指南适用的 RAGFlow 版本是多少？,RAGFlow 0.25.1 及以上
+最低 CPU 与内存要求分别是多少？,CPU 最低 8 核，内存最低 32 GB
+推荐的 Python 版本要求？,Python 3.11.0 及以上
+Docker 安装后默认 Web 访问地址是什么？,http://localhost:9380
+依赖的中间件服务有哪些？,MySQL 8.0、Elasticsearch 8.11+、Redis 7.2+、Milvus 2.4+、MinIO
+推荐的中文嵌入模型是什么？,BAAI/bge-large-zh-v1.5（中文最佳，1024 维）
+RAGFlow 提供多少种分块方法？,15 种
+健康检查 API 端点是什么？,GET /api/v1/health
+传输层与存储层分别采用什么加密？,传输层 TLS 1.3，存储层 AES-256
+热门查询结果 Redis 缓存 TTL 建议多少？,TTL=1 小时，LRU 淘汰策略
+RAG 3.0 多通道检索包含哪些能力？,分类器路由、PageIndex 树索引、LLM Wiki 知识编译、GraphRAG 知识图谱、RRF 融合与 Cross-Encoder 精排
+文档解析失败时建议检查什么？,检查文档是否加密或损坏；确认解析引擎配置；查看 worker 日志

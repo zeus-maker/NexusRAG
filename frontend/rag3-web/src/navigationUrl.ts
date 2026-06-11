@@ -56,6 +56,7 @@ export interface NavLocationState {
   page: NavPage;
   selectedKBId?: string | null;
   selectedDocId?: string | null;
+  selectedChunkId?: string | null;
   selectedConvId?: string | null;
   kbSettingsTab?: KBSettingsTab | null;
   monitorTab?: number | null;
@@ -64,6 +65,7 @@ export interface NavLocationState {
 const NAV_QUERY_KEYS = {
   selectedKBId: 'kb',
   selectedDocId: 'doc',
+  selectedChunkId: 'chunk',
   selectedConvId: 'conv',
   kbSettingsTab: 'kbTab',
   monitorTab: 'monitorTab',
@@ -134,6 +136,7 @@ function pickNavFields(state: Partial<NavLocationState>): Partial<NavLocationSta
   const picked: Partial<NavLocationState> = {};
   if (state.selectedKBId) picked.selectedKBId = state.selectedKBId;
   if (state.selectedDocId) picked.selectedDocId = state.selectedDocId;
+  if (state.selectedChunkId) picked.selectedChunkId = state.selectedChunkId;
   if (state.selectedConvId) picked.selectedConvId = state.selectedConvId;
   if (state.kbSettingsTab) picked.kbSettingsTab = state.kbSettingsTab;
   if (state.monitorTab != null) picked.monitorTab = state.monitorTab;
@@ -171,12 +174,14 @@ export function hashToAppState(hash: string): Partial<NavLocationState> | null {
   const params = new URLSearchParams(raw.slice(qIndex + 1));
   const kb = params.get('kb');
   const doc = params.get('doc');
+  const chunk = params.get('chunk');
   const conv = params.get('conv');
   const kbTab = params.get('kbTab');
   const monitorTab = params.get('monitorTab');
 
   if (kb) partial.selectedKBId = kb;
   if (doc) partial.selectedDocId = doc;
+  if (chunk) partial.selectedChunkId = chunk;
   if (conv) partial.selectedConvId = conv;
   if (kbTab && KB_SETTINGS_TABS.includes(kbTab as KBSettingsTab)) {
     partial.kbSettingsTab = kbTab as KBSettingsTab;

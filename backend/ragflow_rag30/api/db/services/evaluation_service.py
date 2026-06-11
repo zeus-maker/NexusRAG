@@ -50,7 +50,8 @@ class EvaluationService(CommonService):
 
     @classmethod
     def create_dataset(cls, name: str, description: str, kb_ids: List[str],
-                      tenant_id: str, user_id: str) -> Tuple[bool, str]:
+                      tenant_id: str, user_id: str,
+                      metadata: Optional[Dict[str, Any]] = None) -> Tuple[bool, str]:
         """
         Create a new evaluation dataset.
 
@@ -73,6 +74,7 @@ class EvaluationService(CommonService):
                 "name": name,
                 "description": description,
                 "kb_ids": kb_ids,
+                "metadata": metadata,
                 "created_by": user_id,
                 "create_time": timestamp,
                 "update_time": timestamp,
@@ -182,6 +184,7 @@ class EvaluationService(CommonService):
             if not EvaluationCase.create(**case):
                 return False, "Failed to create test case"
 
+            cls.touch_dataset(dataset_id)
             return True, case_id
         except Exception as e:
             logging.error(f"Error adding test case: {e}")
@@ -201,15 +204,58 @@ class EvaluationService(CommonService):
             return []
 
     @classmethod
-    def delete_test_case(cls, case_id: str) -> bool:
-        """Delete a test case"""
+    def update_test_case(cls, case_id: str, dataset_id: str, **kwargs) -> bool:
+        """Update a test case belonging to a dataset."""
         try:
-            return EvaluationCase.delete().where(
-                EvaluationCase.id == case_id
+            patch: Dict[str, Any] = {}
+            if "question" in kwargs:
+                patch["question"] = kwargs["question"]
+            if "reference_answer" in kwargs:
+                patch["reference_answer"] = kwargs["reference_answer"]
+            elif "expected_answer" in kwargs:
+                patch["reference_answer"] = kwargs["expected_answer"]
+            if "relevant_chunk_ids" in kwargs:
+                patch["relevant_chunk_ids"] = kwargs["relevant_chunk_ids"]
+            if "relevant_doc_ids" in kwargs:
+                patch["relevant_doc_ids"] = kwargs["relevant_doc_ids"]
+            if "metadata" in kwargs:
+                patch["metadata"] = kwargs["metadata"]
+            if not patch:
+                return True
+            updated = EvaluationCase.update(**patch).where(
+                (EvaluationCase.id == case_id) & (EvaluationCase.dataset_id == dataset_id)
             ).execute() > 0
+            if updated:
+                cls.touch_dataset(dataset_id)
+            return updated
+        except Exception as e:
+            logging.error(f"Error updating test case {case_id}: {e}")
+            return False
+
+    @classmethod
+    def delete_test_case(cls, case_id: str, dataset_id: Optional[str] = None) -> bool:
+        """Delete a test case; optionally verify dataset ownership."""
+        try:
+            cond = EvaluationCase.id == case_id
+            if dataset_id:
+                cond = cond & (EvaluationCase.dataset_id == dataset_id)
+            deleted = EvaluationCase.delete().where(cond).execute() > 0
+            if deleted and dataset_id:
+                cls.touch_dataset(dataset_id)
+            return deleted
         except Exception as e:
             logging.error(f"Error deleting test case {case_id}: {e}")
             return False
+
+    @classmethod
+    def touch_dataset(cls, dataset_id: str) -> None:
+        """Bump dataset update_time after sample mutations."""
+        try:
+            EvaluationDataset.update(update_time=current_timestamp()).where(
+                EvaluationDataset.id == dataset_id
+            ).execute()
+        except Exception as e:
+            logging.error(f"Error touching dataset {dataset_id}: {e}")
 
     @classmethod
     def import_test_cases(cls, dataset_id: str, cases: List[Dict[str, Any]]) -> Tuple[int, int]:
@@ -250,6 +296,7 @@ class EvaluationService(CommonService):
             EvaluationCase.bulk_create(case_instances, batch_size=300)
             success_count = len(case_instances)
             failure_count = 0
+            cls.touch_dataset(dataset_id)
 
         except Exception as e:
             logging.error(f"Error bulk importing test cases: {str(e)}")

@@ -1475,10 +1475,11 @@ export function DocumentPage({ kbId, onNavigate }: DocumentPageProps) {
 interface ChunkPreviewPageProps {
   kbId: string;
   docId: string;
+  initialChunkId?: string;
   onNavigate: (page: string, extra?: any) => void;
 }
 
-export function ChunkPreviewPage({ kbId, docId, onNavigate }: ChunkPreviewPageProps) {
+export function ChunkPreviewPage({ kbId, docId, initialChunkId, onNavigate }: ChunkPreviewPageProps) {
   const { data: docList, loading: docsLoading } = useDocuments(kbId);
   const doc = useRealApi
     ? docList.find(d => d.doc_id === docId)
@@ -1692,11 +1693,12 @@ export function ChunkPreviewPage({ kbId, docId, onNavigate }: ChunkPreviewPagePr
         <div className="flex-1 h-0 min-h-0 px-6 pb-6 pt-4 overflow-hidden flex flex-col">
           <div className="flex-1 h-0 min-h-0 bg-white rounded-xl border border-gray-200 overflow-hidden flex flex-col">
             <KnowledgeChunkWorkspace
-              key={doc.doc_id}
+              key={`${doc.doc_id}-${initialChunkId || ''}`}
               doc={doc}
               kbId={kbId}
               pageSize={CHUNK_PAGE_SIZE}
               keywords={chunkSearch.trim() || undefined}
+              initialChunkId={initialChunkId}
               showChunkActions
               actions={{
                 onSplit: chunk => setSplitTarget(chunk),

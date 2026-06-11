@@ -18,6 +18,7 @@ interface AppState {
   page: Page;
   selectedKBId: string | null;
   selectedDocId: string | null;
+  selectedChunkId: string | null;
   selectedConvId: string | null;
   kbSettingsTab: KBSettingsTab | null;
   monitorTab: number | null;
@@ -36,6 +37,7 @@ function buildInitialState(): AppState {
     page: 'login',
     selectedKBId: null,
     selectedDocId: null,
+    selectedChunkId: null,
     selectedConvId: null,
     kbSettingsTab: null,
     monitorTab: null,

@@ -1248,6 +1248,7 @@ class EvaluationDataset(DataBaseModel):
     name = CharField(max_length=255, null=False, index=True, help_text="dataset name")
     description = TextField(null=True, help_text="dataset description")
     kb_ids = JSONField(null=False, help_text="knowledge base IDs to evaluate against")
+    metadata = JSONField(null=True, help_text="tags and extra dataset metadata")
     created_by = CharField(max_length=32, null=False, index=True, help_text="creator user ID")
     create_time = BigIntegerField(null=False, index=True, help_text="creation timestamp")
     update_time = BigIntegerField(null=False, help_text="last update timestamp")
@@ -1275,12 +1276,19 @@ class EvaluationCase(DataBaseModel):
 class EvaluationRun(DataBaseModel):
     """A single evaluation run"""
     id = CharField(max_length=32, primary_key=True)
+    tenant_id = CharField(max_length=32, null=True, index=True, help_text="tenant ID")
     dataset_id = CharField(max_length=32, null=False, index=True, help_text="FK to evaluation_datasets")
-    dialog_id = CharField(max_length=32, null=False, index=True, help_text="dialog configuration being evaluated")
+    dialog_id = CharField(max_length=32, null=True, index=True, help_text="legacy dialog config (optional)")
+    kb_id = CharField(max_length=32, null=True, index=True, help_text="target knowledge base")
     name = CharField(max_length=255, null=False, help_text="run name")
-    config_snapshot = JSONField(null=False, help_text="dialog config at time of evaluation")
+    evaluation_type = CharField(max_length=32, null=True, default="end_to_end", help_text="retrieval/generation/end_to_end/compare")
+    metrics = JSONField(null=True, help_text="requested metric names")
+    config_snapshot = JSONField(null=False, help_text="config at time of evaluation")
+    config_override = JSONField(null=True, help_text="RAG3 settings override")
     metrics_summary = JSONField(null=True, help_text="aggregated metrics")
-    status = CharField(max_length=32, null=False, default="PENDING", help_text="PENDING/RUNNING/COMPLETED/FAILED")
+    status = CharField(max_length=32, null=False, default="PENDING", help_text="PENDING/RUNNING/COMPLETED/FAILED/STOPPED")
+    progress = IntegerField(null=False, default=0, help_text="0-100 progress")
+    error_message = TextField(null=True, help_text="failure reason")
     created_by = CharField(max_length=32, null=False, index=True, help_text="user who started the run")
     create_time = BigIntegerField(null=False, index=True, help_text="creation timestamp")
     complete_time = BigIntegerField(null=True, help_text="completion timestamp")
@@ -1294,7 +1302,9 @@ class EvaluationResult(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     run_id = CharField(max_length=32, null=False, index=True, help_text="FK to evaluation_runs")
     case_id = CharField(max_length=32, null=False, index=True, help_text="FK to evaluation_cases")
+    question = TextField(null=True, help_text="test question snapshot")
     generated_answer = TextField(null=False, help_text="generated answer")
+    reference_answer = TextField(null=True, help_text="ground truth answer")
     retrieved_chunks = JSONField(null=False, help_text="chunks that were retrieved")
     metrics = JSONField(null=False, help_text="all computed metrics")
     execution_time = FloatField(null=False, help_text="response time in seconds")
@@ -1303,6 +1313,98 @@ class EvaluationResult(DataBaseModel):
 
     class Meta:
         db_table = "evaluation_results"
+
+
+class QueryLog(DataBaseModel):
+    """User query log for satisfaction, cost, and replay evaluation."""
+    log_id = CharField(max_length=64, primary_key=True)
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    user_id = CharField(max_length=32, null=False, index=True)
+    kb_id = CharField(max_length=64, null=True, index=True)
+    conversation_id = CharField(max_length=64, null=True, index=True)
+    message_id = CharField(max_length=64, null=True, index=True)
+    query_text = TextField(null=False)
+    response_text = TextField(null=True)
+    retrieval_channels = JSONField(null=True)
+    token_usage = JSONField(null=True)
+    total_latency_ms = IntegerField(null=False, default=0)
+    complexity_tier = CharField(max_length=32, null=True)
+    llm_model_used = CharField(max_length=128, null=True)
+    user_feedback = CharField(max_length=16, null=False, default="none")
+    created_at = BigIntegerField(null=False, index=True)
+
+    class Meta:
+        db_table = "query_logs"
+
+
+class EvalReplayTask(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    name = CharField(max_length=255, null=False)
+    status = CharField(max_length=32, null=False, default="queued")
+    date_range = JSONField(null=True)
+    sample_count = IntegerField(null=False, default=0)
+    config_snapshot = JSONField(null=True)
+    online_metrics = JSONField(null=True)
+    replay_metrics = JSONField(null=True)
+    progress = IntegerField(null=False, default=0)
+    created_by = CharField(max_length=32, null=False)
+    create_time = BigIntegerField(null=False, index=True)
+    complete_time = BigIntegerField(null=True)
+
+    class Meta:
+        db_table = "eval_replay_tasks"
+
+
+class EvalAbTest(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    name = CharField(max_length=255, null=False)
+    status = CharField(max_length=32, null=False, default="running")
+    dataset_id = CharField(max_length=32, null=True)
+    kb_id = CharField(max_length=32, null=True)
+    variant_a_config = JSONField(null=True)
+    variant_b_config = JSONField(null=True)
+    traffic_ratio = FloatField(null=False, default=0.5)
+    metrics_a = JSONField(null=True)
+    metrics_b = JSONField(null=True)
+    p_value = FloatField(null=True)
+    winner = CharField(max_length=16, null=True)
+    run_ids = JSONField(null=True)
+    created_by = CharField(max_length=32, null=False)
+    create_time = BigIntegerField(null=False, index=True)
+    complete_time = BigIntegerField(null=True)
+
+    class Meta:
+        db_table = "eval_ab_tests"
+
+
+class RouteLearningState(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    tenant_id = CharField(max_length=32, null=False, unique=True, index=True)
+    model_version = CharField(max_length=64, null=False, default="v1.0.0")
+    status = CharField(max_length=32, null=False, default="idle")
+    accuracy = FloatField(null=False, default=0.0)
+    sample_count = IntegerField(null=False, default=0)
+    tiers_json = JSONField(null=True)
+    pending_review = IntegerField(null=False, default=0)
+    weights_json = JSONField(null=True)
+    history_json = JSONField(null=True)
+    last_train_at = BigIntegerField(null=True)
+    update_time = BigIntegerField(null=False)
+
+    class Meta:
+        db_table = "route_learning_states"
+
+
+class EvalCostBudget(DataBaseModel):
+    tenant_id = CharField(max_length=32, primary_key=True)
+    monthly_budget = FloatField(null=False, default=1000.0)
+    alert_threshold = FloatField(null=False, default=0.8)
+    update_time = BigIntegerField(null=False)
+
+    class Meta:
+        db_table = "eval_cost_budgets"
 
 
 class Memory(DataBaseModel):
@@ -1652,6 +1754,18 @@ def migrate_db():
     alter_db_add_column(migrator, "api_4_conversation", "version_title", CharField(max_length=255, null=True, help_text="canvas version title when session created", index=False))
     alter_db_column_type(migrator, "document", "size", BigIntegerField(default=0, index=True))
     alter_db_column_type(migrator, "file", "size", BigIntegerField(default=0, index=True))
+    # RAG3 评测中心：扩展 evaluation_runs / evaluation_results
+    alter_db_add_column(migrator, "evaluation_runs", "tenant_id", CharField(max_length=32, null=True, index=True, help_text="tenant ID"))
+    alter_db_add_column(migrator, "evaluation_runs", "kb_id", CharField(max_length=32, null=True, index=True, help_text="target knowledge base"))
+    alter_db_add_column(migrator, "evaluation_runs", "evaluation_type", CharField(max_length=32, null=True, default="end_to_end", help_text="retrieval/generation/end_to_end/compare"))
+    alter_db_add_column(migrator, "evaluation_runs", "metrics", JSONField(null=True, help_text="requested metric names"))
+    alter_db_add_column(migrator, "evaluation_runs", "config_override", JSONField(null=True, help_text="RAG3 settings override"))
+    alter_db_add_column(migrator, "evaluation_runs", "progress", IntegerField(null=False, default=0, help_text="0-100 progress"))
+    alter_db_add_column(migrator, "evaluation_runs", "error_message", TextField(null=True, help_text="failure reason"))
+    alter_db_column_type(migrator, "evaluation_runs", "dialog_id", CharField(max_length=32, null=True, index=True, help_text="legacy dialog config (optional)"))
+    alter_db_add_column(migrator, "evaluation_results", "question", TextField(null=True, help_text="test question snapshot"))
+    alter_db_add_column(migrator, "evaluation_results", "reference_answer", TextField(null=True, help_text="ground truth answer"))
+    alter_db_add_column(migrator, "evaluation_datasets", "metadata", JSONField(null=True, help_text="tags and extra dataset metadata"))
     logging.disable(logging.NOTSET)
     # this is after re-enabling logging to allow logging changed user emails
     migrate_add_unique_email(migrator)

@@ -47,7 +47,14 @@ export default function App() {
       case 'kb-documents':
         return <DocumentPage kbId={state.selectedKBId || 'kb-001'} onNavigate={navigate} />;
       case 'kb-chunks':
-        return <ChunkPreviewPage kbId={state.selectedKBId || 'kb-001'} docId={state.selectedDocId || 'doc-001'} onNavigate={navigate} />;
+        return (
+          <ChunkPreviewPage
+            kbId={state.selectedKBId || 'kb-001'}
+            docId={state.selectedDocId || 'doc-001'}
+            initialChunkId={state.selectedChunkId || undefined}
+            onNavigate={navigate}
+          />
+        );
       case 'kb-index-status':
         return <IndexStatusPage kbId={state.selectedKBId || 'kb-001'} onNavigate={navigate} />;
       case 'kb-settings':

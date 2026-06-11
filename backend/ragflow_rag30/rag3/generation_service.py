@@ -101,7 +101,14 @@ async def generate_answer(
 
     chat_mdl = _resolve_chat_bundle(tenant_id, llm_model)
     gen_conf = {"temperature": temperature, "max_tokens": max_tokens}
-    content, total_tokens = await chat_mdl.async_chat(system, history, gen_conf)
+    raw = await chat_mdl.async_chat(system, history, gen_conf)
+    # LLMBundle.async_chat 仅返回文本；底层 chat model 可能返回 (text, tokens)
+    if isinstance(raw, tuple):
+        content = (raw[0] or "") if raw else ""
+        total_tokens = int(raw[1]) if len(raw) > 1 and raw[1] is not None else len(content) // 2
+    else:
+        content = raw or ""
+        total_tokens = len(content) // 2
 
     confidence = round(min(0.99, (hits[0].wrrf_score if hits else 0.5) * 1.05), 2)
     return {
