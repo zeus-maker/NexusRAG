@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Sparkles, Save, Play } from 'lucide-react';
 import { SystemSubNav, TableCard } from '../components/SystemSubNav';
 import { GENERATION_STRATEGY_ROWS } from '../data/fusionMock';
+import { useGenerationStrategy, systemService } from '../hooks/useSystemData';
+import { useApiMode } from '../services/http';
 
 interface GenerationStrategyPageProps {
   onNavigate?: (page: string, extra?: Record<string, unknown>) => void;
@@ -10,11 +12,35 @@ interface GenerationStrategyPageProps {
 const AGENT_OPTIONS = ['法务问答 Agent', '财报分析 Agent', '合同审查 Agent', '通用 RAG Agent'];
 
 export function GenerationStrategyPage({ onNavigate }: GenerationStrategyPageProps) {
+  const apiMode = useApiMode();
+  const { data: genData, refresh } = useGenerationStrategy();
+  const [strategies, setStrategies] = useState(GENERATION_STRATEGY_ROWS);
   const [selectedAgent, setSelectedAgent] = useState(AGENT_OPTIONS[0]);
   const [refusalText, setRefusalText] = useState('抱歉，该问题超出知识库范围或您暂无访问权限，请联系管理员。');
   const [toolWhitelist, setToolWhitelist] = useState('search_kb, calc, web_fetch');
   const [toast, setToast] = useState<string | null>(null);
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
+
+  useEffect(() => {
+    if (apiMode && genData?.strategies?.length) setStrategies(genData.strategies);
+  }, [apiMode, genData]);
+
+  const handleSave = async () => {
+    if (apiMode) {
+      try {
+        await systemService.putGenerationStrategy({
+          strategies,
+          activeType: genData?.activeType || 'single_rag',
+        });
+        refresh();
+        showToast('生成策略已保存');
+      } catch (e) {
+        showToast((e as Error).message || '保存失败');
+      }
+      return;
+    }
+    showToast('生成策略已保存');
+  };
 
   return (
     <div className="p-6 flex flex-col gap-5 h-full min-h-0 overflow-y-auto bg-gray-50 dark:bg-gray-950">
@@ -38,7 +64,7 @@ export function GenerationStrategyPage({ onNavigate }: GenerationStrategyPagePro
           <button type="button" onClick={() => showToast('生成策略测试通过')} className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-white dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300">
             <Play size={14} /> 测试
           </button>
-          <button type="button" onClick={() => showToast('生成策略已保存')} className="flex items-center gap-1.5 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+          <button type="button" onClick={handleSave} className="flex items-center gap-1.5 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
             <Save size={14} /> 保存
           </button>
         </div>
@@ -56,7 +82,7 @@ export function GenerationStrategyPage({ onNavigate }: GenerationStrategyPagePro
             </tr>
           </thead>
           <tbody>
-            {GENERATION_STRATEGY_ROWS.map(row => (
+            {strategies.map(row => (
               <tr key={row.type} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50">
                 <td className="px-4 py-3 font-medium text-gray-800 dark:text-gray-200">{row.label}</td>
                 <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{row.tierDefault}</td>

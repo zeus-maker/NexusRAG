@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   GitBranch, Shield, Cpu, Activity, ChevronDown, ChevronRight,
   Plus, Trash2, CheckCircle, XCircle, AlertTriangle, Search,
@@ -6,6 +6,10 @@ import {
   Lock, Unlock, FileText, Download, Play, Pause, MoreVertical,
   Globe, Server, AlertCircle, TrendingUp, Database, Layers
 } from 'lucide-react';
+
+import { useSecurityRules, systemService } from '../hooks/useSystemData';
+import { useApiMode } from '../services/http';
+import { useMyLlms } from '../hooks/useLlmData';
 
 export { ClassifierPage } from './ClassifierPage';
 
@@ -27,10 +31,41 @@ const PII_RULES = [
 ];
 
 export function SecurityPage() {
+  const apiMode = useApiMode();
+  const { data: secRules, refresh } = useSecurityRules();
   const [tab, setTab] = useState<'poison' | 'pii' | 'acl' | 'report'>('poison');
+  const [piiRules, setPiiRules] = useState(PII_RULES);
   const [aclQuery, setAclQuery] = useState('合同条款第三条');
   const [aclUser, setAclUser] = useState('王芳');
   const [aclResult, setAclResult] = useState<null | { allowed: boolean; reason: string }>(null);
+
+  useEffect(() => {
+    if (apiMode && secRules.piiRules?.length) setPiiRules(secRules.piiRules);
+  }, [apiMode, secRules]);
+
+  const runAclSimulate = async () => {
+    if (apiMode) {
+      try {
+        const { data } = await systemService.aclSimulate({ query: aclQuery, user: aclUser });
+        setAclResult(data);
+      } catch (e) {
+        setAclResult({ allowed: false, reason: (e as Error).message });
+      }
+      return;
+    }
+    setAclResult({ allowed: true, reason: '模拟通过：用户有权访问该资源' });
+  };
+
+  const savePiiRules = async () => {
+    if (apiMode) {
+      try {
+        await systemService.putSecurityRules({ piiRules, poisonQueue: secRules.poisonQueue || POISON_QUEUE });
+        refresh();
+      } catch {
+        /* ignore */
+      }
+    }
+  };
 
   const riskColor = (r: string) =>
     r === 'high' ? 'bg-red-100 text-red-700' : r === 'medium' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-600';
@@ -142,7 +177,7 @@ export function SecurityPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {PII_RULES.map((r, i) => (
+              {piiRules.map((r, i) => (
                 <tr key={i} className="hover:bg-gray-50">
                   <td className="py-3 px-4 font-medium text-gray-800">{r.name}</td>
                   <td className="py-3 px-4">
@@ -196,7 +231,7 @@ export function SecurityPage() {
                 />
               </div>
               <button
-                onClick={() => setAclResult({ allowed: aclUser !== '张三', reason: aclUser !== '张三' ? '用户属于"采购部"角色，具备合同知识库读权限' : '用户角色"普通员工"无合同知识库访问权限' })}
+                onClick={runAclSimulate}
                 className="w-full py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
               >
                 模拟检查
@@ -309,8 +344,24 @@ const MODEL_PROVIDERS = [
 ];
 
 export function ModelsPage() {
+  const apiMode = useApiMode();
+  const { data: myLlms, loading, error } = useMyLlms();
   const [selectedProvider, setSelectedProvider] = useState(MODEL_PROVIDERS[0]);
   const [showKey, setShowKey] = useState(false);
+
+  const apiProviders = apiMode
+    ? Object.entries(myLlms || {}).map(([name, models], i) => ({
+        id: String(i),
+        name,
+        logo: '🤖',
+        status: 'connected' as const,
+        models: Array.isArray(models) ? models.map((m: { llm_name?: string }) => m.llm_name || String(m)) : [],
+        usage: { tokens: '—', cost: '—', period: '本月' },
+      }))
+    : MODEL_PROVIDERS;
+
+  const providers = apiMode ? (apiProviders.length ? apiProviders : []) : MODEL_PROVIDERS;
+  const activeProvider = providers.find(p => p.id === selectedProvider.id) || providers[0] || selectedProvider;
 
   return (
     <div className="p-6 h-full overflow-y-auto flex flex-col gap-5">
@@ -324,15 +375,19 @@ export function ModelsPage() {
         </button>
       </div>
 
+      {error && apiMode && (
+        <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Provider list */}
         <div className="flex flex-col gap-3">
-          {MODEL_PROVIDERS.map(p => (
+          {(loading && apiMode ? [] : providers).map(p => (
             <button
               key={p.id}
               onClick={() => setSelectedProvider(p)}
               className={`text-left p-4 rounded-xl border transition-all ${
-                selectedProvider.id === p.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white hover:border-gray-300'
+                activeProvider.id === p.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white hover:border-gray-300'
               }`}
             >
               <div className="flex items-center gap-3 mb-2">
@@ -356,11 +411,11 @@ export function ModelsPage() {
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
-                <span className="text-2xl">{selectedProvider.logo}</span>
+                <span className="text-2xl">{activeProvider.logo}</span>
                 <div>
-                  <h3 className="text-sm font-semibold text-gray-800">{selectedProvider.name}</h3>
-                  <span className={`text-[11px] font-medium ${selectedProvider.status === 'connected' ? 'text-green-600' : 'text-yellow-600'}`}>
-                    {selectedProvider.status === 'connected' ? '● 已连接' : '⚠ 连接异常'}
+                  <h3 className="text-sm font-semibold text-gray-800">{activeProvider.name}</h3>
+                  <span className={`text-[11px] font-medium ${activeProvider.status === 'connected' ? 'text-green-600' : 'text-yellow-600'}`}>
+                    {activeProvider.status === 'connected' ? '● 已连接' : '⚠ 连接异常'}
                   </span>
                 </div>
               </div>
@@ -388,7 +443,7 @@ export function ModelsPage() {
             <div className="mb-4">
               <div className="text-xs text-gray-500 mb-2">可用模型</div>
               <div className="flex flex-wrap gap-2">
-                {selectedProvider.models.map((m, i) => (
+                {activeProvider.models.map((m, i) => (
                   <span key={i} className="px-2.5 py-1 bg-gray-100 text-gray-700 rounded-full text-xs font-medium">
                     {m}
                   </span>
@@ -398,8 +453,8 @@ export function ModelsPage() {
 
             <div className="grid grid-cols-3 gap-3">
               {[
-                { label: '本月 Token', value: selectedProvider.usage.tokens },
-                { label: '本月费用', value: selectedProvider.usage.cost },
+                { label: '本月 Token', value: activeProvider.usage.tokens },
+                { label: '本月费用', value: activeProvider.usage.cost },
                 { label: '平均延迟', value: '340ms' },
               ].map((s, i) => (
                 <div key={i} className="bg-gray-50 rounded-lg p-3 text-center">

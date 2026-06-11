@@ -1407,6 +1407,57 @@ class EvalCostBudget(DataBaseModel):
         db_table = "eval_cost_budgets"
 
 
+class TenantRag3Config(DataBaseModel):
+    """租户级 RAG3 系统配置（pipeline / fusion / security 等 JSON 键值）"""
+    id = CharField(max_length=32, primary_key=True)
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    config_key = CharField(max_length=64, null=False, index=True)
+    config_json = JSONField(null=True)
+    version = IntegerField(null=False, default=1)
+    updated_by = CharField(max_length=32, null=True)
+    create_time = BigIntegerField(null=False, index=True)
+    update_time = BigIntegerField(null=False)
+
+    class Meta:
+        db_table = "tenant_rag3_configs"
+        indexes = ((("tenant_id", "config_key"), True),)
+
+
+class AdminJob(DataBaseModel):
+    """管理后台异步任务（备份/灰度/向量迁移等）"""
+    id = CharField(max_length=64, primary_key=True)
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    job_type = CharField(max_length=32, null=False, index=True)
+    status = CharField(max_length=16, null=False, default="pending")
+    progress = IntegerField(null=False, default=0)
+    payload = JSONField(null=True)
+    result = JSONField(null=True)
+    error_message = TextField(null=True)
+    created_by = CharField(max_length=32, null=True)
+    create_time = BigIntegerField(null=False, index=True)
+    complete_time = BigIntegerField(null=True)
+
+    class Meta:
+        db_table = "admin_jobs"
+
+
+class AuditEvent(DataBaseModel):
+    """轻量审计事件（配置变更、登录等）"""
+    id = CharField(max_length=64, primary_key=True)
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    user_id = CharField(max_length=32, null=False, index=True)
+    user_name = CharField(max_length=128, null=True)
+    event_type = CharField(max_length=64, null=False, index=True)
+    resource_type = CharField(max_length=64, null=True)
+    resource_id = CharField(max_length=128, null=True)
+    details = JSONField(null=True)
+    ip_address = CharField(max_length=64, null=True)
+    create_time = BigIntegerField(null=False, index=True)
+
+    class Meta:
+        db_table = "audit_events"
+
+
 class Memory(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     name = CharField(max_length=128, null=False, index=False, help_text="Memory name")

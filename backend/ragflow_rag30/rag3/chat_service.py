@@ -20,6 +20,7 @@ from rag3.conversation_models import merge_settings
 from rag3.filter_utils import apply_metadata_filters
 from rag3.generation_service import generate_answer, generate_answer_stream, template_answer
 from rag3.query_parser import parse_advanced_query
+from rag3.system_config_service import get_fusion_runtime
 from security.chunk_acl import filter_fused_hits_by_acl
 
 logger = logging.getLogger(__name__)
@@ -155,11 +156,19 @@ async def execute_chat_turn(
 
     t_retrieve = time.time()
     channel_results = run_pipelines(plan.pipeline_ids, search_query, kb_id, top_k=top_k, **ctx)
-    fused = reciprocal_rank_fusion(channel_results)
+    fusion_rt = get_fusion_runtime(tid)
+    if fusion_rt.get("rerankModel"):
+        rerank_model = fusion_rt["rerankModel"]
+    fused = reciprocal_rank_fusion(
+        channel_results,
+        k=fusion_rt.get("rrfK", 60),
+        channel_weights=fusion_rt.get("channel_weights"),
+    )
     fused_before_filter = len(fused)
     fused = apply_metadata_filters(fused, metadata_filters)
+    rerank_top_n = min(fusion_rt.get("rerankTopN", 5), top_k)
     reranked = rerank(
-        search_query, fused, top_n=min(5, top_k),
+        search_query, fused, top_n=rerank_top_n,
         tenant_id=tid, use_rerank=use_rerank, rerank_model=rerank_model,
     )
     acl_before = len(reranked)
@@ -289,13 +298,20 @@ async def execute_chat_turn_stream(
     }
 
     def _retrieve_and_rank():
+        fusion_rt = get_fusion_runtime(tid)
+        rr_model = fusion_rt.get("rerankModel") or rerank_model
         results = run_pipelines(plan.pipeline_ids, search_query, kb_id, top_k=top_k, **ctx)
-        fused_hits = reciprocal_rank_fusion(results)
+        fused_hits = reciprocal_rank_fusion(
+            results,
+            k=fusion_rt.get("rrfK", 60),
+            channel_weights=fusion_rt.get("channel_weights"),
+        )
         fused_before = len(fused_hits)
         fused_hits = apply_metadata_filters(fused_hits, metadata_filters)
+        rerank_top_n = min(fusion_rt.get("rerankTopN", 5), top_k)
         ranked = rerank(
-            search_query, fused_hits, top_n=min(5, top_k),
-            tenant_id=tid, use_rerank=use_rerank, rerank_model=rerank_model,
+            search_query, fused_hits, top_n=rerank_top_n,
+            tenant_id=tid, use_rerank=use_rerank, rerank_model=rr_model,
         )
         return results, fused_hits, ranked, fused_before
 

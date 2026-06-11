@@ -7,6 +7,8 @@ import {
 import { SystemSectionTabs, TableCard } from '../components/SystemSubNav';
 import { HubBadge } from '../components/hubUi';
 import { PIPELINE_DEFINITIONS, PIPELINE_STATUS_LABEL } from '../data/pipelineMock';
+import { useMonitorDashboard } from '../hooks/useSystemData';
+import { useApiMode } from '../services/http';
 import {
   INFRA_METRICS, SERVICE_STATUSES, ALERT_RULES, RECENT_ALERTS, QPS_TREND_24H,
   PIPELINE_LATENCIES, KB_INDEX_AGGREGATE, INDEX_SUMMARY, COST_SNAPSHOT,
@@ -57,6 +59,8 @@ function ProgressMini({ done, total, alert }: { done: number; total: number; ale
 }
 
 export function MonitorPage({ onNavigate, initialTab = 0 }: MonitorPageProps) {
+  const apiMode = useApiMode();
+  const { data: monitor, refresh, error: monitorError } = useMonitorDashboard();
   const [activeTab, setActiveTab] = useState(initialTab);
   useEffect(() => { setActiveTab(initialTab); }, [initialTab]);
   const [toast, setToast] = useState<string | null>(null);
@@ -76,6 +80,11 @@ export function MonitorPage({ onNavigate, initialTab = 0 }: MonitorPageProps) {
   const handleRefresh = () => {
     const now = new Date();
     setLastRefresh(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`);
+    if (apiMode) {
+      refresh();
+      showToast('监控数据已刷新');
+      return;
+    }
     showToast('监控数据已刷新（mock）');
   };
 
@@ -111,6 +120,10 @@ export function MonitorPage({ onNavigate, initialTab = 0 }: MonitorPageProps) {
     <div className="p-4 sm:p-6 flex flex-col gap-4 sm:gap-5 h-full min-h-0 min-w-0 w-full overflow-y-auto bg-gray-50 dark:bg-gray-950">
       {toast && (
         <div className="fixed top-4 right-4 z-50 px-4 py-2 bg-gray-900 text-white text-sm rounded-lg shadow-lg">{toast}</div>
+      )}
+
+      {monitorError && apiMode && (
+        <div className="text-sm text-red-600 bg-red-50 dark:bg-red-900/20 border border-red-200 rounded-lg px-3 py-2">{monitorError}</div>
       )}
 
       {unresolvedAlerts.length > 0 && (
@@ -164,7 +177,8 @@ export function MonitorPage({ onNavigate, initialTab = 0 }: MonitorPageProps) {
       <div className="w-full min-w-0">
       {activeTab === 0 && (
         <InfraTab rules={rules} setRules={setRules} maxQps={maxQps} maxErr={maxErr} maxP95={maxP95}
-          showToast={showToast} showAddRule={showAddRule} setShowAddRule={setShowAddRule} onNavigate={onNavigate} />
+          showToast={showToast} showAddRule={showAddRule} setShowAddRule={setShowAddRule} onNavigate={onNavigate}
+          apiMode={apiMode} usage={monitor.usage} services={monitor.health.components} />
       )}
       {activeTab === 1 && (
         <PipelineTab pipelines={pipelines} timeRange={timeRange} setTimeRange={setTimeRange} onNavigate={onNavigate} />
@@ -189,6 +203,7 @@ export function MonitorPage({ onNavigate, initialTab = 0 }: MonitorPageProps) {
 
 function InfraTab({
   rules, setRules, maxQps, maxErr, maxP95, showToast, showAddRule, setShowAddRule, onNavigate,
+  apiMode, usage, services,
 }: {
   rules: AlertRule[];
   setRules: React.Dispatch<React.SetStateAction<AlertRule[]>>;
@@ -197,13 +212,34 @@ function InfraTab({
   showAddRule: boolean;
   setShowAddRule: (v: boolean) => void;
   onNavigate?: MonitorPageProps['onNavigate'];
+  apiMode?: boolean;
+  usage?: { qps?: number; totalQueriesToday?: number; avgLatencyMs?: number; successRate?: number };
+  services?: Array<{ name: string; status: string; latencyMs: number; message: string }>;
 }) {
   const toggleRule = (id: string) => setRules(prev => prev.map(r => r.id === id ? { ...r, enabled: !r.enabled } : r));
+
+  const metrics = INFRA_METRICS.map((m, i) => {
+    if (!apiMode || !usage) return m;
+    if (i === 0) return { ...m, value: String(usage.qps ?? m.value) };
+    if (i === 1) return { ...m, value: String(usage.totalQueriesToday ?? m.value) };
+    if (i === 2) return { ...m, value: `${usage.avgLatencyMs ?? m.value}ms` };
+    if (i === 3) return { ...m, value: `${usage.successRate ?? m.value}%` };
+    return m;
+  });
+
+  const serviceList = apiMode && services?.length
+    ? services.map(s => ({
+        name: s.name,
+        health: (s.status === 'healthy' ? 'healthy' : s.status === 'down' ? 'down' : 'degraded') as ServiceHealth,
+        latency: `${s.latencyMs}ms`,
+        detail: s.message || '—',
+      }))
+    : SERVICE_STATUSES;
 
   return (
     <div className="space-y-4 w-full min-w-0">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {INFRA_METRICS.map(m => {
+        {metrics.map(m => {
           const Icon = METRIC_ICONS[m.icon];
           return (
             <div key={m.label} className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
@@ -252,7 +288,7 @@ function InfraTab({
         <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
           <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-3 flex items-center gap-2"><Server size={14} /> 服务状态</h3>
           <div className="space-y-2">
-            {SERVICE_STATUSES.map(s => (
+            {serviceList.map(s => (
               <div key={s.name} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-0.5 text-xs">
                 <span className="flex items-center gap-2 text-gray-700 dark:text-gray-300 min-w-0">
                   <span className={`w-2 h-2 rounded-full flex-shrink-0 ${HEALTH_DOT[s.health]}`} />{s.name}

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import {
   Shuffle, Route, Brain, Shield, FileText, Target, Play, RefreshCw, Save,
   Plus,   Zap, Activity, ExternalLink, AlertCircle, CheckCircle,
@@ -13,6 +13,8 @@ import {
   runFullRouteTest, runSingleClassifierTest,
   type ClassifierId, type RoutingMatrixRow, type FullRouteTestResult,
 } from '../data/classifierMock';
+import { useClassifierConfig, systemService } from '../hooks/useSystemData';
+import { useApiMode } from '../services/http';
 
 interface ClassifierPageProps {
   onNavigate?: (page: string, extra?: Record<string, unknown>) => void;
@@ -28,6 +30,8 @@ const CLASSIFIER_ICONS: Record<ClassifierId, ReactNode> = {
 };
 
 export function ClassifierPage({ onNavigate }: ClassifierPageProps) {
+  const apiMode = useApiMode();
+  const { data: apiConfig, refresh } = useClassifierConfig();
   const [activeTab, setActiveTab] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
   const [selectedClassifier, setSelectedClassifier] = useState<ClassifierId>('complexity');
@@ -36,7 +40,35 @@ export function ClassifierPage({ onNavigate }: ClassifierPageProps) {
   const [intentCfg, setIntentCfg] = useState(DEFAULT_INTENT_CONFIG);
   const [securityCfg, setSecurityCfg] = useState(DEFAULT_SECURITY_CONFIG);
 
+  useEffect(() => {
+    if (apiMode && apiConfig?.routingMatrix?.length) {
+      setMatrix(apiConfig.routingMatrix);
+    }
+  }, [apiMode, apiConfig]);
+
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
+
+  const handleSave = async () => {
+    if (apiMode) {
+      try {
+        await systemService.putClassifierConfig({
+          classifiers: apiConfig?.classifiers || [],
+          routingMatrix: matrix,
+          tiers: TIER_DEFINITIONS,
+          keywordRules: COMPLEXITY_KEYWORD_RULES,
+          docTypeMappings: DOC_TYPE_MAPPINGS,
+          intentMappings: INTENT_MAPPINGS,
+          securityTiers: SECURITY_TIERS,
+        });
+        refresh();
+        showToast('分类器路由配置已保存');
+      } catch (e) {
+        showToast((e as Error).message || '保存失败');
+      }
+      return;
+    }
+    showToast('分类器路由配置已保存');
+  };
 
   return (
     <div className="p-6 flex flex-col gap-5 h-full overflow-y-auto bg-gray-50 dark:bg-gray-950">
@@ -62,7 +94,7 @@ export function ClassifierPage({ onNavigate }: ClassifierPageProps) {
               <Route size={14} /> 流水线配置
             </button>
           )}
-          <button type="button" onClick={() => showToast('分类器路由配置已保存')} className="flex items-center gap-1.5 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+          <button type="button" onClick={handleSave} className="flex items-center gap-1.5 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
             <Save size={14} /> 保存配置
           </button>
         </div>

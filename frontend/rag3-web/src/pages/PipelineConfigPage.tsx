@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   GitBranch, Settings, Route, Cpu, Play, Plus, RefreshCw,
   ChevronDown, ChevronRight, Zap, Activity, DollarSign, ExternalLink,
@@ -13,6 +13,8 @@ import {
   type PipelineDefinition, type PipelineStatus, type RoutingRule, type PipelineModelConfig,
   type FusionStrategy, type RoutePreviewResult,
 } from '../data/pipelineMock';
+import { usePipelineConfig, systemService } from '../hooks/useSystemData';
+import { useApiMode } from '../services/http';
 
 interface PipelineConfigPageProps {
   onNavigate?: (page: string, extra?: Record<string, unknown>) => void;
@@ -21,6 +23,8 @@ interface PipelineConfigPageProps {
 const TABS = ['概览', '五大流水线', '路由规则', '模型与融合', '全局设置'];
 
 export function PipelineConfigPage({ onNavigate }: PipelineConfigPageProps) {
+  const apiMode = useApiMode();
+  const { data: apiConfig, loading, error, refresh } = usePipelineConfig();
   const [activeTab, setActiveTab] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
   const [pipelines, setPipelines] = useState(PIPELINE_DEFINITIONS);
@@ -29,7 +33,35 @@ export function PipelineConfigPage({ onNavigate }: PipelineConfigPageProps) {
   const [globalSettings, setGlobalSettings] = useState(PIPELINE_GLOBAL_SETTINGS);
   const [expandedPipeline, setExpandedPipeline] = useState<string | null>('P2');
 
+  useEffect(() => {
+    if (apiMode && apiConfig?.definitions?.length) {
+      setPipelines(apiConfig.definitions);
+      setRules(apiConfig.routingRules || DEFAULT_ROUTING_RULES);
+      setModels(apiConfig.modelConfig || DEFAULT_MODEL_CONFIG);
+      setGlobalSettings({ ...PIPELINE_GLOBAL_SETTINGS, ...(apiConfig.globalSettings as typeof PIPELINE_GLOBAL_SETTINGS) });
+    }
+  }, [apiMode, apiConfig]);
+
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
+
+  const handleSave = async () => {
+    if (apiMode) {
+      try {
+        await systemService.putPipelineConfig({
+          definitions: pipelines,
+          routingRules: rules,
+          modelConfig: models,
+          globalSettings,
+        });
+        refresh();
+        showToast('流水线配置已保存');
+      } catch (e) {
+        showToast((e as Error).message || '保存失败');
+      }
+      return;
+    }
+    showToast('流水线配置已保存');
+  };
 
   const setPipelineStatus = (key: string, status: PipelineStatus) => {
     setPipelines(prev => prev.map(p => p.key === key ? { ...p, status } : p));
@@ -58,7 +90,7 @@ export function PipelineConfigPage({ onNavigate }: PipelineConfigPageProps) {
           <button type="button" onClick={() => showToast('配置已重置为默认（mock）')} className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-white dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300">
             <RefreshCw size={14} /> 重置
           </button>
-          <button type="button" onClick={() => showToast('流水线配置已保存')} className="flex items-center gap-1.5 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+          <button type="button" onClick={handleSave} disabled={loading && apiMode} className="flex items-center gap-1.5 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
             <Save size={14} /> 保存配置
           </button>
         </div>
@@ -78,7 +110,7 @@ export function PipelineConfigPage({ onNavigate }: PipelineConfigPageProps) {
         />
       )}
       {activeTab === 2 && (
-        <RoutingTab rules={rules} setRules={setRules} showToast={showToast} />
+        <RoutingTab rules={rules} setRules={setRules} showToast={showToast} apiMode={apiMode} />
       )}
       {activeTab === 3 && (
         <ModelsTab models={models} setModels={setModels} showToast={showToast} />
@@ -275,20 +307,31 @@ function PipelinesTab({
 }
 
 function RoutingTab({
-  rules, setRules, showToast,
+  rules, setRules, showToast, apiMode,
 }: {
   rules: RoutingRule[];
   setRules: React.Dispatch<React.SetStateAction<RoutingRule[]>>;
   showToast: (m: string) => void;
+  apiMode: boolean;
 }) {
   const [testQuery, setTestQuery] = useState('违约金如何计算');
   const [preview, setPreview] = useState<RoutePreviewResult | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const enabledRules = useMemo(() => rules.filter(r => r.enabled), [rules]);
 
-  const runPreview = () => {
+  const runPreview = async () => {
     setPreviewing(true);
     setPreview(null);
+    if (apiMode) {
+      try {
+        const { data } = await systemService.classifierPreview({ query: testQuery });
+        setPreview(data as RoutePreviewResult);
+      } catch (e) {
+        showToast((e as Error).message || '预览失败');
+      }
+      setPreviewing(false);
+      return;
+    }
     setTimeout(() => {
       setPreview(runMockRoutePreview(testQuery));
       setPreviewing(false);

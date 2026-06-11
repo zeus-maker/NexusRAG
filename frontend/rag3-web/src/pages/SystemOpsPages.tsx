@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   HardDrive, Database, Save, Play, RotateCcw,
   CheckCircle, AlertTriangle, ChevronRight, ChevronLeft, Lock,
@@ -9,6 +9,10 @@ import {
   VECTOR_DB_OPTIONS, VECTOR_MIGRATION_PREVIEW,
   type PromptTemplate, type GrayRelease,
 } from '../data/systemOpsMock';
+import {
+  useBackupPolicy, useGrayReleases, usePromptTemplates, useVectorDbConfig, systemService,
+} from '../hooks/useSystemData';
+import { useApiMode } from '../services/http';
 
 function PageHeader({ title, desc }: { title: string; desc: string }) {
   return (
@@ -22,13 +26,52 @@ function PageHeader({ title, desc }: { title: string; desc: string }) {
 /* ── §6.5 Prompt 模板 ── */
 
 export function PromptTemplatesPage() {
+  const apiMode = useApiMode();
+  const { data: apiTemplates, refresh } = usePromptTemplates();
   const [templates, setTemplates] = useState(PROMPT_TEMPLATES);
   const [selected, setSelected] = useState<PromptTemplate>(templates[0]);
   const [body, setBody] = useState(selected.body);
   const [toast, setToast] = useState<string | null>(null);
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
 
+  useEffect(() => {
+    if (apiMode && apiTemplates.length) {
+      setTemplates(apiTemplates);
+      setSelected(apiTemplates[0]);
+      setBody(apiTemplates[0].body);
+    }
+  }, [apiMode, apiTemplates]);
+
   const select = (t: PromptTemplate) => { setSelected(t); setBody(t.body); };
+
+  const handlePublish = async () => {
+    if (apiMode) {
+      try {
+        const next = templates.map(t => t.id === selected.id ? { ...t, body, status: 'published' as const } : t);
+        await systemService.putPromptTemplates(next);
+        setTemplates(next);
+        refresh();
+        showToast('模板已发布');
+      } catch (e) {
+        showToast((e as Error).message || '发布失败');
+      }
+      return;
+    }
+    showToast('模板已发布');
+  };
+
+  const handleTest = async () => {
+    if (apiMode) {
+      try {
+        const { data } = await systemService.testPromptTemplate(selected.id, { body, variables: { context: '...', query: '测试' } });
+        showToast(data.valid ? '预览：语法校验通过' : '预览失败');
+      } catch (e) {
+        showToast((e as Error).message || '测试失败');
+      }
+      return;
+    }
+    showToast('预览：语法校验通过（mock）');
+  };
 
   return (
     <div className="p-6 flex flex-col gap-5 h-full overflow-y-auto">
@@ -39,7 +82,7 @@ export function PromptTemplatesPage() {
           <button type="button" onClick={() => showToast('A/B 测试已创建（mock）')} className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800">
             <Play size={14} /> A/B 测试
           </button>
-          <button type="button" onClick={() => showToast('模板已发布')} className="flex items-center gap-1.5 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+          <button type="button" onClick={handlePublish} className="flex items-center gap-1.5 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
             <Save size={14} /> 发布
           </button>
         </div>
@@ -75,7 +118,7 @@ export function PromptTemplatesPage() {
             onChange={e => setBody(e.target.value)}
             className="flex-1 min-h-[280px] font-mono text-xs p-4 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
-          <button type="button" onClick={() => showToast('预览：语法校验通过（mock）')} className="self-start text-xs text-blue-600 hover:underline">测试预览</button>
+          <button type="button" onClick={handleTest} className="self-start text-xs text-blue-600 hover:underline">测试预览</button>
         </div>
       </div>
     </div>
@@ -85,11 +128,21 @@ export function PromptTemplatesPage() {
 /* ── §6.6 灰度发布 ── */
 
 export function GrayReleasePage() {
+  const apiMode = useApiMode();
+  const { data: apiReleases, refresh } = useGrayReleases();
   const [releases, setReleases] = useState(GRAY_RELEASES);
   const [selected, setSelected] = useState<GrayRelease>(releases[0]);
   const [traffic, setTraffic] = useState(selected.trafficPct);
   const [toast, setToast] = useState<string | null>(null);
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
+
+  useEffect(() => {
+    if (apiMode && apiReleases.length) {
+      setReleases(apiReleases);
+      setSelected(apiReleases[0]);
+      setTraffic(apiReleases[0].trafficPct);
+    }
+  }, [apiMode, apiReleases]);
 
   const updateTraffic = (pct: number) => {
     setTraffic(pct);
@@ -140,8 +193,28 @@ export function GrayReleasePage() {
             </div>
             <div className="flex gap-2 mt-4">
               <button type="button" onClick={() => updateTraffic(Math.min(100, traffic + 25))} className="text-xs px-3 py-1.5 bg-purple-600 text-white rounded-lg">扩量 +25%</button>
-              <button type="button" onClick={() => showToast('已全量发布（mock）')} className="text-xs px-3 py-1.5 border border-gray-300 rounded-lg">全量</button>
-              <button type="button" onClick={() => showToast('已回滚至基线（mock）')} className="text-xs px-3 py-1.5 border border-red-200 text-red-600 rounded-lg flex items-center gap-1"><RotateCcw size={12} /> 回滚</button>
+              <button type="button" onClick={async () => {
+                if (apiMode) {
+                  try {
+                    const { data } = await systemService.publishGrayRelease(selected.id);
+                    showToast(`全量发布任务 ${data.job.status}`);
+                    refresh();
+                  } catch (e) { showToast((e as Error).message || '失败'); }
+                  return;
+                }
+                showToast('已全量发布（mock）');
+              }} className="text-xs px-3 py-1.5 border border-gray-300 rounded-lg">全量</button>
+              <button type="button" onClick={async () => {
+                if (apiMode) {
+                  try {
+                    const { data } = await systemService.rollbackGrayRelease(selected.id);
+                    showToast(`回滚任务 ${data.job.status}`);
+                    refresh();
+                  } catch (e) { showToast((e as Error).message || '失败'); }
+                  return;
+                }
+                showToast('已回滚至基线（mock）');
+              }} className="text-xs px-3 py-1.5 border border-red-200 text-red-600 rounded-lg flex items-center gap-1"><RotateCcw size={12} /> 回滚</button>
             </div>
           </div>
         </div>
@@ -153,19 +226,56 @@ export function GrayReleasePage() {
 /* ── §6.7 备份恢复 ── */
 
 export function BackupPage() {
+  const apiMode = useApiMode();
+  const { data: apiPolicy, refresh: refreshPolicy } = useBackupPolicy();
   const [policy, setPolicy] = useState(BACKUP_POLICY);
+  const [backupJobs, setBackupJobs] = useState(BACKUP_RECORDS);
   const [showRestore, setShowRestore] = useState(false);
   const [restoreStep, setRestoreStep] = useState(0);
   const [confirmText, setConfirmText] = useState('');
   const [toast, setToast] = useState<string | null>(null);
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
 
+  useEffect(() => {
+    if (apiMode && apiPolicy) setPolicy(apiPolicy);
+  }, [apiMode, apiPolicy]);
+
+  useEffect(() => {
+    if (!apiMode) return;
+    systemService.listBackups().then(({ data }) => {
+      if (data.items?.length) {
+        setBackupJobs(data.items.map(j => ({
+          id: j.id,
+          type: 'full' as const,
+          size: '—',
+          status: j.status === 'completed' ? 'completed' as const : j.status === 'running' ? 'running' as const : 'failed' as const,
+          created: j.created_at ? new Date(j.created_at).toLocaleString() : '',
+          retention: `${policy.retentionDays} 天`,
+        })));
+      }
+    }).catch(() => {});
+  }, [apiMode, policy.retentionDays]);
+
+  const triggerBackup = async () => {
+    if (apiMode) {
+      try {
+        const { data } = await systemService.triggerBackup();
+        showToast(`备份任务 ${data.job.status} (${data.job.progress}%)`);
+        refreshPolicy();
+      } catch (e) {
+        showToast((e as Error).message || '触发失败');
+      }
+      return;
+    }
+    showToast('立即备份已触发（mock）');
+  };
+
   return (
     <div className="p-6 flex flex-col gap-5 h-full overflow-y-auto">
       {toast && <div className="fixed top-4 right-4 z-50 px-4 py-2 bg-gray-900 text-white text-sm rounded-lg shadow-lg">{toast}</div>}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <PageHeader title="备份与恢复" desc="§6.7 · 自动策略 · AES-256 · 恢复三步向导" />
-        <button type="button" onClick={() => showToast('立即备份已触发（mock）')} className="flex items-center gap-1.5 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg">
+        <button type="button" onClick={triggerBackup} className="flex items-center gap-1.5 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg">
           <HardDrive size={14} /> 立即备份
         </button>
       </div>
@@ -194,7 +304,7 @@ export function BackupPage() {
             </tr>
           </thead>
           <tbody>
-            {BACKUP_RECORDS.map(r => (
+            {backupJobs.map(r => (
               <tr key={r.id} className="border-b border-gray-50 dark:border-gray-800">
                 <td className="px-4 py-3 font-mono text-xs">{r.id}</td>
                 <td className="px-4 py-3">{r.type === 'full' ? '全量' : '增量'}</td>
@@ -247,10 +357,30 @@ export function BackupPage() {
 const MIGRATION_STEPS = ['选择目标', '映射配置', '迁移预览', '执行切换'];
 
 export function VectorDbSwitchPage() {
+  const apiMode = useApiMode();
+  const { data: vectorCfg } = useVectorDbConfig();
   const [step, setStep] = useState(0);
   const [target, setTarget] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const showToast = (m: string) => { setToast(m); setTimeout(() => setToast(null), 2500); };
+
+  const vectorOptions = apiMode && Array.isArray((vectorCfg as { options?: typeof VECTOR_DB_OPTIONS }).options)
+    ? (vectorCfg as { options: typeof VECTOR_DB_OPTIONS }).options
+    : VECTOR_DB_OPTIONS;
+
+  const runMigrate = async () => {
+    if (apiMode && target) {
+      try {
+        await systemService.putVectorDb({ ...(vectorCfg as object), target });
+        const { data } = await systemService.migrateVectorDb({ target });
+        showToast(`迁移任务 ${data.job.status}`);
+      } catch (e) {
+        showToast((e as Error).message || '迁移失败');
+      }
+      return;
+    }
+    showToast('迁移任务已提交（mock）');
+  };
 
   return (
     <div className="p-6 flex flex-col gap-5 h-full overflow-y-auto">
@@ -268,7 +398,7 @@ export function VectorDbSwitchPage() {
 
       {step === 0 && (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {VECTOR_DB_OPTIONS.map(opt => (
+          {vectorOptions.map(opt => (
             <button
               key={opt.id}
               type="button"
@@ -324,7 +454,7 @@ export function VectorDbSwitchPage() {
         {step < 3 ? (
           <button type="button" disabled={step === 0 && !target} onClick={() => setStep(s => s + 1)} className="text-sm px-4 py-2 bg-blue-600 text-white rounded-lg disabled:opacity-40">下一步</button>
         ) : (
-          <button type="button" onClick={() => showToast('向量库迁移任务已提交（mock）')} className="text-sm px-4 py-2 bg-blue-600 text-white rounded-lg">执行切换</button>
+          <button type="button" onClick={runMigrate} className="text-sm px-4 py-2 bg-blue-600 text-white rounded-lg">执行切换</button>
         )}
       </div>
     </div>

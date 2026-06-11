@@ -1736,3 +1736,41 @@ RAG3 PageIndex 建树此前为按页码分组 chunk 的启发式 mock，与 Vect
 - `frontend/rag3-web/src/pages/Chat.tsx` — 真 RAG 查询
 - `frontend/rag3-web/src/utils/pageIndexChatPrefill.ts` — pipelineIds
 
+---
+
+## 58. 系统管理 16 菜单全栈真实 API 对接
+
+### 背景与目标
+
+系统管理下 16 个菜单此前全部走 mock 或 toast 占位。本次按评测中心模式建立 `/api/v1/admin/*` 后端与 `systemService` / `useSystemData` 前端层：`useApiMode()` 为真时禁止 mock 回落；运维类（备份/灰度/向量库）采用配置优先 + `AdminJob` 异步 stub。
+
+### 改动摘要
+
+- **ORM**：新增 `TenantRag3Config`（租户 JSON 配置）、`AdminJob`（备份/灰度/迁移任务）、`AuditEvent`（轻量审计）。
+- **后端服务**：`system_config_service`（60s 缓存 + 默认 JSON）、`monitor_service`（doc_engine/storage 健康 + QueryLog 用量）、`trace_service`（QueryLog → Trace 摘要）、`admin_job_service`（线程 stub 快速完成）、`audit_service`（AuditEvent + QueryLog 合并）。
+- **Admin API**：`admin_api.py` 注册 health/monitor/users/roles/audit/traces/pipeline/classifier/fusion/strategy/prompt/gray/backup/vector/security/jobs 等端点；分类预览调 `RouterEngine`。
+- **运行时**：`chat_service` 读取租户 `fusion` 配置的 `rrfK` / `rerankTopN` / `channelWeights` 参与 RRF 与 rerank。
+- **前端**：`types/system.ts`、`systemService.ts`、`systemMappers.ts`、`useSystemData.ts`；改造 System / Pipeline / Classifier / Fusion / Retrieval / Generation / Monitor / Traces / SystemOps / Security / Models 等页，保存与刷新走真实 API。
+
+### 验证与风险
+
+- `cd backend/ragflow_rag30 && .venv/bin/python -m py_compile api/apps/restful_apis/admin_api.py rag3/system_config_service.py …` 通过。
+- `cd frontend/rag3-web && npm run build` 通过。
+- 手动（登录 + `VITE_USE_MOCK=false`）：流水线保存后刷新配置仍在；融合 RRF k 修改后新对话检索行为变化；监控基础设施 Tab 显示 QueryLog 聚合 QPS；链路追踪列表来自 QueryLog；备份/灰度/向量迁移触发 Job 后 status 可轮询。
+- 风险：v1 角色/RBAC 存 JSON，权限仍依赖 RAGFlow 租户关系；监控/追踪详情 span 为简化映射；备份/迁移无真实运维脚本；Monitor/Traces 部分 Tab 仍用 mock 图表作 UI 壳。
+
+### 反思与沉淀
+
+- 系统管理与评测中心共用「service + useAsync + apiMode 禁回落」模式，后续新菜单只需补 admin 端点 + hook。
+- 配置类与运维类分离：前者 `TenantRag3Config` 即时读写，后者 `AdminJob` 记录异步状态，避免 UI 假 toast。
+- `fusion` 配置已在 chat 路径生效；RouterEngine 矩阵规则 v1 仍硬编码，classifier 配置主要供 UI 持久化与 preview。
+
+### 涉及文件
+
+- `backend/ragflow_rag30/api/db/db_models.py` — 三表 ORM
+- `backend/ragflow_rag30/api/apps/restful_apis/admin_api.py` — Admin REST
+- `backend/ragflow_rag30/rag3/system_config_*.py`、`monitor_service.py`、`trace_service.py`、`admin_job_service.py`、`audit_service.py`
+- `backend/ragflow_rag30/rag3/chat_service.py` — 融合配置运行时
+- `frontend/rag3-web/src/types/system.ts`、`services/systemService.ts`、`systemMappers.ts`、`hooks/useSystemData.ts`
+- `frontend/rag3-web/src/pages/System*.tsx`、`PipelineConfigPage.tsx`、`ClassifierPage.tsx`、`FusionConfigPage.tsx`、`RetrievalStrategyPage.tsx`、`GenerationStrategyPage.tsx`、`MonitorPage.tsx`、`TracesPage.tsx`、`SystemOpsPages.tsx`
+

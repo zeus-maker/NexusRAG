@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Route, Save, Play } from 'lucide-react';
 import { SystemSubNav } from '../components/SystemSubNav';
+import { useRetrievalStrategy, systemService } from '../hooks/useSystemData';
+import { useApiMode } from '../services/http';
 import {
   DEFAULT_RETRIEVAL_STRATEGY,
   ROUTER_MODE_LABEL,
@@ -15,16 +17,51 @@ interface RetrievalStrategyPageProps {
 }
 
 export function RetrievalStrategyPage({ onNavigate }: RetrievalStrategyPageProps) {
+  const apiMode = useApiMode();
+  const { data: apiConfig, refresh } = useRetrievalStrategy();
   const [config, setConfig] = useState(DEFAULT_RETRIEVAL_STRATEGY);
   const [testQuery, setTestQuery] = useState('AMD收购Xilinx的影响');
   const [testResult, setTestResult] = useState<RetrievalTestResult | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
 
-  const runTest = () => {
+  useEffect(() => {
+    if (apiMode && apiConfig) setConfig(apiConfig);
+  }, [apiMode, apiConfig]);
+
+  const runTest = async () => {
+    if (apiMode) {
+      try {
+        const { data } = await systemService.classifierPreview({ query: testQuery });
+        setTestResult({
+          query: testQuery,
+          primary: data.primary?.[0] || '',
+          secondary: data.secondary?.[0] || '',
+          confidence: data.confidence,
+        });
+        showToast('路由测试完成');
+      } catch (e) {
+        showToast((e as Error).message || '测试失败');
+      }
+      return;
+    }
     const result = runMockRetrievalTest(testQuery);
     setTestResult(result);
     showToast('路由测试完成');
+  };
+
+  const handleSave = async () => {
+    if (apiMode) {
+      try {
+        await systemService.putRetrievalStrategy(config);
+        refresh();
+        showToast('检索策略已保存');
+      } catch (e) {
+        showToast((e as Error).message || '保存失败');
+      }
+      return;
+    }
+    showToast('检索策略已保存');
   };
 
   return (
@@ -49,7 +86,7 @@ export function RetrievalStrategyPage({ onNavigate }: RetrievalStrategyPageProps
           <button type="button" onClick={runTest} className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-white dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300">
             <Play size={14} /> 测试
           </button>
-          <button type="button" onClick={() => showToast('检索策略已保存')} className="flex items-center gap-1.5 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+          <button type="button" onClick={handleSave} className="flex items-center gap-1.5 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
             <Save size={14} /> 保存
           </button>
         </div>

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import {
   Route, Search, RefreshCw, ExternalLink, Download, Clock, User,
   ChevronRight, ChevronDown, AlertCircle, CheckCircle, Timer,
@@ -13,6 +13,8 @@ import {
   flattenSpans, filterTraces, getSessionTraces, logSpansChronological,
   type TraceRecord, type TraceSpan, type TraceStatus, type TraceSession, type TraceEnvironment,
 } from '../data/tracesMock';
+import { useTraces } from '../hooks/useSystemData';
+import { useApiMode } from '../services/http';
 
 interface TracesPageProps {
   onNavigate?: (page: string, extra?: Record<string, unknown>) => void;
@@ -36,11 +38,14 @@ const ENV_LABEL: Record<TraceEnvironment, string> = {
 };
 
 export function TracesPage({ onNavigate }: TracesPageProps) {
-  const [selected, setSelected] = useState<TraceRecord>(TRACE_RECORDS_EXPORT[0]);
+  const apiMode = useApiMode();
+  const [search, setSearch] = useState('');
+  const { data: apiTraces, refresh, loading, error } = useTraces(search);
+  const traceSource = apiMode ? apiTraces : TRACE_RECORDS_EXPORT;
+  const [selected, setSelected] = useState<TraceRecord>(traceSource[0] || TRACE_RECORDS_EXPORT[0]);
   const [selectedSession, setSelectedSession] = useState<TraceSession | null>(null);
   const [selectedSpan, setSelectedSpan] = useState<TraceSpan>(TRACE_RECORDS_EXPORT[0].rootSpan);
   const [listMode, setListMode] = useState<'traces' | 'sessions'>('traces');
-  const [search, setSearch] = useState('');
   const [timeRange, setTimeRange] = useState<(typeof TIME_RANGES)[number]>('最近24小时');
   const [statusFilter, setStatusFilter] = useState<TraceStatus | 'all'>('all');
   const [tierFilter, setTierFilter] = useState('all');
@@ -52,7 +57,7 @@ export function TracesPage({ onNavigate }: TracesPageProps) {
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
 
   const filtered = useMemo(
-    () => filterTraces(TRACE_RECORDS_EXPORT, {
+    () => filterTraces(traceSource, {
       query: search.trim() || undefined,
       status: statusFilter,
       tier: tierFilter,
@@ -60,8 +65,15 @@ export function TracesPage({ onNavigate }: TracesPageProps) {
       qualityAlertOnly,
       sessionId: selectedSession?.sessionId,
     }),
-    [search, statusFilter, tierFilter, envFilter, qualityAlertOnly, selectedSession],
+    [traceSource, search, statusFilter, tierFilter, envFilter, qualityAlertOnly, selectedSession],
   );
+
+  useEffect(() => {
+    if (apiMode && traceSource.length && !traceSource.find(t => t.id === selected.id)) {
+      setSelected(traceSource[0]);
+      setSelectedSpan(traceSource[0].rootSpan);
+    }
+  }, [apiMode, traceSource, selected.id]);
 
   const filteredSessions = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -87,7 +99,14 @@ export function TracesPage({ onNavigate }: TracesPageProps) {
     setListMode('sessions');
   };
 
-  const handleRefresh = () => showToast('Trace 列表已刷新（mock）');
+  const handleRefresh = () => {
+    if (apiMode) {
+      refresh();
+      showToast('Trace 列表已刷新');
+      return;
+    }
+    showToast('Trace 列表已刷新（mock）');
+  };
 
   return (
     <div className="p-6 flex flex-col gap-5 h-full min-h-0 overflow-y-auto bg-gray-50 dark:bg-gray-950">

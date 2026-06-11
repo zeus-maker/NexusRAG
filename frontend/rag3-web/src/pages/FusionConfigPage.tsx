@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Layers, Save, Play, Eye } from 'lucide-react';
 import { SystemSubNav, TableCard } from '../components/SystemSubNav';
+import { useFusionConfig, systemService } from '../hooks/useSystemData';
+import { useApiMode } from '../services/http';
 import {
   DEFAULT_FUSION_CONFIG,
   CONFLICT_POLICY_LABEL,
@@ -16,9 +18,29 @@ interface FusionConfigPageProps {
 }
 
 export function FusionConfigPage({ onNavigate }: FusionConfigPageProps) {
+  const apiMode = useApiMode();
+  const { data: apiConfig, loading, error, refresh } = useFusionConfig();
   const [config, setConfig] = useState<FusionConfig>(DEFAULT_FUSION_CONFIG);
   const [toast, setToast] = useState<string | null>(null);
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
+
+  useEffect(() => {
+    if (apiMode && apiConfig) setConfig(apiConfig);
+  }, [apiMode, apiConfig]);
+
+  const handleSave = async () => {
+    if (apiMode) {
+      try {
+        await systemService.putFusionConfig(config);
+        refresh();
+        showToast('融合配置已保存');
+      } catch (e) {
+        showToast((e as Error).message || '保存失败');
+      }
+      return;
+    }
+    showToast('融合配置已保存');
+  };
 
   const updateTopK = (key: keyof FusionConfig['topK'], val: number) => {
     setConfig(prev => ({ ...prev, topK: { ...prev.topK, [key]: val } }));
@@ -56,7 +78,7 @@ export function FusionConfigPage({ onNavigate }: FusionConfigPageProps) {
           <button type="button" onClick={() => showToast('融合配置测试通过')} className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-white dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300">
             <Play size={14} /> 测试
           </button>
-          <button type="button" onClick={() => showToast('融合配置已保存')} className="flex items-center gap-1.5 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+          <button type="button" onClick={handleSave} disabled={loading && apiMode} className="flex items-center gap-1.5 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
             <Save size={14} /> 保存
           </button>
         </div>

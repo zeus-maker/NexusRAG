@@ -4,16 +4,21 @@ import {
   AlertCircle, CheckCircle, Download, Settings,
   Users
 } from 'lucide-react';
+import { useAdminAuditLogs, useAdminUsers } from '../hooks/useSystemData';
+import { useApiMode } from '../services/http';
 import { mockUsers, mockAuditLogs } from '../mockData';
 
 export { MonitorPage } from './MonitorPage';
 
 export function UserManagePage() {
+  const apiMode = useApiMode();
+  const { data: apiUsers, loading, error } = useAdminUsers();
+  const users = apiMode ? apiUsers : mockUsers;
   const [search, setSearch] = useState('');
   const [showAdd, setShowAdd] = useState(false);
   const [selectedRole, setSelectedRole] = useState('all');
 
-  const filtered = mockUsers.filter(u => {
+  const filtered = users.filter(u => {
     const matchSearch = u.display_name.includes(search) || u.email.includes(search);
     const matchRole = selectedRole === 'all' || u.role === selectedRole;
     return matchSearch && matchRole;
@@ -38,11 +43,14 @@ export function UserManagePage() {
       </div>
 
       {/* Stats */}
+      {error && apiMode && (
+        <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>
+      )}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: '总用户数', value: mockUsers.length, icon: <Users size={15} className="text-blue-500" />, bg: 'bg-blue-50' },
-          { label: '活跃用户', value: mockUsers.filter(u => u.status === 'active').length, icon: <CheckCircle size={15} className="text-green-500" />, bg: 'bg-green-50' },
-          { label: '已禁用', value: mockUsers.filter(u => u.status === 'disabled').length, icon: <AlertCircle size={15} className="text-gray-500" />, bg: 'bg-gray-50' },
+          { label: '总用户数', value: loading && apiMode ? '…' : users.length, icon: <Users size={15} className="text-blue-500" />, bg: 'bg-blue-50' },
+          { label: '活跃用户', value: loading && apiMode ? '…' : users.filter(u => u.status === 'active').length, icon: <CheckCircle size={15} className="text-green-500" />, bg: 'bg-green-50' },
+          { label: '已禁用', value: loading && apiMode ? '…' : users.filter(u => u.status === 'disabled').length, icon: <AlertCircle size={15} className="text-gray-500" />, bg: 'bg-gray-50' },
           { label: '角色类型', value: 5, icon: <Shield size={15} className="text-purple-500" />, bg: 'bg-purple-50' },
         ].map((s, i) => (
           <div key={i} className="bg-white rounded-xl border border-gray-200 p-3 flex items-center gap-3">
@@ -229,8 +237,11 @@ export function RoleManagePage() {
 export { PipelineConfigPage } from './PipelineConfigPage';
 
 export function AuditLogPage() {
+  const apiMode = useApiMode();
   const [search, setSearch] = useState('');
-  const filtered = mockAuditLogs.filter(l => l.user_name.includes(search) || l.action.includes(search) || l.resource.includes(search));
+  const { data: apiLogs, loading, error, refresh } = useAdminAuditLogs(search);
+  const logs = apiMode ? apiLogs : mockAuditLogs;
+  const filtered = logs.filter(l => !search || l.user_name.includes(search) || l.action.includes(search) || l.resource.includes(search));
 
   return (
     <div className="p-6 flex flex-col gap-5 h-full overflow-y-auto">
@@ -239,10 +250,13 @@ export function AuditLogPage() {
           <h1 className="text-xl font-bold text-gray-900">审计日志</h1>
           <p className="text-sm text-gray-500 mt-0.5">记录所有用户操作与系统事件</p>
         </div>
-        <button className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700">
-          <Download size={14} /> 导出 CSV
+        <button type="button" onClick={() => apiMode && refresh()} className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700">
+          <Download size={14} /> {apiMode ? '刷新' : '导出 CSV'}
         </button>
       </div>
+      {error && apiMode && (
+        <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>
+      )}
 
       {/* Filters */}
       <div className="flex items-center gap-3 flex-wrap">
@@ -272,7 +286,7 @@ export function AuditLogPage() {
             </tr>
           </thead>
           <tbody>
-            {filtered.map(log => (
+            {(loading && apiMode ? [] : filtered).map(log => (
               <tr key={log.log_id} className="border-b border-gray-50 hover:bg-gray-50/70 transition-colors">
                 <td className="px-4 py-3 text-xs text-gray-600 font-mono">{log.timestamp}</td>
                 <td className="px-4 py-3">
