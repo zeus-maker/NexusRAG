@@ -122,10 +122,19 @@ storybook-static/
 *storybook.log
 
 # --- Project-specific ---
+# Cursor 本地计划（不入库）
+.cursor/plans/
+
 # 上游 RAGFlow 本地镜像（用户自行 clone/copy，不入库）
 ragflow-0.25.4/
 ragflow-0.25.6/
 ragflow-*/
+
+# DeepDOC 模型（scripts/download-deepdoc-models.sh 下载）
+backend/ragflow_rag30/rag/res/deepdoc/*.model
+
+# tiktoken cl100k_base 缓存（TIKTOKEN_CACHE_DIR = ragflow_rag30 根目录，40 位 hash 文件名）
+backend/ragflow_rag30/????????????????????????????????????????
 
 .workbuddy/
 __v0_runtime_loader.js
