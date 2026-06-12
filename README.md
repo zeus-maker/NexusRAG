@@ -43,7 +43,7 @@
 </div>
 
 > **仓库说明**：Monorepo 目录名为 `agentic-rag`，产品品牌为 **NexusRAG**（RAG 3.0）。  
-> **开发入口**：[`frontend/rag3-web`](./frontend/rag3-web) + [`backend/ragflow_rag30`](./backend/ragflow_rag30) · 原型参考 [`rag3-bolt-v1.5`](./rag3-bolt-v1.5)（只读） · 协作规范 [`CLAUDE.md`](./CLAUDE.md)
+> **开发入口**：[`frontend/rag3-web`](./frontend/rag3-web) + [`backend/ragflow_rag30`](./backend/ragflow_rag30) · 原型参考 [`web/rag3-bolt-v1.5`](./web/rag3-bolt-v1.5)（只读） · 协作规范 [`CLAUDE.md`](./CLAUDE.md)
 
 <p align="center">
   <img src="./docs/assets/nexusrag-overview.png" alt="NexusRAG 产品能力概览" width="920" />
@@ -148,7 +148,8 @@ NexusRAG/                    # 产品名 · 仓库目录 agentic-rag
 │       ├── api/apps/         # API 蓝图
 │       ├── conf/             # service_conf.yaml
 │       └── scripts/          # install.sh / start.sh / start-task-executor.sh
-├── rag3-bolt-v1.5/           # 交互原型（mock，只读，勿改）
+├── web/
+│   └── rag3-bolt-v1.5/       # 交互原型（mock，只读，勿改）
 ├── ragflow-0.25.6/           # 上游 RAGFlow 镜像（本地，gitignore）
 ├── docs/
 │   ├── prd/                  # 产品需求与界面契约
@@ -295,7 +296,7 @@ cd backend/ragflow_rag30 && .venv/bin/ruff check rag3 router pipelines fusion
 
 ## 开发规范
 
-1. **最小 diff**：只改任务相关文件；`rag3-bolt-v1.5` 禁止修改。
+1. **最小 diff**：只改任务相关文件；`web/rag3-bolt-v1.5` 禁止修改。
 2. **契约优先**：先对齐 `docs/prd/` 再写代码。
 3. **双模式前端**：API 模式下禁止静默回落 mock（与评测中心、系统管理一致）。
 4. **Devlog**：代码变更收尾写 `docs/devlog/YYYY-MM-DD-*.md` 并 commit（见 [`.cursor/rules/devlog.mdc`](./.cursor/rules/devlog.mdc)）。

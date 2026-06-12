@@ -2,7 +2,7 @@
 
 NexusRAG 生产前端（[`../../README.md`](../../README.md)）。
 
-从 `rag3-bolt-v1.5` 复制演进，**唯一前端开发入口**。页面契约见 [`docs/prd/前端界面实现方案.md`](../../docs/prd/前端界面实现方案.md)。
+从 [`web/rag3-bolt-v1.5`](../web/rag3-bolt-v1.5) 复制演进，**唯一前端开发入口**。页面契约见 [`docs/prd/前端界面实现方案.md`](../../docs/prd/前端界面实现方案.md)。
 
 技术栈：React 18 · TypeScript · Vite · Tailwind · 无 React Router（`store.ts` 页面 state + Hash 深链）。
 
@@ -86,7 +86,7 @@ src/
 
 ## 与原型关系
 
-| `rag3-bolt-v1.5` | `rag3-web` |
+| `web/rag3-bolt-v1.5` | `rag3-web` |
 |------------------|------------|
 | mock 驱动 | API + mock 双模式 |
 | 只读 UX 参考 | 唯一开发入口 |

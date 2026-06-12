@@ -8,7 +8,7 @@
 
 | 目录 | 角色 | 是否改动 |
 |------|------|----------|
-| `rag3-bolt-v1.5/` | 交互原型（mock，只读参考） | **禁止修改** |
+| `web/rag3-bolt-v1.5/` | 交互原型（mock，只读参考） | **禁止修改** |
 | `frontend/rag3-web/` | 生产前端（从 bolt 复制，接真实 API） | 主要开发 |
 | `backend/ragflow_rag30/` | RAG 3.0 后端（RAGFlow 二开 + 新模块） | 主要开发 |
 | `ragflow-0.25.6/` | 上游 RAGFlow 镜像（同步官方用） | **只读**，不直接改 |
@@ -41,7 +41,7 @@
 
 ## 前端规范（frontend/rag3-web）
 
-- 技术栈：React 18 + TypeScript + Vite + Tailwind；暗色设计系统见 `rag3-bolt-v1.5` 原型。
+- 技术栈：React 18 + TypeScript + Vite + Tailwind；暗色设计系统见 `web/rag3-bolt-v1.5` 原型。
 - 原型对照：`docs/prd/前端原型实现进度.md`；页面契约：`docs/prd/前端界面实现方案.md`。
 - API：统一走 `src/services/api.ts`；开发时代理到 `http://localhost:9380`（RAGFlow 默认端口）。
 - 替换 mock：按模块将 `src/data/*Mock.ts` 逐步换为 API 调用；保留 mock 作 Storybook/离线演示。`VITE_USE_REAL_API=true` 时知识库管理已接 `/v1/datasets/*`。
@@ -60,7 +60,7 @@
 
 1. **最小 diff**：只改任务相关文件；不重构无关模块。
 2. **契约优先**：先对齐 PRD/API 文档再写代码。
-3. **原型不动**：`rag3-bolt-v1.5` 仅作 UX 参考，功能在 `frontend/rag3-web` 实现。
+3. **原型不动**：`web/rag3-bolt-v1.5` 仅作 UX 参考，功能在 `frontend/rag3-web` 实现。
 4. **Devlog**：代码/配置变更收尾写 `docs/devlog/YYYY-MM-DD-*.md` 并 commit（见 `.cursor/rules/devlog.mdc`）。
 5. **验证**：前端 `npm run build`；后端至少 `ruff check` 新增模块。
 
