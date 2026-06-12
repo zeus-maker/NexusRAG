@@ -4,9 +4,9 @@ import {
   AlertCircle, CheckCircle, Download, Settings,
   Users
 } from 'lucide-react';
-import { useAdminAuditLogs, useAdminUsers } from '../hooks/useSystemData';
 import { useApiMode } from '../services/http';
 import { mockUsers, mockAuditLogs } from '../mockData';
+import { useAdminUsers, useAdminRoles } from '../hooks/useSystemData';
 
 export { MonitorPage } from './MonitorPage';
 
@@ -158,7 +158,21 @@ export function UserManagePage() {
 }
 
 export function RoleManagePage() {
-  const roles = [
+  const apiMode = useApiMode();
+  const { data: apiRoles } = useAdminRoles();
+  const roleIcons: Record<string, string> = {
+    admin: '👑', kb_admin: '📚', developer: '💻', user: '👤',
+  };
+  const roleColors = ['bg-red-50 border-red-200 text-red-700', 'bg-blue-50 border-blue-200 text-blue-700', 'bg-purple-50 border-purple-200 text-purple-700', 'bg-green-50 border-green-200 text-green-700'];
+  const roles = apiMode && apiRoles.length
+    ? apiRoles.map((r, i) => ({
+        name: r.name,
+        users: r.userCount,
+        color: roleColors[i % roleColors.length].split(' ')[0] + ' ' + roleColors[i % roleColors.length].split(' ')[1],
+        textColor: roleColors[i % roleColors.length].split(' ')[2],
+        icon: roleIcons[r.id] || '⚙️',
+      }))
+    : [
     { name: '超级管理员', users: 1, color: 'bg-red-50 border-red-200', textColor: 'text-red-700', icon: '👑' },
     { name: '平台管理员', users: 2, color: 'bg-orange-50 border-orange-200', textColor: 'text-orange-700', icon: '⚙️' },
     { name: '知识库管理员', users: 5, color: 'bg-blue-50 border-blue-200', textColor: 'text-blue-700', icon: '📚' },

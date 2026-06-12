@@ -112,6 +112,31 @@ export interface TraceSummaryApi {
   kbId: string;
   channels: string[];
   routeTier: string;
+  tokens?: number;
+  cost?: number;
+  pipeline?: string;
+}
+
+export interface TraceStatsApi {
+  todayCount: number;
+  p95Ms: number;
+  errorRate: number;
+  avgTokens: number;
+  totalCostToday: number;
+  emptyRetrievalRate: number;
+  contextTruncateRate: number;
+  hours?: number;
+}
+
+export interface TraceSessionApi {
+  sessionId: string;
+  user: string;
+  title: string;
+  turns: number;
+  totalTokens: number;
+  totalCost: number;
+  lastActive: number;
+  traceIds: string[];
 }
 
 export interface SecurityRulesApi {

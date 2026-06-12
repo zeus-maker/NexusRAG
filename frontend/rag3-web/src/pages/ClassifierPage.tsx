@@ -117,7 +117,7 @@ export function ClassifierPage({ onNavigate }: ClassifierPageProps) {
         />
       )}
       {activeTab === 2 && <MatrixTab matrix={matrix} setMatrix={setMatrix} showToast={showToast} />}
-      {activeTab === 3 && <FullTestTab showToast={showToast} onNavigate={onNavigate} />}
+      {activeTab === 3 && <FullTestTab showToast={showToast} onNavigate={onNavigate} apiMode={apiMode} />}
       {activeTab === 4 && <OnlineLearningTab onNavigate={onNavigate} />}
     </div>
   );
@@ -468,14 +468,41 @@ function MatrixTab({
   );
 }
 
-function FullTestTab({ showToast, onNavigate }: { showToast: (m: string) => void; onNavigate?: ClassifierPageProps['onNavigate'] }) {
+function FullTestTab({ showToast, onNavigate, apiMode }: { showToast: (m: string) => void; onNavigate?: ClassifierPageProps['onNavigate']; apiMode?: boolean }) {
   const [query, setQuery] = useState('违约金比例是多少？');
   const [result, setResult] = useState<FullRouteTestResult | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const run = () => {
+  const run = async () => {
     setLoading(true);
     setResult(null);
+    if (apiMode) {
+      try {
+        const { data } = await systemService.classifierPreview({ query });
+        setResult({
+          query,
+          tier: data.tier,
+          docType: data.docType,
+          intent: data.intent,
+          security: data.security,
+          primary: data.primary,
+          secondary: data.secondary,
+          fusion: data.fusion as FusionStrategy,
+          confidence: data.confidence,
+          estLatencyMs: data.estLatencyMs,
+          reject: false,
+          trace: [
+            { layer: 'L1', label: '分类器', detail: `${data.tier} / ${data.docType}`, ms: 120 },
+            { layer: 'L2', label: '路由', detail: data.primary.join(', '), ms: 45 },
+          ],
+        } as FullRouteTestResult);
+      } catch (e) {
+        showToast((e as Error).message || '测试失败');
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
     setTimeout(() => {
       setResult(runFullRouteTest(query));
       setLoading(false);
@@ -484,7 +511,7 @@ function FullTestTab({ showToast, onNavigate }: { showToast: (m: string) => void
 
   return (
     <div className="space-y-4 w-full min-w-0">
-      <p className="text-xs text-gray-500">综合测试四分类器 + 矩阵匹配 + L1–L5 全链路 Trace（POST /api/v1/admin/classifiers/test mock）</p>
+      <p className="text-xs text-gray-500">综合测试四分类器 + 矩阵匹配 + L1–L5 全链路 Trace（{apiMode ? 'POST /api/v1/admin/classifier/preview' : 'mock'}）</p>
       <div className={`${hubCard} p-4`}>
         <div className="flex flex-wrap gap-2 mb-3">
           <input value={query} onChange={e => setQuery(e.target.value)} className={`${hubInput} flex-1 min-w-[200px]`} onKeyDown={e => e.key === 'Enter' && run()} />

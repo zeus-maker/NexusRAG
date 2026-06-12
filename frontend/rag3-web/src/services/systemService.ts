@@ -49,10 +49,18 @@ export const systemService = {
   listAuditLogs: (params?: { search?: string; page?: number; page_size?: number }) =>
     apiRequest<{ items: AuditLogItem[]; total: number }>(`/admin/audit-logs${paramsToQuery(params)}`),
 
-  listTraces: (params?: { search?: string; page?: number; page_size?: number }) =>
+  listTraces: (params?: { search?: string; status?: string; tier?: string; page?: number; page_size?: number }) =>
     apiRequest<{ items: TraceSummaryApi[]; total: number }>(`/admin/traces${paramsToQuery(params)}`),
 
-  getTrace: (traceId: string) => apiRequest<TraceSummaryApi & { spans?: unknown[] }>(`/admin/traces/${traceId}`),
+  getTraceStats: (hours = 24) =>
+    apiRequest<import('../types/system').TraceStatsApi>(`/admin/traces/stats${paramsToQuery({ hours })}`),
+
+  listTraceSessions: (params?: { search?: string; limit?: number }) =>
+    apiRequest<{ items: import('../types/system').TraceSessionApi[] }>(`/admin/traces/sessions${paramsToQuery(params)}`),
+
+  getTrace: (traceId: string) => apiRequest<Record<string, unknown>>(`/admin/traces/${traceId}`),
+
+  exportTrace: (traceId: string) => apiRequest<Record<string, unknown>>(`/admin/traces/${traceId}/export`),
 
   getPipelineConfig: () => apiRequest<PipelineConfigApi>('/admin/pipeline-configs'),
 
@@ -116,6 +124,11 @@ export const systemService = {
 
   triggerBackup: (body?: Record<string, unknown>) =>
     apiRequest<{ job: AdminJobApi }>('/admin/maintenance/backup', { method: 'POST', body: JSON.stringify(body || {}) }),
+
+  triggerRestore: (body?: Record<string, unknown>) =>
+    apiRequest<{ job: AdminJobApi }>('/admin/maintenance/restore', { method: 'POST', body: JSON.stringify(body || {}) }),
+
+  getConfigDefaults: () => apiRequest<Record<string, unknown>>('/admin/config/defaults'),
 
   getVectorDb: () => apiRequest<Record<string, unknown>>('/admin/vector-db'),
 

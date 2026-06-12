@@ -17,7 +17,7 @@ import {
   VECTOR_DB_OPTIONS,
 } from '../data/systemOpsMock';
 import { mockAuditLogs, mockUsers } from '../mockData';
-import { mapAuditLog, mapTraceSummary } from '../services/systemMappers';
+import { mapAuditLog, mapTraceDetail, mapTraceSession, mapTraceStats, mapTraceSummary } from '../services/systemMappers';
 import { systemService } from '../services/systemService';
 import { useApiMode } from '../services/http';
 import type {
@@ -30,10 +30,10 @@ import type {
   PipelineConfigApi,
   RetrievalStrategyConfig,
   SecurityRulesApi,
+  TraceStatsApi,
   TraceSummaryApi,
 } from '../types/system';
-import type { AuditLog } from '../types';
-import type { GrayRelease, PromptTemplate, TraceRecord } from '../types/system';
+import type { AuditLog, TraceRecord, TraceSession } from '../types/system';
 
 interface AsyncState<T> {
   data: T;
@@ -233,18 +233,66 @@ export function useMonitorDashboard(pollMs = 0) {
   );
 }
 
-export function useTraces(search = '') {
+export function useTraces(search = '', status = '', tier = '') {
   const apiMode = useApiMode();
   return useAsync<TraceRecord[]>(
     async () => {
-      const { data } = await systemService.listTraces({ search, page_size: 50 });
+      const { data } = await systemService.listTraces({
+        search,
+        status: status === 'all' ? '' : status,
+        tier: tier === 'all' ? '' : tier,
+        page_size: 100,
+      });
       return (data.items || []).map((t: TraceSummaryApi) => mapTraceSummary(t));
+    },
+    [],
+    [],
+    [search, status, tier],
+    apiMode,
+  );
+}
+
+const EMPTY_TRACE_STATS: TraceStatsApi = {
+  todayCount: 0,
+  p95Ms: 0,
+  errorRate: 0,
+  avgTokens: 0,
+  totalCostToday: 0,
+  emptyRetrievalRate: 0,
+  contextTruncateRate: 0,
+};
+
+export function useTraceStats(hours = 24) {
+  const apiMode = useApiMode();
+  return useAsync(
+    async () => {
+      const { data } = await systemService.getTraceStats(hours);
+      return mapTraceStats(data);
+    },
+    EMPTY_TRACE_STATS,
+    EMPTY_TRACE_STATS,
+    [hours],
+    apiMode,
+  );
+}
+
+export function useTraceSessions(search = '') {
+  const apiMode = useApiMode();
+  return useAsync<TraceSession[]>(
+    async () => {
+      const { data } = await systemService.listTraceSessions({ search, limit: 100 });
+      return (data.items || []).map(s => mapTraceSession(s as unknown as Record<string, unknown>));
     },
     [],
     [],
     [search],
     apiMode,
   );
+}
+
+export async function fetchTraceDetail(traceId: string): Promise<TraceRecord> {
+  const { data } = await systemService.getTrace(traceId);
+  return mapTraceDetail(data);
 }
 
 export function usePromptTemplates() {
@@ -298,6 +346,20 @@ export function useVectorDbConfig() {
     },
     { current: 'milvus', target: 'milvus', options: VECTOR_DB_OPTIONS },
     { current: 'milvus', target: 'milvus', options: [] },
+    [],
+    apiMode,
+  );
+}
+
+export function useAdminRoles() {
+  const apiMode = useApiMode();
+  return useAsync(
+    async () => {
+      const { data } = await systemService.getRoles();
+      return data.items || [];
+    },
+    [],
+    [],
     [],
     apiMode,
   );

@@ -256,6 +256,37 @@ export function BackupPage() {
     }).catch(() => {});
   }, [apiMode, policy.retentionDays]);
 
+  const [restoreBackupId, setRestoreBackupId] = useState<string | null>(null);
+
+  const savePolicy = async () => {
+    if (apiMode) {
+      try {
+        await systemService.putBackupPolicy(policy);
+        refreshPolicy();
+        showToast('备份策略已保存');
+      } catch (e) {
+        showToast((e as Error).message || '保存失败');
+      }
+      return;
+    }
+    showToast('备份策略已保存（mock）');
+  };
+
+  const confirmRestore = async () => {
+    if (apiMode) {
+      try {
+        const { data } = await systemService.triggerRestore({ backup_id: restoreBackupId || 'latest' });
+        setShowRestore(false);
+        showToast(`恢复任务 ${data.job.status} (${data.job.progress ?? 0}%)`);
+      } catch (e) {
+        showToast((e as Error).message || '恢复失败');
+      }
+      return;
+    }
+    setShowRestore(false);
+    showToast('恢复任务已提交（mock）');
+  };
+
   const triggerBackup = async () => {
     if (apiMode) {
       try {
@@ -275,6 +306,9 @@ export function BackupPage() {
       {toast && <div className="fixed top-4 right-4 z-50 px-4 py-2 bg-gray-900 text-white text-sm rounded-lg shadow-lg">{toast}</div>}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <PageHeader title="备份与恢复" desc="§6.7 · 自动策略 · AES-256 · 恢复三步向导" />
+        <button type="button" onClick={savePolicy} className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-white dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300">
+          <Save size={14} /> 保存策略
+        </button>
         <button type="button" onClick={triggerBackup} className="flex items-center gap-1.5 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg">
           <HardDrive size={14} /> 立即备份
         </button>
@@ -314,7 +348,7 @@ export function BackupPage() {
                 </td>
                 <td className="px-4 py-3 text-xs text-gray-500">{r.created}</td>
                 <td className="px-4 py-3">
-                  <button type="button" onClick={() => { setShowRestore(true); setRestoreStep(0); setConfirmText(''); }} className="text-xs text-blue-600 hover:underline">恢复</button>
+                  <button type="button" onClick={() => { setRestoreBackupId(r.id); setShowRestore(true); setRestoreStep(0); setConfirmText(''); }} className="text-xs text-blue-600 hover:underline">恢复</button>
                 </td>
               </tr>
             ))}
@@ -326,7 +360,7 @@ export function BackupPage() {
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
           <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 w-full max-w-md p-6">
             <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 mb-4">恢复向导 · 步骤 {restoreStep + 1}/3</h3>
-            {restoreStep === 0 && <p className="text-sm text-gray-600 dark:text-gray-400">选择备份点 <strong>bk-1</strong>（全量 4.2 GB）进行恢复。</p>}
+            {restoreStep === 0 && <p className="text-sm text-gray-600 dark:text-gray-400">选择备份点 <strong>{restoreBackupId || 'bk-1'}</strong> 进行恢复。</p>}
             {restoreStep === 1 && <p className="text-sm text-gray-600 dark:text-gray-400">完整性校验通过 · 预计耗时 45 分钟 · 恢复期间服务只读。</p>}
             {restoreStep === 2 && (
               <div>
@@ -341,7 +375,7 @@ export function BackupPage() {
                 {restoreStep < 2 ? (
                   <button type="button" onClick={() => setRestoreStep(s => s + 1)} className="text-sm px-3 py-1.5 bg-blue-600 text-white rounded-lg flex items-center gap-1">下一步 <ChevronRight size={14} /></button>
                 ) : (
-                  <button type="button" disabled={confirmText !== 'RESTORE'} onClick={() => { setShowRestore(false); showToast('恢复任务已提交（mock）'); }} className="text-sm px-3 py-1.5 bg-red-600 text-white rounded-lg disabled:opacity-40">确认恢复</button>
+                  <button type="button" disabled={confirmText !== 'RESTORE'} onClick={confirmRestore} className="text-sm px-3 py-1.5 bg-red-600 text-white rounded-lg disabled:opacity-40">确认恢复</button>
                 )}
               </div>
             </div>

@@ -13,7 +13,8 @@ import {
   flattenSpans, filterTraces, getSessionTraces, logSpansChronological,
   type TraceRecord, type TraceSpan, type TraceStatus, type TraceSession, type TraceEnvironment,
 } from '../data/tracesMock';
-import { useTraces } from '../hooks/useSystemData';
+import { useTraces, useTraceStats, useTraceSessions, fetchTraceDetail, systemService } from '../hooks/useSystemData';
+import { getSessionTracesFromList } from '../services/systemMappers';
 import { useApiMode } from '../services/http';
 
 interface TracesPageProps {
@@ -21,6 +22,13 @@ interface TracesPageProps {
 }
 
 const TIME_RANGES = ['最近1小时', '最近6小时', '最近24小时', '最近7天'] as const;
+
+function timeRangeToHours(range: (typeof TIME_RANGES)[number]): number {
+  if (range === '最近1小时') return 1;
+  if (range === '最近6小时') return 6;
+  if (range === '最近7天') return 168;
+  return 24;
+}
 const DETAIL_TABS = ['概览', 'Span 树', '时间轴', '日志', 'JSON'] as const;
 const TIER_OPTIONS = ['all', 'Tier1', 'Tier2', 'Tier3', 'Tier4'] as const;
 const ENV_OPTIONS: Array<TraceEnvironment | 'all'> = ['all', 'production', 'staging', 'development'];
@@ -37,24 +45,50 @@ const ENV_LABEL: Record<TraceEnvironment, string> = {
   development: 'dev',
 };
 
+const EMPTY_TRACE: TraceRecord = {
+  id: '__empty__',
+  traceId: '—',
+  query: '暂无 Trace，请先发起对话查询',
+  user: '—',
+  kb: '—',
+  kbId: '',
+  durationMs: 0,
+  tokens: 0,
+  cost: 0,
+  tier: '—',
+  pipeline: '—',
+  status: 'success',
+  time: '—',
+  environment: 'production',
+  layers: [],
+  rootSpan: { id: 'root-empty', name: 'trace', type: 'root', startMs: 0, durationMs: 0, status: 'ok' },
+};
+
 export function TracesPage({ onNavigate }: TracesPageProps) {
   const apiMode = useApiMode();
   const [search, setSearch] = useState('');
-  const { data: apiTraces, refresh, loading, error } = useTraces(search);
-  const traceSource = apiMode ? apiTraces : TRACE_RECORDS_EXPORT;
-  const [selected, setSelected] = useState<TraceRecord>(traceSource[0] || TRACE_RECORDS_EXPORT[0]);
-  const [selectedSession, setSelectedSession] = useState<TraceSession | null>(null);
-  const [selectedSpan, setSelectedSpan] = useState<TraceSpan>(TRACE_RECORDS_EXPORT[0].rootSpan);
-  const [listMode, setListMode] = useState<'traces' | 'sessions'>('traces');
   const [timeRange, setTimeRange] = useState<(typeof TIME_RANGES)[number]>('最近24小时');
   const [statusFilter, setStatusFilter] = useState<TraceStatus | 'all'>('all');
   const [tierFilter, setTierFilter] = useState('all');
+  const { data: apiTraces, refresh, loading, error } = useTraces(search, statusFilter === 'all' ? '' : statusFilter, tierFilter);
+  const { data: traceStats } = useTraceStats(timeRangeToHours(timeRange));
+  const { data: apiSessions } = useTraceSessions(search);
+  const traceSource = apiMode ? apiTraces : TRACE_RECORDS_EXPORT;
+  const [selected, setSelected] = useState<TraceRecord>(traceSource[0] || TRACE_RECORDS_EXPORT[0]);
+  const activeTrace = apiMode && traceSource.length === 0 ? EMPTY_TRACE : selected;
+  const [selectedSession, setSelectedSession] = useState<TraceSession | null>(null);
+  const [selectedSpan, setSelectedSpan] = useState<TraceSpan>(TRACE_RECORDS_EXPORT[0].rootSpan);
+  const [listMode, setListMode] = useState<'traces' | 'sessions'>('traces');
   const [envFilter, setEnvFilter] = useState<TraceEnvironment | 'all'>('all');
   const [qualityAlertOnly, setQualityAlertOnly] = useState(false);
   const [detailTab, setDetailTab] = useState(0);
   const [treeExpandAll, setTreeExpandAll] = useState(true);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
+
+  const stats = apiMode ? traceStats : TRACE_STATS;
+  const sessionSource = apiMode ? apiSessions : TRACE_SESSIONS;
 
   const filtered = useMemo(
     () => filterTraces(traceSource, {
@@ -77,25 +111,42 @@ export function TracesPage({ onNavigate }: TracesPageProps) {
 
   const filteredSessions = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return TRACE_SESSIONS.filter(s =>
+    return sessionSource.filter(s =>
       !q || s.title.toLowerCase().includes(q) || s.user.includes(q) || s.sessionId.includes(q),
     );
-  }, [search]);
+  }, [search, sessionSource]);
 
-  const flatSpans = useMemo(() => flattenSpans(selected.rootSpan), [selected]);
-  const logSpans = useMemo(() => logSpansChronological(selected.rootSpan), [selected]);
+  const flatSpans = useMemo(() => flattenSpans(activeTrace.rootSpan), [activeTrace]);
+  const logSpans = useMemo(() => logSpansChronological(activeTrace.rootSpan), [activeTrace]);
 
-  const selectTrace = (tr: TraceRecord) => {
-    setSelected(tr);
-    setSelectedSpan(tr.rootSpan);
+  const selectTrace = async (tr: TraceRecord) => {
+    if (apiMode) {
+      setDetailLoading(true);
+      try {
+        const detail = await fetchTraceDetail(tr.traceId);
+        setSelected(detail);
+        setSelectedSpan(detail.rootSpan);
+      } catch (e) {
+        setSelected(tr);
+        setSelectedSpan(tr.rootSpan);
+        showToast((e as Error).message || '加载详情失败');
+      } finally {
+        setDetailLoading(false);
+      }
+    } else {
+      setSelected(tr);
+      setSelectedSpan(tr.rootSpan);
+    }
     setDetailTab(0);
     setListMode('traces');
   };
 
   const selectSession = (sess: TraceSession) => {
     setSelectedSession(sess);
-    const traces = getSessionTraces(sess.sessionId);
-    if (traces[0]) selectTrace(traces[0]);
+    const traces = apiMode
+      ? getSessionTracesFromList(sess.sessionId, traceSource)
+      : getSessionTraces(sess.sessionId);
+    if (traces[0]) void selectTrace(traces[0]);
     setListMode('sessions');
   };
 
@@ -106,6 +157,26 @@ export function TracesPage({ onNavigate }: TracesPageProps) {
       return;
     }
     showToast('Trace 列表已刷新（mock）');
+  };
+
+  const handleExport = async () => {
+    if (apiMode) {
+      try {
+        const { data } = await systemService.exportTrace(activeTrace.traceId);
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${activeTrace.traceId}-otlp.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast('OTLP JSON 已导出');
+      } catch (e) {
+        showToast((e as Error).message || '导出失败');
+      }
+      return;
+    }
+    showToast('已导出 OTLP JSON（mock）');
   };
 
   return (
@@ -127,7 +198,7 @@ export function TracesPage({ onNavigate }: TracesPageProps) {
           <button type="button" onClick={handleRefresh} className="flex items-center gap-1.5 text-xs px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-white dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300">
             <RefreshCw size={13} /> 刷新
           </button>
-          <button type="button" onClick={() => showToast('已导出 OTLP JSON（mock）')} className="flex items-center gap-1.5 text-xs px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-white dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300">
+          <button type="button" onClick={handleExport} className="flex items-center gap-1.5 text-xs px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-white dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300">
             <Download size={13} /> 导出
           </button>
           <select
@@ -140,13 +211,17 @@ export function TracesPage({ onNavigate }: TracesPageProps) {
         </div>
       </div>
 
+      {error && apiMode && (
+        <div className="text-sm text-red-600 bg-red-50 dark:bg-red-900/20 border border-red-200 rounded-lg px-3 py-2">{error}</div>
+      )}
+
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <HubStatCard label="今日 Trace" value={TRACE_STATS.todayCount.toLocaleString()} icon={<Activity size={18} />} iconColor="#2563eb" />
-        <HubStatCard label={`P95 · ${timeRange}`} value={`${(TRACE_STATS.p95Ms / 1000).toFixed(1)}s`} icon={<Timer size={18} />} iconColor="#d97706" />
-        <HubStatCard label="错误率" value={`${TRACE_STATS.errorRate}%`} icon={<AlertCircle size={18} />} iconColor="#dc2626" />
-        <HubStatCard label="空召回率" value={`${TRACE_STATS.emptyRetrievalRate}%`} icon={<AlertTriangle size={18} />} iconColor="#ea580c" />
-        <HubStatCard label="上下文截断" value={`${TRACE_STATS.contextTruncateRate}%`} icon={<FoldVertical size={18} />} iconColor="#9333ea" />
-        <HubStatCard label="今日成本" value={`¥${TRACE_STATS.totalCostToday}`} icon={<DollarSign size={18} />} iconColor="#7c3aed" />
+        <HubStatCard label="今日 Trace" value={stats.todayCount.toLocaleString()} icon={<Activity size={18} />} iconColor="#2563eb" />
+        <HubStatCard label={`P95 · ${timeRange}`} value={`${(stats.p95Ms / 1000).toFixed(1)}s`} icon={<Timer size={18} />} iconColor="#d97706" />
+        <HubStatCard label="错误率" value={`${stats.errorRate}%`} icon={<AlertCircle size={18} />} iconColor="#dc2626" />
+        <HubStatCard label="空召回率" value={`${stats.emptyRetrievalRate}%`} icon={<AlertTriangle size={18} />} iconColor="#ea580c" />
+        <HubStatCard label="上下文截断" value={`${stats.contextTruncateRate}%`} icon={<FoldVertical size={18} />} iconColor="#9333ea" />
+        <HubStatCard label="今日成本" value={`¥${stats.totalCostToday}`} icon={<DollarSign size={18} />} iconColor="#7c3aed" />
       </div>
 
       <div className="flex flex-wrap items-center gap-2 bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-3">
@@ -220,15 +295,31 @@ export function TracesPage({ onNavigate }: TracesPageProps) {
         </div>
 
         <div className="lg:col-span-3 flex flex-col gap-4 min-h-0">
-          <TraceDetailHeader trace={selected} session={selectedSession} onNavigate={onNavigate} showToast={showToast} />
+          <TraceDetailHeader trace={activeTrace} session={selectedSession} onNavigate={onNavigate} showToast={showToast} apiMode={apiMode} />
 
           {selectedSession && listMode === 'sessions' && (
-            <SessionThread session={selectedSession} traces={getSessionTraces(selectedSession.sessionId)} onSelectTrace={selectTrace} activeId={selected.id} />
+            <SessionThread
+              session={selectedSession}
+              traces={apiMode ? getSessionTracesFromList(selectedSession.sessionId, traceSource) : getSessionTraces(selectedSession.sessionId)}
+              onSelectTrace={tr => void selectTrace(tr)}
+              activeId={activeTrace.id}
+              apiMode={apiMode}
+            />
           )}
 
+          {detailLoading && apiMode && (
+            <p className="text-xs text-gray-500 px-1">加载 Trace 详情…</p>
+          )}
+
+          {apiMode && traceSource.length === 0 ? (
+            <div className="bg-white dark:bg-gray-900 rounded-xl border border-dashed border-gray-300 dark:border-gray-600 p-8 text-center text-sm text-gray-500">
+              当前时间范围内无 Trace 记录。发起对话后 QueryLog 将自动写入 trace_json。
+            </div>
+          ) : (
+          <>
           <SystemSectionTabs tabs={[...DETAIL_TABS]} activeTab={detailTab} onTabChange={setDetailTab} />
 
-          {detailTab === 0 && <OverviewTab trace={selected} onNavigate={onNavigate} />}
+          {detailTab === 0 && <OverviewTab trace={activeTrace} onNavigate={onNavigate} />}
           {detailTab === 1 && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1 min-h-0">
               <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-4 overflow-y-auto max-h-[500px]">
@@ -239,7 +330,7 @@ export function TracesPage({ onNavigate }: TracesPageProps) {
                     <button type="button" onClick={() => setTreeExpandAll(false)} className="p-1 text-gray-400 hover:text-gray-600" title="全部折叠"><FoldVertical size={14} /></button>
                   </div>
                 </div>
-                <SpanTree key={String(treeExpandAll)} span={selected.rootSpan} selectedId={selectedSpan.id} onSelect={setSelectedSpan} expandAll={treeExpandAll} />
+                <SpanTree key={String(treeExpandAll)} span={activeTrace.rootSpan} selectedId={selectedSpan.id} onSelect={setSelectedSpan} expandAll={treeExpandAll} />
               </div>
               <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-4 overflow-y-auto max-h-[500px]">
                 <h4 className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-3">
@@ -249,12 +340,14 @@ export function TracesPage({ onNavigate }: TracesPageProps) {
               </div>
             </div>
           )}
-          {detailTab === 2 && <WaterfallTab spans={flatSpans} totalMs={selected.durationMs} />}
+          {detailTab === 2 && <WaterfallTab spans={flatSpans} totalMs={activeTrace.durationMs} />}
           {detailTab === 3 && <LogViewTab spans={logSpans} />}
           {detailTab === 4 && (
             <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-4 overflow-auto max-h-[500px]">
-              <pre className="text-[10px] font-mono text-gray-600 dark:text-gray-400 whitespace-pre-wrap">{JSON.stringify(selected, null, 2)}</pre>
+              <pre className="text-[10px] font-mono text-gray-600 dark:text-gray-400 whitespace-pre-wrap">{JSON.stringify(activeTrace, null, 2)}</pre>
             </div>
+          )}
+          </>
           )}
         </div>
       </div>
@@ -349,11 +442,12 @@ function SessionCard({ session, selected, onClick }: { session: TraceSession; se
   );
 }
 
-function SessionThread({ session, traces, onSelectTrace, activeId }: {
+function SessionThread({ session, traces, onSelectTrace, activeId, apiMode }: {
   session: TraceSession;
   traces: TraceRecord[];
   onSelectTrace: (t: TraceRecord) => void;
   activeId: string;
+  apiMode?: boolean;
 }) {
   return (
     <div className="bg-violet-50 dark:bg-violet-950/20 rounded-xl border border-violet-200 dark:border-violet-800 p-3">
@@ -374,19 +468,35 @@ function SessionThread({ session, traces, onSelectTrace, activeId }: {
           </button>
         ))}
         {traces.length < session.turns && (
-          <p className="text-[10px] text-gray-400 italic pl-3">… 另有 {session.turns - traces.length} 轮（mock 未展开）</p>
+          <p className="text-[10px] text-gray-400 italic pl-3">
+            … 另有 {session.turns - traces.length} 轮{apiMode ? '（列表未全部加载）' : '（mock 未展开）'}
+          </p>
         )}
       </div>
     </div>
   );
 }
 
-function TraceDetailHeader({ trace, session, onNavigate, showToast }: {
+function TraceDetailHeader({ trace, session, onNavigate, showToast, apiMode }: {
   trace: TraceRecord;
   session: TraceSession | null;
   onNavigate?: TracesPageProps['onNavigate'];
   showToast: (m: string) => void;
+  apiMode?: boolean;
 }) {
+  const openLangfuse = async () => {
+    if (apiMode) {
+      try {
+        await navigator.clipboard.writeText(trace.traceId);
+        showToast('Trace ID 已复制；Langfuse 外链需配置 LANGFUSE_HOST（v1 占位）');
+      } catch {
+        showToast(`Trace ID: ${trace.traceId}`);
+      }
+      return;
+    }
+    showToast('已在 Langfuse 打开（mock）');
+  };
+
   return (
     <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-4 flex-shrink-0">
       <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -414,7 +524,7 @@ function TraceDetailHeader({ trace, session, onNavigate, showToast }: {
           )}
         </div>
         <div className="flex gap-2 flex-shrink-0 flex-wrap">
-          <button type="button" onClick={() => showToast('已在 Langfuse 打开（mock）')} className="flex items-center gap-1 text-xs px-2.5 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 text-blue-600">
+          <button type="button" onClick={() => void openLangfuse()} className="flex items-center gap-1 text-xs px-2.5 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 text-blue-600">
             <ExternalLink size={12} /> Langfuse
           </button>
           {trace.convId && onNavigate && (

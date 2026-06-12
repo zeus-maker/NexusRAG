@@ -94,7 +94,14 @@ export function MonitorPage({ onNavigate, initialTab = 0 }: MonitorPageProps) {
     return () => clearInterval(id);
   }, [autoRefresh]);
 
-  const unresolvedAlerts = RECENT_ALERTS.filter(a => !a.resolved);
+  const [resolvedAlertIds, setResolvedAlertIds] = useState<Set<string>>(new Set());
+
+  const recentAlerts = useMemo(() => {
+    const base = RECENT_ALERTS.map(a => ({ ...a, resolved: a.resolved || resolvedAlertIds.has(a.id) }));
+    return base;
+  }, [resolvedAlertIds]);
+
+  const unresolvedAlerts = recentAlerts.filter(a => !a.resolved);
 
   const filteredKBRows = useMemo(() => {
     return KB_INDEX_AGGREGATE.filter(row => {
@@ -178,7 +185,8 @@ export function MonitorPage({ onNavigate, initialTab = 0 }: MonitorPageProps) {
       {activeTab === 0 && (
         <InfraTab rules={rules} setRules={setRules} maxQps={maxQps} maxErr={maxErr} maxP95={maxP95}
           showToast={showToast} showAddRule={showAddRule} setShowAddRule={setShowAddRule} onNavigate={onNavigate}
-          apiMode={apiMode} usage={monitor.usage} services={monitor.health.components} />
+          apiMode={apiMode} usage={monitor.usage} services={monitor.health.components}
+          recentAlerts={recentAlerts} onResolveAlert={(id) => { setResolvedAlertIds(prev => new Set(prev).add(id)); showToast(apiMode ? '告警已标记恢复（会话内）' : '已标记为已恢复'); }} />
       )}
       {activeTab === 1 && (
         <PipelineTab pipelines={pipelines} timeRange={timeRange} setTimeRange={setTimeRange} onNavigate={onNavigate} />
@@ -203,7 +211,7 @@ export function MonitorPage({ onNavigate, initialTab = 0 }: MonitorPageProps) {
 
 function InfraTab({
   rules, setRules, maxQps, maxErr, maxP95, showToast, showAddRule, setShowAddRule, onNavigate,
-  apiMode, usage, services,
+  apiMode, usage, services, recentAlerts, onResolveAlert,
 }: {
   rules: AlertRule[];
   setRules: React.Dispatch<React.SetStateAction<AlertRule[]>>;
@@ -215,8 +223,13 @@ function InfraTab({
   apiMode?: boolean;
   usage?: { qps?: number; totalQueriesToday?: number; avgLatencyMs?: number; successRate?: number };
   services?: Array<{ name: string; status: string; latencyMs: number; message: string }>;
+  recentAlerts?: typeof RECENT_ALERTS;
+  onResolveAlert?: (id: string) => void;
 }) {
-  const toggleRule = (id: string) => setRules(prev => prev.map(r => r.id === id ? { ...r, enabled: !r.enabled } : r));
+  const toggleRule = (id: string) => {
+    setRules(prev => prev.map(r => r.id === id ? { ...r, enabled: !r.enabled } : r));
+    if (apiMode) showToast('告警规则已更新（会话内，v1 未持久化）');
+  };
 
   const metrics = INFRA_METRICS.map((m, i) => {
     if (!apiMode || !usage) return m;
@@ -355,7 +368,7 @@ function InfraTab({
                 <button type="button" onClick={() => toggleRule(rule.id)} className={`text-[10px] px-2 py-0.5 rounded ${rule.enabled ? 'text-green-600 bg-green-50 dark:bg-green-900/20' : 'text-gray-500 bg-gray-100 dark:bg-gray-800'}`}>
                   {rule.enabled ? '已启用' : '已禁用'}
                 </button>
-                <button type="button" onClick={() => showToast('编辑规则（mock）')} className="text-[10px] px-2 py-1 border border-gray-200 dark:border-gray-700 rounded text-gray-600">编辑</button>
+                <button type="button" onClick={() => showToast(apiMode ? '规则编辑（v1 会话内生效）' : '编辑规则（mock）')} className="text-[10px] px-2 py-1 border border-gray-200 dark:border-gray-700 rounded text-gray-600">编辑</button>
               </div>
             </div>
           ))}
@@ -364,7 +377,7 @@ function InfraTab({
         <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
           <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-3">最近告警</h3>
           <div className="space-y-2">
-            {RECENT_ALERTS.map(a => (
+            {(recentAlerts || RECENT_ALERTS).map(a => (
               <div key={a.id} className={`flex items-start gap-2 p-2.5 rounded-lg ${a.resolved ? 'bg-gray-50 dark:bg-gray-800/50' : 'bg-red-50/50 dark:bg-red-900/10'}`}>
                 <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${LEVEL_STYLE[a.level]}`}>{a.level}</span>
                 <div className="flex-1 min-w-0">
@@ -372,7 +385,7 @@ function InfraTab({
                   <p className="text-[10px] text-gray-400 mt-0.5">{a.time}{a.resolved ? ' · 已恢复' : ''}</p>
                 </div>
                 {!a.resolved && (
-                  <button type="button" onClick={() => showToast('已标记为已恢复（mock）')} className="text-[10px] text-blue-600 hover:underline flex-shrink-0">恢复</button>
+                  <button type="button" onClick={() => onResolveAlert?.(a.id)} className="text-[10px] text-blue-600 hover:underline flex-shrink-0">恢复</button>
                 )}
               </div>
             ))}

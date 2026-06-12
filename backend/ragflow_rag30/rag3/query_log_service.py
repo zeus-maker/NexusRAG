@@ -38,6 +38,7 @@ def append_log(
     complexity_tier: str | None = None,
     llm_model_used: str | None = None,
     user_feedback: str = "none",
+    trace_json: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     try:
         log_id = f"log_{get_uuid()}"
@@ -57,6 +58,7 @@ def append_log(
             "complexity_tier": complexity_tier,
             "llm_model_used": llm_model_used,
             "user_feedback": _feedback_map(user_feedback),
+            "trace_json": trace_json,
             "created_at": now,
         }
         QueryLog.create(**record)

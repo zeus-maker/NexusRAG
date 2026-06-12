@@ -29,6 +29,15 @@ from rag3.query_log_service import append_log, update_feedback as update_query_f
 logger = logging.getLogger(__name__)
 
 
+def _merge_trace_payload(trace: dict | None, latency_ms) -> dict | None:
+    if not trace and not latency_ms:
+        return None
+    payload = dict(trace) if isinstance(trace, dict) else {}
+    if latency_ms is not None:
+        payload["latency_ms"] = latency_ms
+    return payload or None
+
+
 async def _validate_kb_ids(kb_ids: list, tenant_id: str) -> str | None:
     if not kb_ids:
         return "kb_ids is required"
@@ -246,6 +255,7 @@ async def send_message(conv_id):
                         total_latency_ms=int((meta.get("latency_ms") or {}).get("total", 0) if isinstance(meta.get("latency_ms"), dict) else meta.get("latency_ms") or 0),
                         complexity_tier=meta.get("routing_tier"),
                         llm_model_used=settings.get("llm_model"),
+                        trace_json=_merge_trace_payload(meta.get("trace"), meta.get("latency_ms")),
                     )
                     yield format_sse({"event": "message_saved", "data": {"message_id": assistant["message_id"]}})
                 except Exception as ex:
@@ -296,6 +306,7 @@ async def send_message(conv_id):
             total_latency_ms=int(lat.get("total", 0) if isinstance(lat, dict) else lat or 0),
             complexity_tier=result.get("routing_tier"),
             llm_model_used=settings.get("llm_model"),
+            trace_json=_merge_trace_payload(result.get("trace"), lat),
         )
 
         return get_json_result(data={

@@ -28,6 +28,24 @@ export function FusionConfigPage({ onNavigate }: FusionConfigPageProps) {
     if (apiMode && apiConfig) setConfig(apiConfig);
   }, [apiMode, apiConfig]);
 
+  const handlePreview = () => {
+    const weightSum = config.channelWeights.reduce((s, c) => s + c.weight, 0);
+    if (apiMode) {
+      showToast(`预览：RRF k=${config.rrfK} · 通道权重 ${weightSum.toFixed(2)} · 精排 Top-${config.rerankTopN}`);
+      return;
+    }
+    showToast('融合预览已生成（mock）');
+  };
+
+  const handleTest = () => {
+    const ok = config.rerankTopN > 0 && config.channelWeights.every(c => c.weight >= 0);
+    if (apiMode) {
+      showToast(ok ? '融合参数校验通过' : '参数无效，请检查 Top-K 与权重');
+      return;
+    }
+    showToast('融合配置测试通过');
+  };
+
   const handleSave = async () => {
     if (apiMode) {
       try {
@@ -72,10 +90,10 @@ export function FusionConfigPage({ onNavigate }: FusionConfigPageProps) {
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">L4 召回漏斗 Top-K · Weighted RRF · Cross-Encoder 精排（§11.8.1）</p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <button type="button" onClick={() => showToast('融合预览已生成（mock）')} className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-white dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300">
+          <button type="button" onClick={handlePreview} className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-white dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300">
             <Eye size={14} /> 预览融合效果
           </button>
-          <button type="button" onClick={() => showToast('融合配置测试通过')} className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-white dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300">
+          <button type="button" onClick={handleTest} className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-white dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300">
             <Play size={14} /> 测试
           </button>
           <button type="button" onClick={handleSave} disabled={loading && apiMode} className="flex items-center gap-1.5 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">

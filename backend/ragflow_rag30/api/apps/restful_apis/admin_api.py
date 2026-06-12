@@ -21,7 +21,7 @@ from rag3.audit_service import list_audit_logs
 from rag3.monitor_service import get_admin_health, get_monitor_dashboard, get_usage_stats
 from rag3.system_config_defaults import CONFIG_DEFAULTS, PIPELINE_DEFINITIONS
 from rag3.system_config_service import get_config, set_config
-from rag3.trace_service import get_trace_detail, list_traces
+from rag3.trace_service import export_trace_otlp, get_trace_detail, get_trace_stats, list_trace_sessions, list_traces
 from router import RouterEngine
 
 logger = logging.getLogger(__name__)
@@ -230,15 +230,57 @@ def admin_audit_logs():
         return server_error_response(e)
 
 
+@manager.route("/admin/traces/stats", methods=["GET"])  # noqa: F821
+@login_required
+def admin_trace_stats():
+    try:
+        hours = int(request.args.get("hours") or 24)
+        return get_json_result(data=get_trace_stats(_tenant_id(), hours=hours))
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route("/admin/traces/sessions", methods=["GET"])  # noqa: F821
+@login_required
+def admin_trace_sessions():
+    try:
+        search = request.args.get("search") or ""
+        limit = int(request.args.get("limit") or 100)
+        return get_json_result(data={"items": list_trace_sessions(_tenant_id(), search=search, limit=limit)})
+    except Exception as e:
+        return server_error_response(e)
+
+
 @manager.route("/admin/traces", methods=["GET"])  # noqa: F821
 @login_required
 def admin_traces():
     try:
         search = request.args.get("search") or ""
+        status = request.args.get("status") or ""
+        tier = request.args.get("tier") or ""
         page = int(request.args.get("page") or 1)
         page_size = int(request.args.get("page_size") or 20)
-        data = list_traces(_tenant_id(), search=search, page=page, page_size=page_size)
+        data = list_traces(
+            _tenant_id(),
+            search=search,
+            status=status,
+            tier=tier,
+            page=page,
+            page_size=page_size,
+        )
         return get_json_result(data=data)
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route("/admin/traces/<trace_id>/export", methods=["GET"])  # noqa: F821
+@login_required
+def admin_trace_export(trace_id):
+    try:
+        payload = export_trace_otlp(_tenant_id(), trace_id)
+        if not payload:
+            return get_data_error_result(message="trace not found")
+        return get_json_result(data=payload)
     except Exception as e:
         return server_error_response(e)
 
@@ -514,6 +556,17 @@ def admin_list_backups():
     try:
         jobs = list_jobs(_tenant_id(), job_type="backup")
         return get_json_result(data={"items": jobs})
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route("/admin/maintenance/restore", methods=["POST"])  # noqa: F821
+@login_required
+async def admin_trigger_restore():
+    try:
+        body = await get_request_json() if request.is_json else {}
+        job = create_job(_tenant_id(), "restore", body or {}, created_by=_tenant_id())
+        return get_json_result(data={"job": job})
     except Exception as e:
         return server_error_response(e)
 

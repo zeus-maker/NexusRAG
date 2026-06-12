@@ -67,6 +67,8 @@ export function SecurityPage() {
     }
   };
 
+  const poisonQueue = apiMode && secRules.poisonQueue?.length ? secRules.poisonQueue : POISON_QUEUE;
+
   const riskColor = (r: string) =>
     r === 'high' ? 'bg-red-100 text-red-700' : r === 'medium' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-600';
   const statusColor = (s: string) =>
@@ -128,7 +130,7 @@ export function SecurityPage() {
       {/* Poison detection */}
       {tab === 'poison' && (
         <div className="flex flex-col gap-3">
-          {POISON_QUEUE.map(item => (
+          {poisonQueue.map(item => (
             <div key={item.id} className="bg-white rounded-xl border border-gray-200 p-4 flex items-start gap-4">
               <div className={`mt-0.5 flex-shrink-0 px-2.5 py-1 rounded-full text-[11px] font-semibold ${riskColor(item.risk)}`}>
                 {item.risk.toUpperCase()}

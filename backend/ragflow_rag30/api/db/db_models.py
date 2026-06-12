@@ -1331,6 +1331,7 @@ class QueryLog(DataBaseModel):
     complexity_tier = CharField(max_length=32, null=True)
     llm_model_used = CharField(max_length=128, null=True)
     user_feedback = CharField(max_length=16, null=False, default="none")
+    trace_json = JSONField(null=True, help_text="RAG pipeline trace snapshot")
     created_at = BigIntegerField(null=False, index=True)
 
     class Meta:
@@ -1817,6 +1818,7 @@ def migrate_db():
     alter_db_add_column(migrator, "evaluation_results", "question", TextField(null=True, help_text="test question snapshot"))
     alter_db_add_column(migrator, "evaluation_results", "reference_answer", TextField(null=True, help_text="ground truth answer"))
     alter_db_add_column(migrator, "evaluation_datasets", "metadata", JSONField(null=True, help_text="tags and extra dataset metadata"))
+    alter_db_add_column(migrator, "query_logs", "trace_json", JSONField(null=True, help_text="RAG pipeline trace snapshot"))
     logging.disable(logging.NOTSET)
     # this is after re-enabling logging to allow logging changed user emails
     migrate_add_unique_email(migrator)

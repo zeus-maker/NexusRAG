@@ -15,6 +15,7 @@ import {
 } from '../data/pipelineMock';
 import { usePipelineConfig, systemService } from '../hooks/useSystemData';
 import { useApiMode } from '../services/http';
+import type { PipelineConfigApi } from '../types/system';
 
 interface PipelineConfigPageProps {
   onNavigate?: (page: string, extra?: Record<string, unknown>) => void;
@@ -41,6 +42,33 @@ export function PipelineConfigPage({ onNavigate }: PipelineConfigPageProps) {
       setGlobalSettings({ ...PIPELINE_GLOBAL_SETTINGS, ...(apiConfig.globalSettings as typeof PIPELINE_GLOBAL_SETTINGS) });
     }
   }, [apiMode, apiConfig]);
+
+  const handleReset = async () => {
+    if (apiMode) {
+      try {
+        const { data } = await systemService.getConfigDefaults();
+        const def = data.pipeline as PipelineConfigApi | undefined;
+        if (def) {
+          setPipelines(def.definitions as typeof PIPELINE_DEFINITIONS);
+          setRules((def.routingRules || DEFAULT_ROUTING_RULES) as typeof DEFAULT_ROUTING_RULES);
+          setModels((def.modelConfig || DEFAULT_MODEL_CONFIG) as typeof DEFAULT_MODEL_CONFIG);
+          setGlobalSettings({ ...PIPELINE_GLOBAL_SETTINGS, ...(def.globalSettings as object) });
+          await systemService.putPipelineConfig({
+            definitions: def.definitions as PipelineConfigApi['definitions'],
+            routingRules: def.routingRules as PipelineConfigApi['routingRules'],
+            modelConfig: def.modelConfig as PipelineConfigApi['modelConfig'],
+            globalSettings: def.globalSettings as PipelineConfigApi['globalSettings'],
+          });
+          refresh();
+        }
+        showToast('配置已重置为默认');
+      } catch (e) {
+        showToast((e as Error).message || '重置失败');
+      }
+      return;
+    }
+    showToast('配置已重置为默认（mock）');
+  };
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
 
@@ -87,7 +115,7 @@ export function PipelineConfigPage({ onNavigate }: PipelineConfigPageProps) {
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">五大 RAG 流水线开关 · 分类器路由规则 · 模型与融合策略（§6.2）</p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <button type="button" onClick={() => showToast('配置已重置为默认（mock）')} className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-white dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300">
+          <button type="button" onClick={handleReset} className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-white dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300">
             <RefreshCw size={14} /> 重置
           </button>
           <button type="button" onClick={handleSave} disabled={loading && apiMode} className="flex items-center gap-1.5 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
