@@ -4,6 +4,8 @@
 
 **企业级 RAG 3.0 混合架构 · 检索更靠谱 · 对话更专业 · 评测更强大 · 运维更透明**
 
+[English README](./README.en.md)
+
 基于 [RAGFlow](https://github.com/infiniflow/ragflow) 深度文档理解，扩展 PageIndex、LLM Wiki、四分类器路由与多通道融合。
 
 <br/>
@@ -38,6 +40,7 @@
 [API 对接](#模块对接状态rag3-web) ·
 [文档索引](#文档索引) ·
 [License](#license) ·
+[English](./README.en.md) ·
 [Gitee 仓库](https://gitee.com/zeus-maker/rag-turbo)
 
 </div>
@@ -332,6 +335,7 @@ pkill -f "ragflow_server.py|task_executor.py"
 
 | 文档 | 说明 |
 |------|------|
+| [README.en.md](./README.en.md) | English overview |
 | [CLAUDE.md](./CLAUDE.md) | 开发规范、Monorepo 约定、常用命令 |
 | [backend/README.md](./backend/README.md) | 后端安装、配置、排障、前端联调 |
 | [frontend/rag3-web/README.md](./frontend/rag3-web/README.md) | 前端环境变量与模块说明 |
