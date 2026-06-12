@@ -1,0 +1,99 @@
+NexusRAG Source Available License
+Version 1.0, June 2026
+
+Copyright (c) 2026 NexusRAG Contributors
+
+================================================================================
+IMPORTANT — DUAL LICENSING IN THIS REPOSITORY
+================================================================================
+
+This monorepo contains code under TWO different license regimes:
+
+  (A) NexusRAG Original Software — this license (below)
+  (B) RAGFlow-Derived Software — Apache License 2.0
+
+See THIRD-PARTY-NOTICES.md for (B), including file-path guidance and the
+Apache-2.0 text. You must comply with BOTH where applicable.
+
+================================================================================
+(A) NEXUSRAG ORIGINAL SOFTWARE — TERMS
+================================================================================
+
+“Software” means the NexusRAG original portions of this repository, including
+without limitation:
+
+  - frontend/rag3-web/          (except third-party dependencies)
+  - backend/ragflow_rag30/router/
+  - backend/ragflow_rag30/pipelines/
+  - backend/ragflow_rag30/fusion/
+  - backend/ragflow_rag30/security/
+  - backend/ragflow_rag30/rag3/
+  - backend/ragflow_rag30/api/apps/rag3_app.py
+  - backend/ragflow_rag30/api/apps/restful_apis/admin_api.py
+  - backend/ragflow_rag30/api/apps/restful_apis/evaluation_api.py
+  - backend/ragflow_rag30/api/apps/restful_apis/conversations_api.py
+  - docs/ (project documentation and assets authored for NexusRAG)
+  - scripts/ (project scripts authored for NexusRAG)
+
+“Commercial Use” means any use of the Software that is primarily intended for
+or directed toward commercial advantage or monetary compensation, including but
+not limited to: offering the Software (or derivatives) as a paid product or
+service; using it in production for a for-profit entity; SaaS / multi-tenant
+hosting for third parties; or incorporating it into proprietary commercial
+offerings. Internal evaluation and non-production prototyping by a for-profit
+entity is NOT Commercial Use if it does not serve external customers or
+generate revenue.
+
+1. GRANT — NON-COMMERCIAL
+
+   Subject to the terms of this license, permission is hereby granted, free of
+   charge, to any person obtaining a copy of the Software, to use, copy, modify,
+   merge, publish, distribute, and sublicense copies of the Software, and to
+   permit persons to whom the Software is furnished to do so, solely for
+   Non-Commercial Use, provided that:
+
+   (a) this copyright notice and license appear in all copies or substantial
+       portions;
+   (b) modified files carry prominent notices stating that you changed them;
+   (c) you do not remove or alter any licensing notices.
+
+2. COMMERCIAL USE — SEPARATE AUTHORIZATION REQUIRED
+
+   Commercial Use of the Software is NOT permitted under this license. Any
+   Commercial Use requires a separate written commercial license agreement
+   (“Commercial License”) from the copyright holder.
+
+   To request a Commercial License, contact:
+
+       commercial-license@nexusrag.io
+
+   (Replace with your official contact before public release if different.)
+
+   Until a Commercial License is executed in writing, Commercial Use is
+   expressly prohibited.
+
+3. NO WARRANTY
+
+   THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+   IN THE SOFTWARE.
+
+4. TERMINATION
+
+   This license terminates automatically if you breach Section 2 or fail to
+   comply with Apache-2.0 obligations on RAGFlow-Derived Software.
+
+5. GOVERNING INTERPRETATION
+
+   Nothing in this license restricts your rights under Apache-2.0 to
+   RAGFlow-Derived Software. Where NexusRAG original code modifies or extends
+   Apache-2.0 files, the combined work’s licensing follows applicable law;
+   Apache-2.0 portions remain under Apache-2.0.
+
+================================================================================
+END OF NEXUSRAG SOURCE AVAILABLE LICENSE v1.0
+================================================================================
